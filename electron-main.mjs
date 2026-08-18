@@ -22,6 +22,7 @@ import {
   trayMenuTemplate,
 } from './lib/shell.js';
 import { feedS16le, resolveNativeLoopbackPlan } from './lib/system-audio.js';
+import { isAllowedApiBase, proxyJsonRequest } from './lib/saas.js';
 import { createCompanionServer, listenLocal } from './server.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -97,6 +98,7 @@ function createWindow() {
     minHeight: 640,
     backgroundColor: '#f7f4ee',
     title: 'Vocify Companion',
+    icon: path.join(__dirname, 'build', 'icon.png'),
     show: true,
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
@@ -194,10 +196,8 @@ function rebuildTrayMenu() {
 
 function createTray() {
   try {
-    const iconFile = process.platform === 'darwin' ? 'trayTemplate.png' : 'icon.png';
-    const iconPath = path.join(__dirname, 'build', iconFile);
+    const iconPath = path.join(__dirname, 'build', 'icon.png');
     const image = nativeImage.createFromPath(iconPath);
-    if (process.platform === 'darwin') image.setTemplateImage(true);
     const icon = image.isEmpty() ? nativeImage.createEmpty() : image.resize({ width: 18, height: 18 });
     tray = new Tray(icon);
     tray.on('click', () => showMainWindow());
@@ -277,6 +277,24 @@ ipcMain.handle('shell:open-external', (_event, url) => {
   return { ok: true };
 });
 
+ipcMain.handle('saas:request', async (_event, payload) => {
+  const { base, path: apiPath, method, headers, body } = payload || {};
+  if (!isAllowedApiBase(base)) {
+    console.warn('[saas] blocked API base', base);
+    return { ok: false, status: 0, data: {}, error: 'API base is not a Vocify host' };
+  }
+  const label = `${method || 'GET'} ${base}${apiPath || ''}`;
+  console.log(`[saas] → ${label}`);
+  try {
+    const result = await proxyJsonRequest(fetch, { base, path: apiPath, method, headers, body });
+    console.log(`[saas] ← ${result.status} ${label}${result.ok ? '' : ` ${result.error || ''}`}`);
+    return result;
+  } catch (err) {
+    console.error(`[saas] failed ${label}:`, err?.message || err);
+    return { ok: false, status: 0, data: {}, error: err?.message || 'Request failed' };
+  }
+});
+
 app.on('gpu-process-crashed', () => {
   console.warn('GPU process crashed; continuing with software rendering.');
 });
@@ -317,12 +335,24 @@ app.whenReady().then(async () => {
   overlayUrl = rendererUrl.replace(/index\.html$/, 'overlay.html');
   if (process.platform === 'darwin') {
     Menu.setApplicationMenu(
-      Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]),
+      Menu.buildFromTemplate([
+        { role: 'appMenu' },
+        { role: 'editMenu' },
+        { role: 'viewMenu' },
+        { role: 'windowMenu' },
+      ]),
     );
   }
   createWindow();
   createOverlay();
   createTray();
+  const dockIcon = nativeImage.createFromPath(path.join(__dirname, 'build', 'icon.png'));
+  if (process.platform === 'darwin' && !dockIcon.isEmpty()) {
+    app.dock?.setIcon(dockIcon);
+  }
+  if (!app.isPackaged) {
+    mainWindow?.webContents.openDevTools({ mode: 'detach' });
+  }
   revealWindow(mainWindow);
   app.on('before-quit', () => {
     isQuitting = true;

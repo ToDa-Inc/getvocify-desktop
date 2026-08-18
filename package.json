@@ -34,7 +34,8 @@
       "renderer/**/*",
       "build/icon.png",
       "build/trayTemplate.png",
-      "build/trayTemplate@2x.png"
+      "build/trayTemplate@2x.png",
+      "brand/icon-512.png"
     ],
     "directories": {
       "output": "dist",

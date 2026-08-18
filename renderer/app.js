@@ -3,6 +3,7 @@ import { backendLabel } from '../lib/capture-labels.js';
 import { pcmFromAudioBuffer } from '../lib/pcm.js';
 import { applyTranscriptUpdate, canStartListen, startDeniedMessage } from '../lib/listen-policy.js';
 import { dashboardMemosUrl, overlaySnippet } from '../lib/shell.js';
+import { humanizeSaasError } from '../lib/saas.js';
 
 const PROD_API = 'https://api.getvocify.com/api/v1';
 const STORAGE = {
@@ -101,17 +102,30 @@ function setLoggedIn(on) {
 async function request(path, { method = 'GET', body, token } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${apiBase()}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const detail = typeof data.detail === 'string' ? data.detail : `HTTP ${res.status}`;
-    throw new Error(detail);
+  const proxy = desktop()?.saas?.request;
+  try {
+    if (proxy) {
+      const result = await proxy({ base: apiBase(), path, method, headers, body });
+      if (!result.ok) {
+        const detail = typeof result.data?.detail === 'string' ? result.data.detail : result.error;
+        throw new Error(humanizeSaasError(null, { status: result.status, detail }));
+      }
+      return result.data;
+    }
+    const res = await fetch(`${apiBase()}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const detail = typeof data.detail === 'string' ? data.detail : `HTTP ${res.status}`;
+      throw new Error(detail);
+    }
+    return data;
+  } catch (err) {
+    throw new Error(humanizeSaasError(err, { detail: err?.message }));
   }
-  return data;
 }
 
 function renderTranscript() {

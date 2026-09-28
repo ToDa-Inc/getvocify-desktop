@@ -9,8 +9,7 @@ Local builds default to **ad-hoc** signing. macOS **will not list** ad-hoc apps 
 (Apple TN3127). This is not a Vocify bug.
 
 ```bash
-bash scripts/ensure-dev-signing.sh   # checks / instructions
-# After creating "Vocify Dev" Code Signing cert in Keychain:
+bash scripts/create-dev-signing-cert.sh   # one-time: creates + trusts "Vocify Dev"
 CODESIGN_IDENTITY="Vocify Dev" ./scripts/dev-desktop.sh
 ```
 

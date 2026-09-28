@@ -48,16 +48,26 @@ cp "$sources/Resources/companion/overlay.html" "$app/Contents/Resources/companio
 rsync -a --delete --exclude '.DS_Store' "$web_stage/" "$app/Contents/Resources/web/"
 
 entitlements="$root/build/entitlements.mac.plist"
-identity="${CODESIGN_IDENTITY:-}"
-if [[ -z "$identity" ]]; then
-  identity="$(security find-identity -v -p codesigning 2>/dev/null \
-    | sed -n 's/^[[:space:]]*[0-9][0-9]*[[:space:]]*[A-F0-9][A-F0-9]*[[:space:]]*"\(.*\)"/\1/p' \
-    | head -1 || true)"
+# shellcheck source=../../scripts/lib/signing-ids.sh
+source "$repo/scripts/lib/signing-ids.sh"
+
+requested="${CODESIGN_IDENTITY:-}"
+sign_ref=""
+if ! sign_ref="$(resolve_codesign_ref "$requested")"; then
+  if [[ -n "$requested" ]]; then
+    echo "" >&2
+    echo "❌ CODESIGN_IDENTITY=\"$requested\" is not in your keychain." >&2
+    echo "   Create it: bash \"$repo/scripts/create-dev-signing-cert.sh\"" >&2
+    echo "   Or check:  bash \"$repo/scripts/ensure-dev-signing.sh\"" >&2
+    echo "" >&2
+    exit 1
+  fi
 fi
 
-if [[ -n "$identity" ]]; then
-  echo "Signing with: $identity" >&2
-  codesign --force --deep --options runtime --entitlements "$entitlements" --sign "$identity" "$app"
+if [[ -n "$sign_ref" ]]; then
+  label="${requested:-$(list_signing_id_names | head -1)}"
+  echo "Signing with: ${label:-$sign_ref} ($sign_ref)" >&2
+  codesign --force --deep --options runtime --entitlements "$entitlements" --sign "$sign_ref" "$app"
 else
   codesign --force --sign - "$app"
   echo "" >&2

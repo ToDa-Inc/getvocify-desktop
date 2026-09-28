@@ -57,8 +57,7 @@ if ! sign_ref="$(resolve_codesign_ref "$requested")"; then
   if [[ -n "$requested" ]]; then
     echo "" >&2
     echo "❌ CODESIGN_IDENTITY=\"$requested\" is not in your keychain." >&2
-    echo "   Create it: bash \"$repo/scripts/create-dev-signing-cert.sh\"" >&2
-    echo "   Or check:  bash \"$repo/scripts/ensure-dev-signing.sh\"" >&2
+    echo "   Check: bash \"$repo/scripts/ensure-dev-signing.sh\"" >&2
     echo "" >&2
     exit 1
   fi

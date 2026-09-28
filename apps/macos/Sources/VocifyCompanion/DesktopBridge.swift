@@ -48,8 +48,8 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         case "permissions:request":
             await requestPermission(type: args["type"] as? String)
             return permissionSnapshot()
-        case "permissions:open":
-            openPermissionSettings(type: args["type"] as? String)
+        case "permissions:open", "permissions:guide":
+            await presentPermissionGuide(type: args["type"] as? String)
             return permissionSnapshot()
         case "permissions:appInfo":
             return appInfo()
@@ -152,39 +152,19 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         ]
     }
 
-    /// Native prompts first (same flow as CompanionModel). Settings only if the user denied or must toggle manually.
     private func requestPermission(type: String?) async {
-        switch type {
-        case "microphone":
-            let status = AVCaptureDevice.authorizationStatus(for: .audio)
-            if status == .notDetermined {
-                _ = await AVCaptureDevice.requestAccess(for: .audio)
-            } else if status != .authorized {
-                openPermissionSettings(type: "microphone")
-            }
-        case "systemAudio":
-            _ = SystemAudioPermission.requestAccess { [weak self] in
-                self?.openPermissionSettings(type: "systemAudio")
-            }
-        default:
-            break
-        }
+        await presentPermissionGuide(type: type)
         emitPermissionsChanged()
+    }
+
+    private func presentPermissionGuide(type: String?) async {
+        let kind: PermissionGuideController.Kind = type == "microphone" ? .microphone : .systemAudio
+        await PermissionGuideController.shared.present(kind, bridge: self)
     }
 
     func emitPermissionsChanged() {
         guard let mainWebView else { return }
         emit("permissions:changed", [:], in: mainWebView)
-    }
-
-    private func openPermissionSettings(type: String?) {
-        let anchor = type == "microphone" ? "Privacy_Microphone" : "Privacy_ScreenCapture"
-        for raw in [
-            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(anchor)",
-            "x-apple.systempreferences:com.apple.preference.security?\(anchor)",
-        ] {
-            if let url = URL(string: raw), NSWorkspace.shared.open(url) { break }
-        }
     }
 
     private func routeShellCommand(_ name: String) {

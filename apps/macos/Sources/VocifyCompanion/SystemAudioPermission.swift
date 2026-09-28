@@ -22,12 +22,11 @@ enum SystemAudioPermission {
         return Probe(status: "never_requested", preflight: false, lastError: nil)
     }
 
-    /// Shows the system consent sheet. Returns true when access is already granted.
-    @discardableResult
-    static func requestAccess(openSettingsIfNeeded: () -> Void) -> Bool {
-        if CGPreflightScreenCaptureAccess() { return true }
-        if CGRequestScreenCaptureAccess() { return true }
-        openSettingsIfNeeded()
-        return false
+    /// Asks macOS once, then touches ScreenCaptureKit so Vocify is registered in the list (usually off).
+    static func register() async {
+        if CGPreflightScreenCaptureAccess() { return }
+        _ = CGRequestScreenCaptureAccess()
+        if CGPreflightScreenCaptureAccess() { return }
+        _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
     }
 }

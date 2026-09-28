@@ -1,0 +1,50 @@
+name: Desktop installers
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - ".github/workflows/desktop-installers.yml"
+
+jobs:
+  dmg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: ToDa-Inc/getvocify
+          token: ${{ secrets.GETVOCIFY_REPO_TOKEN }}
+          path: getvocify
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: getvocify/package-lock.json
+      - run: npm ci
+        working-directory: getvocify
+      - run: swift run VocifyCoreChecks
+        working-directory: apps/macos
+      - run: bash scripts/package-dmg.sh
+        working-directory: apps/macos
+        env:
+          GETVOCIFY_ROOT: ${{ github.workspace }}/getvocify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vocify-macos
+          path: dist/Vocify-macos.dmg
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet publish apps/windows/VocifyCompanion/VocifyCompanion.csproj -c Release -r win-x64 --self-contained -o dist/windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vocify-Companion-windows
+          path: dist/windows/**

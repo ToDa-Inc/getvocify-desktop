@@ -1,33 +1,53 @@
-# Vocify Companion
+# Vocify para Mac
 
-Desktop app for [Vocify](https://github.com/ToDa-Inc/getvocify): Granola-style **system audio + mic**, dashboard UI, tray, always-on-top overlay. Talks to the production API at **https://api.getvocify.com/api/v1**.
+App nativa que muestra el dashboard de Vocify (mismo sidebar, memos, ajustes) y graba reuniones de Zoom, Meet o Teams sin bot: tu micrófono como **You** y el audio del sistema como **Them**. Habla con **https://api.getvocify.com/api/v1**.
 
-## Run on your Mac
+## Construir y abrir
 
-```bash
-git clone https://github.com/ToDa-Inc/getvocify-desktop.git
-cd getvocify-desktop
-npm install
-npm start
-```
-
-A window and a menu-bar icon should appear. Log in with the same Vocify account as [app.getvocify.com](https://app.getvocify.com).
-
-## Logs (login / SaaS)
-
-Requests go through Electron (`[saas]` in the terminal), not the window, so production CORS cannot block them.
-
-- **Main process:** the terminal where you ran `npm start` — look for `[saas] → POST …/auth/login` then `[saas] ← 200`.
-- **Renderer:** View → Toggle Developer Tools (or **⌥⌘I**). DevTools also open automatically in unpackaged `npm start`.
-- **Network:** DevTools → Network. Login should be `saas:request` IPC, not a failing `auth/login` fetch.
-
-Default API: `https://api.getvocify.com/api/v1` (Advanced on the login screen). Local backend: `http://localhost:8888/api/v1`.
-
-## Installer (.dmg)
+Necesita el repo del dashboard en `~/getvocify` (o `GETVOCIFY_ROOT=/ruta`).
 
 ```bash
-npm run dist:mac
-open dist/Vocify-Companion-0.2.0.dmg
+cd apps/macos
+bash scripts/build-app.sh
+open Vocify.app
 ```
 
-Or GitHub → Actions → **Mac DMG** → download the artifact. Unsigned: **Right-click → Open**. Grant Microphone + Screen Recording.
+`build-app.sh` compila el dashboard contra producción y lo mete dentro de la app, así que no depende de lo desplegado en app.getvocify.com. `VOCIFY_API_URL` apunta a otro backend (p. ej. staging).
+
+DMG sin firmar (**clic derecho → Abrir** la primera vez):
+
+```bash
+bash apps/macos/scripts/package-dmg.sh
+open dist/Vocify-macos.dmg
+```
+
+## Grabar una reunión
+
+1. Entra con tu cuenta de Vocify.
+2. **New Memo → Record meeting**, o **⌘R** desde cualquier pantalla (menú **Meeting**).
+3. La primera vez macOS pide **Micrófono** y **Grabación de pantalla y audio del sistema**. Tras conceder la segunda, **cierra y vuelve a abrir Vocify** (macOS lo exige).
+4. Durante la llamada queda una pastilla flotante con el tiempo y la última frase. Puedes navegar por el dashboard; la grabación sigue y hay un botón **Stop** en la cabecera.
+5. **Stop** (en la pastilla, la cabecera o ⌘R) termina la transcripción y abre el memo para revisar y aprobar en el CRM.
+
+Cerrar la ventana no corta la grabación; salir de la app con una grabación en curso pide confirmación.
+
+Cada build nuevo se firma ad hoc, así que macOS puede volver a pedir los permisos tras recompilar.
+
+## Desarrollo
+
+- Dashboard en caliente: `npm run dev` en `~/getvocify`, luego `VOCIFY_WEB_ORIGIN=http://localhost:8080 Vocify.app/Contents/MacOS/VocifyCompanion`.
+- Pantalla Swift antigua: `VOCIFY_USE_LEGACY_UI=1 Vocify.app/Contents/MacOS/VocifyCompanion`.
+- Comprobaciones del núcleo: `cd apps/macos && swift run VocifyCoreChecks`.
+- CI (`.github/workflows/desktop-installers.yml`) necesita el secreto `GETVOCIFY_REPO_TOKEN` para clonar el dashboard.
+
+## Windows
+
+`apps/windows/VocifyCompanion` es una app WPF (.NET 8):
+
+```bash
+dotnet publish apps/windows/VocifyCompanion/VocifyCompanion.csproj -c Release -r win-x64 --self-contained -o dist/windows
+```
+
+## Electron (anterior)
+
+`npm install && npm start` abre el companion Electron con su propio renderer (`renderer/`). Ya no es la app principal de Mac.

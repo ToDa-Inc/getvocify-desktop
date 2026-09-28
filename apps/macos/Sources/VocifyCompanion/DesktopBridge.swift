@@ -51,6 +51,9 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         case "permissions:open":
             openPermissionSettings(type: args["type"] as? String)
             return await permissionSnapshot()
+        case "permissions:guide":
+            presentPermissionGuide(type: args["type"] as? String)
+            return ["ok": true]
         case "permissions:appInfo":
             return appInfo()
         case "shell:state":
@@ -115,7 +118,8 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         if capture.hasSystemStream {
             return ["ok": true, "backend": "screencapturekit"]
         }
-        return ["ok": false, "reason": "no_system_audio"]
+        let reason = await SystemAudioPermission.status() == "authorized" ? "needs_restart" : "no_system_audio"
+        return ["ok": false, "reason": reason]
     }
 
     private func permissionSnapshot() async -> [String: String] {
@@ -154,10 +158,25 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         case "microphone":
             _ = await AVCaptureDevice.requestAccess(for: .audio)
         case "systemAudio":
-            _ = CGRequestScreenCaptureAccess()
+            // Drag-based pane — guide opens Settings + floating drag card (Codex flow).
+            presentPermissionGuide(type: "systemAudio")
         default:
             break
         }
+    }
+
+    private func presentPermissionGuide(type: String?) {
+        let kind: PermissionGuideController.Kind
+        switch type {
+        case "microphone": kind = .microphone
+        default: kind = .systemAudio
+        }
+        PermissionGuideController.shared.present(kind, bridge: self)
+    }
+
+    func emitPermissionsChanged() {
+        guard let mainWebView else { return }
+        emit("permissions:changed", [:], in: mainWebView)
     }
 
     private func openPermissionSettings(type: String?) {

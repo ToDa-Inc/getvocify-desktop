@@ -44,16 +44,13 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
             capture.stopSystemAudioOnly()
             return ["ok": true]
         case "permissions:status":
-            return await permissionSnapshot()
+            return permissionSnapshot()
         case "permissions:request":
             await requestPermission(type: args["type"] as? String)
-            return await permissionSnapshot()
+            return permissionSnapshot()
         case "permissions:open":
             openPermissionSettings(type: args["type"] as? String)
-            return await permissionSnapshot()
-        case "permissions:guide":
-            presentPermissionGuide(type: args["type"] as? String)
-            return ["ok": true]
+            return permissionSnapshot()
         case "permissions:appInfo":
             return appInfo()
         case "shell:state":
@@ -118,13 +115,13 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         if capture.hasSystemStream {
             return ["ok": true, "backend": "screencapturekit"]
         }
-        let reason = await SystemAudioPermission.status() == "authorized" ? "needs_restart" : "no_system_audio"
+        let reason = SystemAudioPermission.probe().preflight ? "needs_restart" : "no_system_audio"
         return ["ok": false, "reason": reason]
     }
 
-    private func permissionSnapshot() async -> [String: Any] {
+    private func permissionSnapshot() -> [String: Any] {
         let signing = AppSigning.info()
-        let audio = await SystemAudioPermission.probe()
+        let audio = SystemAudioPermission.probe()
         return [
             "platform": "darwin",
             "microphone": microphoneAccessStatus(),
@@ -155,27 +152,24 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         ]
     }
 
+    /// Native prompts first (same flow as CompanionModel). Settings only if the user denied or must toggle manually.
     private func requestPermission(type: String?) async {
         switch type {
         case "microphone":
-            _ = await AVCaptureDevice.requestAccess(for: .audio)
-        case "systemAudio":
-            if !AppSigning.info().isAdHoc {
-                _ = SystemAudioPermission.requestSystemPrompt()
+            let status = AVCaptureDevice.authorizationStatus(for: .audio)
+            if status == .notDetermined {
+                _ = await AVCaptureDevice.requestAccess(for: .audio)
+            } else if status != .authorized {
+                openPermissionSettings(type: "microphone")
             }
-            presentPermissionGuide(type: "systemAudio")
+        case "systemAudio":
+            _ = SystemAudioPermission.requestAccess { [weak self] in
+                self?.openPermissionSettings(type: "systemAudio")
+            }
         default:
             break
         }
-    }
-
-    private func presentPermissionGuide(type: String?) {
-        let kind: PermissionGuideController.Kind
-        switch type {
-        case "microphone": kind = .microphone
-        default: kind = .systemAudio
-        }
-        PermissionGuideController.shared.present(kind, bridge: self)
+        emitPermissionsChanged()
     }
 
     func emitPermissionsChanged() {
@@ -184,10 +178,6 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
     }
 
     private func openPermissionSettings(type: String?) {
-        if AppSigning.info().isAdHoc {
-            presentPermissionGuide(type: type)
-            return
-        }
         let anchor = type == "microphone" ? "Privacy_Microphone" : "Privacy_ScreenCapture"
         for raw in [
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(anchor)",

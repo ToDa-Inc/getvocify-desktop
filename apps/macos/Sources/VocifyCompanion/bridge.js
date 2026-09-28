@@ -35,7 +35,6 @@
       status: () => call('permissions:status'),
       request: (type) => call('permissions:request', { type }),
       open: (type) => call('permissions:open', { type }),
-      guide: (type) => call('permissions:guide', { type }),
       appInfo: () => call('permissions:appInfo'),
       onChanged: on('permissions:changed'),
     },

@@ -1,69 +1,43 @@
-# Developing Vocify for Mac
+# Vocify desktop dev
 
-One native app (`apps/macos`), one dashboard repo (`~/getvocify`). No nested clones, no Electron for daily Mac work.
-
-## Signing (required for system audio)
-
-Local builds default to **ad-hoc** signing. macOS **will not list** ad-hoc apps in
-**Screen & System Audio Recording** — Settings looks empty and permissions cannot stick
-(Apple TN3127). This is not a Vocify bug.
-
-```bash
-bash scripts/create-dev-signing-cert.sh   # one-time: creates + trusts "Vocify Dev"
-CODESIGN_IDENTITY="Vocify Dev" ./scripts/dev-desktop.sh
-```
-
-Then Vocify appears in Settings and the drag-to-allow flow works.
+Native Mac shell: `apps/macos/` · Dashboard (React): `~/getvocify`
 
 ## Daily loop
 
 ```bash
 # 1. Edit dashboard (meeting UI, permissions panel, memos, …)
-cd ~/getvocify
-# … edit src/features/desktop/, etc.
-
-# 2. Rebuild and open the Mac app
-cd ~/getvocify-desktop
-./scripts/dev-desktop.sh
-```
-
-After an **unsigned** rebuild, macOS treats the app as new — use a signed build (see above) or permissions cannot stick. After granting system audio on a **signed** build, **⌘Q and reopen once**.
-
-## Hot reload (faster UI iteration)
-
-Skip embedding the dashboard — point the shell at Vite:
-
-```bash
-# Terminal 1
 cd ~/getvocify && npm run dev
 
-# Terminal 2
-cd ~/getvocify-desktop/apps/macos && swift build -c release
-VOCIFY_WEB_ORIGIN=http://localhost:8080 \
-  .build/release/VocifyCompanion   # binary name in SwiftPM; packaged as Vocify.app/Contents/MacOS/Vocify
+# 2. Rebuild + open native app (embeds dashboard build)
+~/getvocify-desktop/scripts/dev-desktop.sh
 ```
 
-Native bridge changes (permissions, system audio) still need `swift build` or `dev-desktop.sh`.
+After granting **system audio**, **⌘Q and reopen once** (ScreenCaptureKit quirk).
 
-## Checks
+## Permissions
+
+Mic and system audio use **macOS system prompts** (`AVCaptureDevice.requestAccess`, `CGRequestScreenCaptureAccess`).
+Settings opens only if you previously denied access.
+
+## Signing (optional)
+
+Ad-hoc builds work for trying prompts. For **system audio to persist across rebuilds**, sign the app
+(stable code identity). Easiest: Xcode → Signing & Capabilities → your Apple ID.
 
 ```bash
-cd ~/getvocify-desktop/apps/macos && swift run VocifyCoreChecks
-cd ~/getvocify && node --experimental-strip-types --test src/lib/meeting-transcript.test.ts src/lib/desktop-permissions.test.ts
-cd ~/getvocify/backend && .venv/bin/python -m pytest tests/test_upload_transcript.py -q
+bash scripts/ensure-dev-signing.sh   # lists identities if any
 ```
 
-## Repo layout
+## Tests
+
+```bash
+cd ~/getvocify && node --experimental-strip-types --test src/lib/desktop-permissions.test.ts
+cd ~/getvocify-desktop/apps/macos && swift run VocifyCoreChecks
+```
+
+## Where things live
 
 | Path | What |
 |------|------|
-| `apps/macos/` | **Main Mac app** — Swift shell + embedded dashboard |
 | `~/getvocify/src/features/desktop/` | Meeting recorder, permissions UI, drafts |
-| Electron at repo root | Legacy; not used for Mac shipping |
-
-## Branches
-
-- **getvocify-desktop:** `feat/native-mac-recorder`
-- **getvocify:** `feat/desktop-meeting-recorder`
-
-Keep desktop work on those branches until merged to `main`.
+| `apps/macos/Sources/VocifyCompanion/` | WKWebView shell, bridge, ScreenCaptureKit |

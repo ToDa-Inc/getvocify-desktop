@@ -2,6 +2,20 @@
 
 One native app (`apps/macos`), one dashboard repo (`~/getvocify`). No nested clones, no Electron for daily Mac work.
 
+## Signing (required for system audio)
+
+Local builds default to **ad-hoc** signing. macOS **will not list** ad-hoc apps in
+**Screen & System Audio Recording** — Settings looks empty and permissions cannot stick
+(Apple TN3127). This is not a Vocify bug.
+
+```bash
+bash scripts/ensure-dev-signing.sh   # checks / instructions
+# After creating "Vocify Dev" Code Signing cert in Keychain:
+CODESIGN_IDENTITY="Vocify Dev" ./scripts/dev-desktop.sh
+```
+
+Then Vocify appears in Settings and the drag-to-allow flow works.
+
 ## Daily loop
 
 ```bash
@@ -14,7 +28,7 @@ cd ~/getvocify-desktop
 ./scripts/dev-desktop.sh
 ```
 
-After **every rebuild**, macOS treats the app as new (ad-hoc sign). Re-enable **Screen & System Audio Recording** for Vocify if permissions look wrong, then **⌘Q and reopen**.
+After an **unsigned** rebuild, macOS treats the app as new — use a signed build (see above) or permissions cannot stick. After granting system audio on a **signed** build, **⌘Q and reopen once**.
 
 ## Hot reload (faster UI iteration)
 

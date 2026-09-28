@@ -122,11 +122,17 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         return ["ok": false, "reason": reason]
     }
 
-    private func permissionSnapshot() async -> [String: String] {
-        [
+    private func permissionSnapshot() async -> [String: Any] {
+        let signing = AppSigning.info()
+        let audio = await SystemAudioPermission.probe()
+        return [
             "platform": "darwin",
             "microphone": microphoneAccessStatus(),
-            "systemAudio": await systemAudioAccessStatus(),
+            "systemAudio": audio.status,
+            "signing": signing.isAdHoc ? "adhoc" : "signed",
+            "signingAuthority": signing.authority ?? "",
+            "systemAudioError": audio.lastError ?? "",
+            "screenCapturePreflight": audio.preflight,
         ]
     }
 
@@ -137,10 +143,6 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         case .notDetermined: return "never_requested"
         @unknown default: return "never_requested"
         }
-    }
-
-    private func systemAudioAccessStatus() async -> String {
-        await SystemAudioPermission.status()
     }
 
     private func appInfo() -> [String: String] {
@@ -158,7 +160,9 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         case "microphone":
             _ = await AVCaptureDevice.requestAccess(for: .audio)
         case "systemAudio":
-            // Drag-based pane — guide opens Settings + floating drag card (Codex flow).
+            if !AppSigning.info().isAdHoc {
+                _ = SystemAudioPermission.requestSystemPrompt()
+            }
             presentPermissionGuide(type: "systemAudio")
         default:
             break
@@ -180,6 +184,10 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
     }
 
     private func openPermissionSettings(type: String?) {
+        if AppSigning.info().isAdHoc {
+            presentPermissionGuide(type: type)
+            return
+        }
         let anchor = type == "microphone" ? "Privacy_Microphone" : "Privacy_ScreenCapture"
         for raw in [
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(anchor)",

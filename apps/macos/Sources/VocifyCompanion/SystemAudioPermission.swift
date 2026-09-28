@@ -1,22 +1,39 @@
 import Foundation
 import ScreenCaptureKit
 
-/// macOS can grant full Screen Recording or System Audio Recording Only (14.4+).
-/// Never start a capture stream just to poll — that flakes and re-triggers prompts.
+/// ScreenCaptureKit audio uses the Screen & System Audio Recording TCC service on macOS 15.
 enum SystemAudioPermission {
-    /// Light check for UI polling. Does not allocate SCStream.
+    struct Probe: Sendable {
+        let status: String
+        let preflight: Bool
+        let lastError: String?
+    }
+
+    /// Read-only status for UI polling. Never starts SCStream.
     static func status() async -> String {
-        if CGPreflightScreenCaptureAccess() { return "authorized" }
+        await probe().status
+    }
+
+    static func probe() async -> Probe {
+        let preflight = CGPreflightScreenCaptureAccess()
+        if preflight { return Probe(status: "authorized", preflight: true, lastError: nil) }
+
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-            guard content.displays.first != nil else { return "never_requested" }
-            return "authorized"
+            if content.displays.first != nil {
+                return Probe(status: "authorized", preflight: false, lastError: nil)
+            }
+            return Probe(status: "never_requested", preflight: false, lastError: "no displays")
         } catch let error as NSError {
-            return classify(error)
+            return Probe(status: classify(error), preflight: false, lastError: error.localizedDescription)
         }
     }
 
-    /// End-to-end probe right before recording starts.
+    /// Registers with TCC and may show the system consent sheet (not Settings).
+    static func requestSystemPrompt() -> Bool {
+        CGRequestScreenCaptureAccess()
+    }
+
     static func captureReady() async -> Bool {
         if await status() != "authorized" { return false }
         let capture = MeetingCapture()

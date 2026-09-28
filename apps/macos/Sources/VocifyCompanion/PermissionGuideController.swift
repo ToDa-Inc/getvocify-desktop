@@ -2,8 +2,8 @@ import AppKit
 import AVFoundation
 import ScreenCaptureKit
 
-/// Codex-style guide: opens System Settings, floats a panel beside it, and exposes the
-/// real .app bundle as a drag source so the user can drop Vocify into the permission list.
+/// Codex-style guide when the app is properly signed. Ad-hoc builds cannot appear in
+/// System Settings (Apple TN3127) — we show a blocking explanation instead.
 @MainActor
 final class PermissionGuideController: NSObject {
     static let shared = PermissionGuideController()
@@ -12,6 +12,8 @@ final class PermissionGuideController: NSObject {
     private var pollTimer: Timer?
     private var kind: Kind?
     private weak var bridge: DesktopBridge?
+    private var pollCount = 0
+    private let maxPolls = 120 // ~54s then stop nagging
 
     enum Kind: String {
         case microphone
@@ -23,22 +25,6 @@ final class PermissionGuideController: NSObject {
             case .systemAudio: return "Privacy_ScreenCapture"
             }
         }
-
-        var headline: String {
-            switch self {
-            case .microphone: return "Drag Vocify to Microphone"
-            case .systemAudio: return "Drag Vocify here"
-            }
-        }
-
-        var body: String {
-            switch self {
-            case .microphone:
-                return "Drop onto the list in System Settings, or toggle Vocify on."
-            case .systemAudio:
-                return "Drop onto Screen & System Audio Recording, or toggle Vocify on."
-            }
-        }
     }
 
     var isVisible: Bool { panel?.isVisible == true }
@@ -47,12 +33,25 @@ final class PermissionGuideController: NSObject {
         dismiss()
         self.kind = kind
         self.bridge = bridge
+        pollCount = 0
+
+        if AppSigning.info().isAdHoc {
+            panel = buildAdHocPanel()
+            panel?.orderFrontRegardless()
+            return
+        }
+
+        if kind == .systemAudio {
+            _ = SystemAudioPermission.requestSystemPrompt()
+        } else if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            Task { _ = await AVCaptureDevice.requestAccess(for: .audio) }
+        }
+
         openSystemSettings(kind)
-        panel = buildPanel(kind)
+        panel = buildGuidePanel(kind)
         panel?.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
         tick()
-        pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.45, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
@@ -64,11 +63,17 @@ final class PermissionGuideController: NSObject {
         panel?.orderOut(nil)
         panel = nil
         kind = nil
+        pollCount = 0
     }
 
     private func tick() {
         guard let kind else { return }
+        pollCount += 1
         positionPanel()
+        if pollCount >= maxPolls {
+            dismiss()
+            return
+        }
         Task {
             if await isGranted(kind) {
                 dismiss()
@@ -98,24 +103,51 @@ final class PermissionGuideController: NSObject {
 
     private func positionPanel() {
         guard let panel else { return }
-        let size = NSSize(width: 280, height: 168)
-        panel.setContentSize(size)
+        let size = panel.frame.size
         if let settings = Self.systemSettingsFrame() {
-            // Dock just left of the settings content, vertically centered on the list area.
             let x = settings.minX - size.width - 16
             let y = settings.midY - size.height / 2
             panel.setFrameOrigin(NSPoint(x: max(16, x), y: y))
-        } else {
-            if let screen = NSScreen.main {
-                let area = screen.visibleFrame
-                panel.setFrameOrigin(NSPoint(x: area.minX + 24, y: area.midY - size.height / 2))
-            }
+        } else if let screen = NSScreen.main {
+            let area = screen.visibleFrame
+            panel.setFrameOrigin(NSPoint(x: area.minX + 24, y: area.midY - size.height / 2))
         }
     }
 
-    private func buildPanel(_ kind: Kind) -> NSPanel {
+    private func buildAdHocPanel() -> NSPanel {
+        let panel = makePanel(width: 320, height: 220)
+        let text = NSTextField(wrappingLabelWithString:
+            """
+            This build is unsigned (ad-hoc). macOS will not list Vocify under \
+            Screen & System Audio Recording, so there is nothing to toggle in Settings.
+
+            Create a Code Signing certificate in Keychain (see DEVELOPMENT.md), then rebuild:
+
+            CODESIGN_IDENTITY="Vocify Dev" ./scripts/dev-desktop.sh
+            """
+        )
+        text.font = .systemFont(ofSize: 12)
+        text.textColor = .labelColor
+        layoutPanel(panel, title: "Signing required", body: text, showDrag: false)
+        return panel
+    }
+
+    private func buildGuidePanel(_ kind: Kind) -> NSPanel {
+        let panel = makePanel(width: 280, height: 180)
+        let body = NSTextField(wrappingLabelWithString:
+            kind == .systemAudio
+                ? "Drop Vocify onto Screen & System Audio Recording, or toggle it on."
+                : "Drop Vocify onto the Microphone list, or toggle it on."
+        )
+        body.font = .systemFont(ofSize: 11)
+        body.textColor = .secondaryLabelColor
+        layoutPanel(panel, title: "Drag Vocify here", body: body, showDrag: true)
+        return panel
+    }
+
+    private func makePanel(width: CGFloat, height: CGFloat) -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 280, height: 168),
+            contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.nonactivatingPanel, .fullSizeContentView, .hudWindow],
             backing: .buffered,
             defer: false
@@ -129,43 +161,32 @@ final class PermissionGuideController: NSObject {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
+        return panel
+    }
 
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 168))
+    private func layoutPanel(_ panel: NSPanel, title: String, body: NSTextField, showDrag: Bool) {
+        let root = NSView(frame: panel.frame)
         root.wantsLayer = true
         root.layer?.cornerRadius = 16
-        root.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
-        root.layer?.borderWidth = 1
-        root.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
+        root.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.95).cgColor
 
-        let stack = NSStackView(frame: NSRect(x: 16, y: 16, width: 248, height: 136))
+        let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
 
-        let title = NSTextField(labelWithString: kind.headline)
-        title.font = .systemFont(ofSize: 14, weight: .semibold)
-        title.alignment = .center
-
-        let body = NSTextField(wrappingLabelWithString: kind.body)
-        body.font = .systemFont(ofSize: 11)
-        body.textColor = .secondaryLabelColor
-        body.alignment = .center
-        body.maximumNumberOfLines = 3
-
-        let drag = AppBundleDragView(frame: NSRect(x: 0, y: 0, width: 72, height: 88))
-        drag.translatesAutoresizingMaskIntoConstraints = false
-        drag.heightAnchor.constraint(equalToConstant: 88).isActive = true
-        drag.widthAnchor.constraint(equalToConstant: 72).isActive = true
-
-        let dropHint = NSTextField(labelWithString: "Drop here →")
-        dropHint.font = .systemFont(ofSize: 10, weight: .medium)
-        dropHint.textColor = NSColor.systemRed.withAlphaComponent(0.85)
-
-        stack.addArrangedSubview(title)
+        let titleField = NSTextField(labelWithString: title)
+        titleField.font = .systemFont(ofSize: 14, weight: .semibold)
+        stack.addArrangedSubview(titleField)
         stack.addArrangedSubview(body)
-        stack.addArrangedSubview(drag)
-        stack.addArrangedSubview(dropHint)
+        if showDrag {
+            let drag = AppBundleDragView(frame: NSRect(x: 0, y: 0, width: 72, height: 88))
+            drag.translatesAutoresizingMaskIntoConstraints = false
+            drag.heightAnchor.constraint(equalToConstant: 88).isActive = true
+            drag.widthAnchor.constraint(equalToConstant: 72).isActive = true
+            stack.addArrangedSubview(drag)
+        }
 
         root.addSubview(stack)
         NSLayoutConstraint.activate([
@@ -174,12 +195,9 @@ final class PermissionGuideController: NSObject {
             stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 14),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor, constant: -12),
         ])
-
         panel.contentView = root
-        return panel
     }
 
-    /// Finds the frontmost System Settings window in screen coordinates (AppKit space).
     private static func systemSettingsFrame() -> CGRect? {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return nil }
@@ -191,8 +209,7 @@ final class PermissionGuideController: NSObject {
                   let x = bounds["X"], let y = bounds["Y"],
                   let w = bounds["Width"], let h = bounds["Height"], w > 200, h > 200
             else { continue }
-            let cgRect = CGRect(x: x, y: y, width: w, height: h)
-            return flipToAppKit(cgRect)
+            return flipToAppKit(CGRect(x: x, y: y, width: w, height: h))
         }
         return nil
     }
@@ -204,8 +221,6 @@ final class PermissionGuideController: NSObject {
     }
 }
 
-// MARK: - Real .app drag source (WK cannot do this)
-
 private final class AppBundleDragView: NSView, NSDraggingSource {
     private let iconView = NSImageView()
 
@@ -214,9 +229,6 @@ private final class AppBundleDragView: NSView, NSDraggingSource {
         wantsLayer = true
         layer?.cornerRadius = 14
         layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
-        layer?.borderWidth = 1
-        layer?.borderColor = NSColor.separatorColor.cgColor
-
         iconView.image = NSApp.applicationIconImage ?? NSImage(named: NSImage.applicationIconName)
         iconView.imageScaling = .scaleProportionallyUpOrDown
         addSubview(iconView)
@@ -227,14 +239,13 @@ private final class AppBundleDragView: NSView, NSDraggingSource {
 
     override func layout() {
         super.layout()
-        iconView.frame = NSRect(x: 10, y: 18, width: bounds.width - 20, height: bounds.width - 20)
+        iconView.frame = bounds.insetBy(dx: 10, dy: 10)
     }
 
     override func mouseDown(with event: NSEvent) {
         guard let url = Bundle.main.bundleURL as NSURL? else { return }
         let draggingItem = NSDraggingItem(pasteboardWriter: url)
-        let icon = iconView.image ?? NSImage(size: NSSize(width: 64, height: 64))
-        draggingItem.setDraggingFrame(bounds, contents: icon)
+        draggingItem.setDraggingFrame(bounds, contents: iconView.image)
         beginDraggingSession(with: [draggingItem], event: event, source: self)
     }
 

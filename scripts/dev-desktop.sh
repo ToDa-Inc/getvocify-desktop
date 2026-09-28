@@ -39,11 +39,19 @@ app="$repo/apps/macos/Vocify.app"
 echo ""
 echo "Built $app"
 echo ""
-echo "Before testing:"
-echo "  • Quit any running Vocify first (⌘Q)"
-echo "  • Grant Mic + Screen & System Audio on Record if prompted"
-echo "  • After enabling system audio: ⌘Q and reopen once"
-echo ""
+
+if codesign -dv "$app" 2>&1 | grep -q 'Signature=adhoc'; then
+  echo "⚠️  UNSIGNED build — System Settings will NOT list Vocify for system audio."
+  echo "    Run: bash scripts/ensure-dev-signing.sh"
+  echo "    Then: CODESIGN_IDENTITY=\"Vocify Dev\" ./scripts/dev-desktop.sh"
+  echo ""
+else
+  echo "Before testing:"
+  echo "  • Quit any running Vocify first (⌘Q)"
+  echo "  • On Record: Allow mic + system audio (drag Vocify into Settings if prompted)"
+  echo "  • After enabling system audio: ⌘Q and reopen once"
+  echo ""
+fi
 
 if [[ "${OPEN_APP:-1}" != "0" ]]; then
   open "$app"

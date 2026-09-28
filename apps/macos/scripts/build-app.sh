@@ -46,5 +46,26 @@ cp "$sources/Resources/icon.png" "$app/Contents/Resources/icon.png"
 cp "$sources/bridge.js" "$app/Contents/Resources/bridge.js"
 cp "$sources/Resources/companion/overlay.html" "$app/Contents/Resources/companion/overlay.html"
 rsync -a --delete --exclude '.DS_Store' "$web_stage/" "$app/Contents/Resources/web/"
-codesign --force --sign - "$app"
+
+entitlements="$root/build/entitlements.mac.plist"
+identity="${CODESIGN_IDENTITY:-}"
+if [[ -z "$identity" ]]; then
+  identity="$(security find-identity -v -p codesigning 2>/dev/null \
+    | sed -n 's/^[[:space:]]*[0-9][0-9]*[[:space:]]*[A-F0-9][A-F0-9]*[[:space:]]*"\(.*\)"/\1/p' \
+    | head -1 || true)"
+fi
+
+if [[ -n "$identity" ]]; then
+  echo "Signing with: $identity" >&2
+  codesign --force --deep --options runtime --entitlements "$entitlements" --sign "$identity" "$app"
+else
+  codesign --force --sign - "$app"
+  echo "" >&2
+  echo "⚠️  UNSIGNED (ad-hoc) build." >&2
+  echo "    macOS will NOT list Vocify in Screen & System Audio Recording." >&2
+  echo "    Fix: bash scripts/ensure-dev-signing.sh" >&2
+  echo "    Then: CODESIGN_IDENTITY=\"Your Cert Name\" ./scripts/dev-desktop.sh" >&2
+  echo "" >&2
+fi
+
 echo "$app"

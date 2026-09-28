@@ -4,6 +4,9 @@ apps/macos/.build/
 apps/macos/dist/
 apps/macos/build/
 apps/macos/Vocify.app/
+apps/macos/dist/
+**/Vocify Companion.app/
+dist/Vocify-Companion*.dmg
 *.log
 .DS_Store
 .electron-builder/

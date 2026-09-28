@@ -149,7 +149,7 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
             "name": bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
                 ?? bundle.object(forInfoDictionaryKey: "CFBundleName") as? String
                 ?? "Vocify",
-            "bundleId": bundle.bundleIdentifier ?? "com.vocify.companion",
+            "bundleId": bundle.bundleIdentifier ?? "com.vocify.app",
         ]
     }
 

@@ -5,9 +5,9 @@
   <key>CFBundleDevelopmentRegion</key>
   <string>es</string>
   <key>CFBundleExecutable</key>
-  <string>VocifyCompanion</string>
+  <string>Vocify</string>
   <key>CFBundleIdentifier</key>
-  <string>com.vocify.companion</string>
+  <string>com.vocify.app</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundleName</key>

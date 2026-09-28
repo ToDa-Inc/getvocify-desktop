@@ -27,7 +27,7 @@ cd ~/getvocify && npm run dev
 # Terminal 2
 cd ~/getvocify-desktop/apps/macos && swift build -c release
 VOCIFY_WEB_ORIGIN=http://localhost:8080 \
-  .build/release/VocifyCompanion
+  .build/release/VocifyCompanion   # binary name in SwiftPM; packaged as Vocify.app/Contents/MacOS/Vocify
 ```
 
 Native bridge changes (permissions, system audio) still need `swift build` or `dev-desktop.sh`.

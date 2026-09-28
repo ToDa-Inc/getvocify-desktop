@@ -35,8 +35,7 @@ Cada build nuevo se firma ad hoc, así que macOS puede volver a pedir los permis
 
 ## Desarrollo
 
-- Dashboard en caliente: `npm run dev` en `~/getvocify`, luego `VOCIFY_WEB_ORIGIN=http://localhost:8080 Vocify.app/Contents/MacOS/VocifyCompanion`.
-- Pantalla Swift antigua: `VOCIFY_USE_LEGACY_UI=1 Vocify.app/Contents/MacOS/VocifyCompanion`.
+- Dashboard en caliente: `npm run dev` en `~/getvocify`, luego `VOCIFY_WEB_ORIGIN=http://localhost:8080 Vocify.app/Contents/MacOS/Vocify`.
 - Comprobaciones del núcleo: `cd apps/macos && swift run VocifyCoreChecks`.
 - CI (`.github/workflows/desktop-installers.yml`) necesita el secreto `GETVOCIFY_REPO_TOKEN` para clonar el dashboard.
 
@@ -48,6 +47,12 @@ Cada build nuevo se firma ad hoc, así que macOS puede volver a pedir los permis
 dotnet publish apps/windows/VocifyCompanion/VocifyCompanion.csproj -c Release -r win-x64 --self-contained -o dist/windows
 ```
 
-## Electron (anterior)
+## Arrancar
 
-`npm install && npm start` abre el companion Electron con su propio renderer (`renderer/`). Ya no es la app principal de Mac.
+```bash
+npm start
+# o
+./scripts/dev-desktop.sh
+```
+
+Abre **Vocify.app** (dashboard embebido). El Electron antiguo (`renderer/`) ya no se usa en Mac.

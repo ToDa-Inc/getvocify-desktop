@@ -1,8 +1,8 @@
 {
-  "name": "vocify-companion",
-  "version": "0.2.0",
+  "name": "vocify-desktop",
+  "version": "0.3.0",
   "private": true,
-  "description": "Vocify desktop companion: Granola-style system audio, dashboard UI, tray overlay, CRM handoff.",
+  "description": "Vocify for Mac — native app with embedded dashboard, bot-less meeting capture.",
   "author": "Vocify",
   "repository": {
     "type": "git",
@@ -12,11 +12,13 @@
   "main": "electron-main.mjs",
   "scripts": {
     "start": "node start.mjs",
+    "start:electron-legacy": "node scripts/build-macos-tap.mjs --optional && node -e \"import('./electron-main.mjs')\"",
     "web": "node server.mjs",
     "test": "node --test lib/*.test.js",
     "icons": "node scripts/generate-icons.mjs",
+    "tap": "node scripts/build-macos-tap.mjs",
     "dist": "electron-builder --publish never",
-    "dist:mac": "electron-builder --mac dmg zip --publish never"
+    "dist:mac": "node scripts/build-macos-tap.mjs --optional && electron-builder --mac dmg zip --publish never"
   },
   "devDependencies": {
     "electron": "^33.2.1",
@@ -35,7 +37,15 @@
       "build/icon.png",
       "build/trayTemplate.png",
       "build/trayTemplate@2x.png",
-      "brand/icon-512.png"
+      "brand/icon-512.png",
+      "native/macos-tap/main.swift"
+    ],
+    "extraResources": [
+      {
+        "from": "native/macos-tap",
+        "to": ".",
+        "filter": ["vocify-tap"]
+      }
     ],
     "directories": {
       "output": "dist",

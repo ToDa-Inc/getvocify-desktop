@@ -15,6 +15,7 @@ final class PermissionGuideController: NSObject {
     private weak var bridge: DesktopBridge?
     private var pollCount = 0
     private let maxPolls = 90
+    private var presenting = false
 
     enum Kind {
         case microphone
@@ -29,7 +30,14 @@ final class PermissionGuideController: NSObject {
     }
 
     func present(_ kind: Kind, bridge: DesktopBridge?) async {
-        dismiss()
+        if presenting || panel != nil {
+            panel?.orderFrontRegardless()
+            positionPanel()
+            return
+        }
+        presenting = true
+        defer { presenting = false }
+
         self.kind = kind
         self.bridge = bridge
         pollCount = 0
@@ -49,11 +57,10 @@ final class PermissionGuideController: NSObject {
             return
         }
 
-        openSystemSettings(kind)
+        await openSystemSettings(kind)
         panel = buildPanel(kind)
-        panel?.orderFrontRegardless()
-        NSApp.activate(ignoringOtherApps: false)
         positionPanel()
+        panel?.orderFrontRegardless()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }
@@ -93,27 +100,54 @@ final class PermissionGuideController: NSObject {
         }
     }
 
-    private func openSystemSettings(_ kind: Kind) {
+    /// Launch System Settings first, then open the privacy page once it is on screen.
+    /// Opening the deep link while Settings is still launching makes the pane flash and close.
+    private func openSystemSettings(_ kind: Kind) async {
         let anchor = kind.settingsAnchor
-        for raw in [
-            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(anchor)",
-            "x-apple.systempreferences:com.apple.preference.security?\(anchor)",
-        ] {
-            if let url = URL(string: raw), NSWorkspace.shared.open(url) { return }
+        guard let deepLink = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?\(anchor)") else { return }
+        let appURL = URL(fileURLWithPath: "/System/Applications/System Settings.app")
+        if !FileManager.default.fileExists(atPath: appURL.path) {
+            NSWorkspace.shared.open(deepLink)
+            return
         }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            NSWorkspace.shared.openApplication(at: appURL, configuration: config) { _, _ in
+                cont.resume()
+            }
+        }
+        for _ in 0..<12 {
+            if Self.systemSettingsFrame() != nil { break }
+            try? await Task.sleep(nanoseconds: 150_000_000)
+        }
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        NSWorkspace.shared.open(deepLink)
+        try? await Task.sleep(nanoseconds: 250_000_000)
     }
 
     private func positionPanel() {
         guard let panel else { return }
         let size = panel.frame.size
+        let target: NSPoint
         if let settings = Self.systemSettingsFrame() {
-            let x = settings.minX - size.width - 12
-            let y = settings.midY - size.height / 2
-            panel.setFrameOrigin(NSPoint(x: max(12, x), y: max(12, y)))
+            target = NSPoint(x: settings.minX - size.width - 12, y: settings.midY - size.height / 2)
         } else if let screen = NSScreen.main {
             let area = screen.visibleFrame
-            panel.setFrameOrigin(NSPoint(x: area.maxX - size.width - 24, y: area.midY - size.height / 2))
+            target = NSPoint(x: area.maxX - size.width - 24, y: area.midY - size.height / 2)
+        } else {
+            return
         }
+        panel.setFrameOrigin(Self.clamped(target, size: size))
+    }
+
+    private static func clamped(_ origin: NSPoint, size: NSSize) -> NSPoint {
+        let screen = NSScreen.screens.first { $0.visibleFrame.intersects(CGRect(origin: origin, size: size)) } ?? NSScreen.main
+        guard let screen else { return origin }
+        let area = screen.visibleFrame
+        let x = min(max(origin.x, area.minX + 8), area.maxX - size.width - 8)
+        let y = min(max(origin.y, area.minY + 8), area.maxY - size.height - 8)
+        return NSPoint(x: x, y: y)
     }
 
     private func buildPanel(_ kind: Kind) -> NSPanel {
@@ -125,7 +159,7 @@ final class PermissionGuideController: NSObject {
         )
         panel.isFloatingPanel = true
         panel.level = .popUpMenu
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
         panel.titlebarAppearsTransparent = true
@@ -193,8 +227,9 @@ final class PermissionGuideController: NSObject {
     }
 
     private static func flipToAppKit(_ cgRect: CGRect) -> CGRect {
-        guard let screen = NSScreen.main else { return cgRect }
-        let flippedY = screen.frame.height - cgRect.origin.y - cgRect.height
+        let primary = NSScreen.screens.first ?? NSScreen.main
+        guard let primary else { return cgRect }
+        let flippedY = primary.frame.maxY - cgRect.origin.y - cgRect.height
         return CGRect(x: cgRect.origin.x, y: flippedY, width: cgRect.width, height: cgRect.height)
     }
 }

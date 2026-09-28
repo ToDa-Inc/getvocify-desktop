@@ -22,10 +22,9 @@ enum SystemAudioPermission {
         return Probe(status: "never_requested", preflight: false, lastError: nil)
     }
 
-    /// Asks macOS once, then touches ScreenCaptureKit so Vocify is registered in the list (usually off).
+    /// Touches ScreenCaptureKit so macOS can list Vocify (usually with the switch off).
+    /// Does not call CGRequestScreenCaptureAccess — that dialog fights the Settings pane and closes it.
     static func register() async {
-        if CGPreflightScreenCaptureAccess() { return }
-        _ = CGRequestScreenCaptureAccess()
         if CGPreflightScreenCaptureAccess() { return }
         _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
     }

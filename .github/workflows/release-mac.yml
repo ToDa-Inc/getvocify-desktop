@@ -3,10 +3,10 @@ name: Release Mac
 on:
   workflow_dispatch:
   push:
-    tags:
-      - "v*"
     branches:
       - main
+    tags:
+      - "v*"
     paths:
       - "apps/macos/**"
       - "brand/**"
@@ -45,7 +45,6 @@ jobs:
         working-directory: apps/macos
 
       - name: Import Developer ID certificate
-        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -58,7 +57,7 @@ jobs:
           GETVOCIFY_REF: ${{ env.GETVOCIFY_REF }}
           VOCIFY_API_URL: ${{ env.VOCIFY_API_URL }}
           CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          NOTARIZE: ${{ secrets.APPLE_ID != '' && '1' || '0' }}
+          NOTARIZE: "0"
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}

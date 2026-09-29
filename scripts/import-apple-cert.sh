@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # Import a Developer ID certificate (.p12) into a CI keychain.
 # Requires: APPLE_CERTIFICATE_BASE64, APPLE_CERTIFICATE_PASSWORD
+# No-ops when APPLE_CERTIFICATE_BASE64 is unset (unsigned CI builds).
 set -euo pipefail
 
-cert_b64="${APPLE_CERTIFICATE_BASE64:?Set APPLE_CERTIFICATE_BASE64}"
-cert_pass="${APPLE_CERTIFICATE_PASSWORD:?Set APPLE_CERTIFICATE_PASSWORD}"
+cert_b64="${APPLE_CERTIFICATE_BASE64:-}"
+if [[ -z "$cert_b64" ]]; then
+  echo "No APPLE_CERTIFICATE_BASE64 — skipping certificate import (unsigned build)."
+  exit 0
+fi
+
+cert_pass="${APPLE_CERTIFICATE_PASSWORD:?Set APPLE_CERTIFICATE_PASSWORD when APPLE_CERTIFICATE_BASE64 is set}"
 keychain="${RUNNER_TEMP:-/tmp}/vocify-signing.keychain-db"
 keychain_pass="${KEYCHAIN_PASSWORD:-vocify-ci}"
 

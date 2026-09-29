@@ -51,4 +51,11 @@ for word in ["hola", "qué", "tal"] {
 check(chunks.turns.count == 1, "short finals stay one paragraph")
 check(chunks.turns[0].text == "hola qué tal", "short finals join")
 
+let tails = PhraseFit.candidates("Perfecto, tío. Pues os paso esto.")
+check(tails.first == "Perfecto, tío. Pues os paso esto.", "whole phrase first")
+check(tails.dropFirst().first == "Pues os paso esto.", "then the last sentence")
+check(tails.last == "…esto.", "then whole words only")
+check(tails.allSatisfy { !$0.hasPrefix("…") || !$0.dropFirst().hasPrefix(" ") }, "no dangling space")
+check(PhraseFit.candidates("   ").isEmpty, "empty")
+
 print("ok")

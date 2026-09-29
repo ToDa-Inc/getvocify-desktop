@@ -19,14 +19,20 @@ After granting **system audio**, **⌘Q and reopen once** (ScreenCaptureKit quir
 Mic and system audio use **macOS system prompts** (`AVCaptureDevice.requestAccess`, `CGRequestScreenCaptureAccess`).
 Settings opens only if you previously denied access.
 
-## Signing (optional)
+## Signing
 
-Ad-hoc builds work for trying prompts. For **system audio to persist across rebuilds**, sign the app
-(stable code identity). Easiest: Xcode → Signing & Capabilities → your Apple ID.
+Ad-hoc builds cannot use **Screen & System Audio Recording**. Create a local cert once:
 
 ```bash
-bash scripts/ensure-dev-signing.sh   # lists identities if any
+bash scripts/create-dev-signing-cert.sh
+CODESIGN_IDENTITY="Vocify Dev" ./scripts/dev-desktop.sh
 ```
+
+Distribution entitlements live in `apps/macos/entitlements/`. CI and release builds use
+`distribution.plist` (no debugger entitlement). Local debugging can set `VOCIFY_DEV_SIGN=1` for
+`development.plist`.
+
+Teammate installs: [docs/INSTALL.md](docs/INSTALL.md).
 
 ## Tests
 

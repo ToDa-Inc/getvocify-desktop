@@ -1,0 +1,79 @@
+name: Release Mac
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+    paths:
+      - "apps/macos/**"
+      - "brand/**"
+      - "scripts/**"
+      - ".github/workflows/release-mac.yml"
+
+permissions:
+  contents: write
+
+env:
+  GETVOCIFY_REF: feat/desktop-meeting-recorder
+  VOCIFY_API_URL: https://api.getvocify.com/api/v1
+
+jobs:
+  mac-dmg:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ToDa-Inc/getvocify
+          ref: ${{ env.GETVOCIFY_REF }}
+          path: getvocify
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: getvocify/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+        working-directory: getvocify
+
+      - run: swift run VocifyCoreChecks
+        working-directory: apps/macos
+
+      - name: Import Developer ID certificate
+        if: ${{ secrets.APPLE_CERTIFICATE_BASE64 != '' }}
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: bash scripts/import-apple-cert.sh
+
+      - name: Build and package DMG
+        working-directory: apps/macos
+        env:
+          GETVOCIFY_ROOT: ${{ github.workspace }}/getvocify
+          GETVOCIFY_REF: ${{ env.GETVOCIFY_REF }}
+          VOCIFY_API_URL: ${{ env.VOCIFY_API_URL }}
+          CODESIGN_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          NOTARIZE: ${{ secrets.APPLE_ID != '' && '1' || '0' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/package-dmg.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vocify-macos
+          path: dist/Vocify-macos.dmg
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Vocify-macos.dmg
+          generate_release_notes: true

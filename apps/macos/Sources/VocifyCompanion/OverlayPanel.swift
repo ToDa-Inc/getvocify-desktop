@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
-import WebKit
 
+/// Legacy SwiftUI capture screen only (VOCIFY_USE_LEGACY_UI=1); the dashboard uses MeetingPill.
 /// Borderless panels refuse key status by default, which makes the first click on Stop a no-op.
 private final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -11,8 +11,6 @@ private final class OverlayPanel: NSPanel {
 final class OverlayPanelController {
     static let shared = OverlayPanelController()
     private var panel: NSPanel?
-    private var overlayWebView: WKWebView?
-    private weak var bridge: DesktopBridge?
 
     func show(_ model: CompanionModel) {
         let panel = ensure()
@@ -33,47 +31,6 @@ final class OverlayPanelController {
 
     func hide() {
         panel?.orderOut(nil)
-    }
-
-    func prepareWebOverlay(bridge: DesktopBridge, uiDelegate: WKUIDelegate) {
-        self.bridge = bridge
-        _ = ensureWebPanel(uiDelegate: uiDelegate)
-        bridge.overlayWebView = overlayWebView
-    }
-
-    func showWeb(bridge: DesktopBridge) {
-        prepareWebOverlay(bridge: bridge, uiDelegate: overlayWebView?.uiDelegate ?? DashboardUIDelegate())
-        if let screen = NSScreen.main {
-            let area = screen.visibleFrame
-            panel?.setContentSize(NSSize(width: 340, height: 64))
-            panel?.setFrameOrigin(NSPoint(x: area.maxX - 364, y: area.minY + 24))
-        }
-        bridge.pushOverlayState()
-        panel?.orderFrontRegardless()
-    }
-
-    private func ensureWebPanel(uiDelegate: WKUIDelegate) -> NSPanel {
-        if let panel, overlayWebView != nil { return panel }
-        let panel = ensure()
-        let config = WKWebViewConfiguration()
-        if let source = DesktopBridge.bridgeScriptSource() {
-            config.userContentController.addUserScript(
-                WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true)
-            )
-        }
-        if let bridge {
-            config.userContentController.addScriptMessageHandler(bridge, contentWorld: .page, name: "vocify")
-        }
-        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 320, height: 72), configuration: config)
-        webView.uiDelegate = uiDelegate
-        webView.setValue(false, forKey: "drawsBackground")
-        overlayWebView = webView
-        bridge?.overlayWebView = webView
-        if let url = Bundle.main.url(forResource: "overlay", withExtension: "html", subdirectory: "companion") {
-            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-        }
-        panel.contentView = webView
-        return panel
     }
 
     private func ensure() -> NSPanel {

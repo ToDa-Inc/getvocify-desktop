@@ -7,7 +7,6 @@ import WebKit
 @MainActor
 final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
     weak var mainWebView: WKWebView?
-    weak var overlayWebView: WKWebView?
 
     private let capture = MeetingCapture()
     private var shellState: [String: Any] = [:]
@@ -58,11 +57,9 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
                 for (key, value) in state {
                     shellState[key] = value
                 }
-                pushOverlayState()
+                MeetingPillController.shared.state.apply(shellState)
             }
             return nil
-        case "shell:resize":
-            return ["ok": true]
         case "shell:open-external":
             if let urlStr = args["url"] as? String,
                urlStr.range(of: #"^https?://"#, options: .regularExpression) != nil,
@@ -81,10 +78,10 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
             MeetingDrafts.remove(id: args["id"])
             return ["ok": true]
         case "overlay:show":
-            OverlayPanelController.shared.showWeb(bridge: self)
+            MeetingPillController.shared.show(bridge: self)
             return ["ok": true]
         case "overlay:hide":
-            OverlayPanelController.shared.hide()
+            MeetingPillController.shared.hide()
             return ["ok": true]
         default:
             return nil
@@ -178,11 +175,6 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
     func showMainWindow() {
         NSApp.activate(ignoringOtherApps: true)
         mainWebView?.window?.makeKeyAndOrderFront(nil)
-    }
-
-    func pushOverlayState() {
-        guard let overlayWebView else { return }
-        emit("overlay:state", shellState, in: overlayWebView)
     }
 
     func emitCommand(_ name: String) {

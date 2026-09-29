@@ -1,0 +1,23 @@
+name: Release Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/windows/**"
+      - ".github/workflows/release-windows.yml"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: dotnet publish apps/windows/VocifyCompanion/VocifyCompanion.csproj -c Release -r win-x64 --self-contained -o dist/windows
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vocify-Companion-windows
+          path: dist/windows/**

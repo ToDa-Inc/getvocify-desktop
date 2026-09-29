@@ -7,7 +7,6 @@
     'system-audio:pcm': new Set(),
     'system-audio:lost': new Set(),
     'shell:command': new Set(),
-    'overlay:state': new Set(),
     'permissions:changed': new Set(),
   };
   const on = (channel) => (cb) => {
@@ -51,7 +50,6 @@
         call('shell:command', { name });
       },
       onCommand: on('shell:command'),
-      onOverlayState: on('overlay:state'),
     },
     saas: { request: (payload) => call('saas:request', { payload }) },
     drafts: {

@@ -24,9 +24,8 @@ fi
 
 echo "No signing identity in Keychain."
 echo ""
-echo "Permissions still work via macOS prompts. For system audio to stick across"
-echo "rebuilds, sign the app — easiest path: open apps/macos in Xcode, select the"
-echo "Vocify target, Signing & Capabilities → Team → your Apple ID (free)."
+echo "Create one for local/team builds:"
+echo "  bash $repo/scripts/create-dev-signing-cert.sh"
 echo ""
-echo "Or create a Code Signing certificate in Keychain Access (Certificate Assistant)."
-echo "Then: CODESIGN_IDENTITY=\"Your Cert Name\" $repo/scripts/dev-desktop.sh"
+echo "Then rebuild:"
+echo "  CODESIGN_IDENTITY=\"Vocify Dev\" $repo/scripts/dev-desktop.sh"

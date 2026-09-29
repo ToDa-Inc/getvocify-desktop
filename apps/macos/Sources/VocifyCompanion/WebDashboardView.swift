@@ -96,7 +96,6 @@ final class BridgeHolder: ObservableObject {
         webView.navigationDelegate = navigationDelegate
         bridge.mainWebView = webView
         webView.load(URLRequest(url: entryURL()))
-        OverlayPanelController.shared.prepareWebOverlay(bridge: bridge, uiDelegate: uiDelegate)
         cachedWebView = webView
         return webView
     }

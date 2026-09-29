@@ -20,4 +20,18 @@ dmg="$repo/dist/Vocify-macos.dmg"
 rm -f "$dmg"
 hdiutil create -volname "Vocify" -srcfolder "$stage" -ov -format UDZO "$dmg" >/dev/null
 rm -rf "$stage"
+
+if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
+  # shellcheck source=../../scripts/lib/signing-ids.sh
+  source "$repo/scripts/lib/signing-ids.sh"
+  if sign_ref="$(resolve_codesign_ref "$CODESIGN_IDENTITY")"; then
+    echo "Signing DMG with: $CODESIGN_IDENTITY ($sign_ref)" >&2
+    codesign --force --sign "$sign_ref" "$dmg"
+  fi
+fi
+
+if [[ "${NOTARIZE:-}" == "1" ]]; then
+  bash "$repo/scripts/notarize-dmg.sh" "$dmg"
+fi
+
 echo "$dmg"

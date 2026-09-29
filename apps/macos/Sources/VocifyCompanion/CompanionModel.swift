@@ -127,7 +127,8 @@ final class CompanionModel: ObservableObject {
         OverlayPanelController.shared.show(self)
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+            guard let model = self else { return }
+            Task { @MainActor in model.tick() }
         }
         var request = URLRequest(url: url)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

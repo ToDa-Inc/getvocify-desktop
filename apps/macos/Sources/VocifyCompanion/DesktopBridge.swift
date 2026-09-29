@@ -13,20 +13,20 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
 
     var isListening: Bool { shellState["listening"] as? Bool ?? false }
 
-    func userContentController(
+    nonisolated func userContentController(
         _ userContentController: WKUserContentController,
         didReceive message: WKScriptMessage,
         replyHandler: @escaping (Any?, String?) -> Void
     ) {
-        guard message.name == "vocify",
-              let body = message.body as? [String: Any],
-              let op = body["op"] as? String
-        else {
-            replyHandler(nil, "invalid message")
-            return
-        }
-        let args = body["args"] as? [String: Any] ?? [:]
         Task { @MainActor in
+            guard message.name == "vocify",
+                  let body = message.body as? [String: Any],
+                  let op = body["op"] as? String
+            else {
+                replyHandler(nil, "invalid message")
+                return
+            }
+            let args = body["args"] as? [String: Any] ?? [:]
             let result = await handle(op: op, args: args)
             replyHandler(Self.webKitSafe(result), nil)
         }

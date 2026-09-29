@@ -62,7 +62,8 @@ final class PermissionGuideController: NSObject {
         positionPanel()
         panel?.orderFrontRegardless()
         pollTimer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+            guard let guide = self else { return }
+            Task { @MainActor in guide.tick() }
         }
     }
 

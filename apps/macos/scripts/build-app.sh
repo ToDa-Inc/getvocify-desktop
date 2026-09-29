@@ -33,12 +33,18 @@ if [[ -n "$dashboard_ref" ]]; then
     echo "Dashboard ref \"$dashboard_ref\" not found in $getvocify (set GETVOCIFY_REF)." >&2
     exit 1
   fi
+  target_commit="$(git -C "$getvocify" rev-parse "$dashboard_ref^{commit}")"
+  current_commit="$(git -C "$getvocify" rev-parse HEAD)"
+  if [[ "$current_commit" == "$target_commit" ]]; then
+    dashboard="$getvocify"
+  else
   dashboard="${VOCIFY_DASHBOARD_WORKTREE:-$HOME/.vocify-build/dashboard}"
   if [[ ! -e "$dashboard/.git" ]]; then
     mkdir -p "$(dirname "$dashboard")"
     git -C "$getvocify" worktree add --detach "$dashboard" "$dashboard_ref" >/dev/null
   else
     git -C "$dashboard" checkout --quiet --detach "$dashboard_ref"
+  fi
   fi
   # Reuse the main checkout's packages when the lockfile matches; otherwise install.
   if [[ ! -e "$dashboard/node_modules" ]]; then

@@ -4,7 +4,13 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 repo="$(cd "$root/../.." && pwd)"
 
-app="$(bash "$root/scripts/build-app.sh" | tail -n 1)"
+build_log="$(mktemp)"
+if ! bash "$root/scripts/build-app.sh" 2>&1 | tee "$build_log"; then
+  rm -f "$build_log"
+  exit 1
+fi
+app="$(tail -n 1 "$build_log")"
+rm -f "$build_log"
 
 bg="$root/build/dmg-background.png"
 swift "$root/scripts/draw-dmg-background.swift" "$repo/brand/icon-512.png" "$bg"

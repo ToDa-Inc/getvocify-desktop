@@ -59,25 +59,48 @@ final class MeetingPillState: ObservableObject {
         case postCall
     }
 
-    /// What the dashboard says about the memo of the call that just ended.
+    /// What the dashboard says about the call that just ended. Every part comes from something
+    /// the backend produced for that call; a part that doesn't apply is nil.
     struct PostCall: Equatable {
         enum Stage: String {
-            case writing, ready, approving, done, review
+            case writing, ready, applying, done, review
         }
 
-        struct Update: Equatable, Identifiable {
+        struct Change: Equatable, Identifiable {
+            /// `object_type:field_name`, the key Vocify's review omits fields by.
+            let key: String
             let label: String
-            let value: String
-            var id: String { label + value }
+            let from: String?
+            let to: String
+            /// Scored under "needs review": shown, unticked.
+            let check: Bool
+            var id: String { key }
+        }
+
+        struct Email: Equatable {
+            enum State: String { case ready, skipped, sent }
+            let state: State
+            let to: String?
+        }
+
+        struct Meeting: Equatable {
+            enum State: String { case pending, check, added }
+            let state: State
+            let when: String?
         }
 
         let stage: Stage
         let memoId: String
         let contactName: String?
-        let updates: [Update]
-        let total: Int
+        let changes: [Change]
         let canApprove: Bool
+        let applied: Int?
+        let undoUntil: Date?
         let note: String?
+        let email: Email?
+        let meeting: Meeting?
+        let notes: Bool
+        let offerStopEmails: Bool
 
         init?(_ raw: [String: Any]) {
             guard let stage = (raw["stage"] as? String).flatMap(Stage.init(rawValue:)),
@@ -85,20 +108,63 @@ final class MeetingPillState: ObservableObject {
             self.stage = stage
             self.memoId = memoId
             contactName = (raw["contactName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            updates = (raw["updates"] as? [[String: Any]] ?? []).compactMap { item in
-                guard let label = item["label"] as? String, let value = item["value"] as? String else { return nil }
-                return Update(label: label, value: value)
+            changes = (raw["changes"] as? [[String: Any]] ?? []).compactMap { item in
+                guard let key = item["key"] as? String, let to = item["to"] as? String else { return nil }
+                return Change(
+                    key: key,
+                    label: item["label"] as? String ?? key,
+                    from: (item["from"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+                    to: to,
+                    check: item["check"] as? Bool ?? false
+                )
             }
-            total = (raw["total"] as? Int) ?? updates.count
             canApprove = raw["canApprove"] as? Bool ?? false
+            applied = raw["applied"] as? Int
+            undoUntil = (raw["undoUntil"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
             note = (raw["note"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            email = (raw["email"] as? [String: Any]).flatMap { item in
+                (item["state"] as? String).flatMap(Email.State.init(rawValue:)).map {
+                    Email(state: $0, to: (item["to"] as? String).flatMap { $0.isEmpty ? nil : $0 })
+                }
+            }
+            meeting = (raw["meeting"] as? [String: Any]).flatMap { item in
+                (item["state"] as? String).flatMap(Meeting.State.init(rawValue:)).map {
+                    Meeting(state: $0, when: item["when"] as? String)
+                }
+            }
+            notes = raw["notes"] as? Bool ?? false
+            offerStopEmails = raw["offerStopEmails"] as? Bool ?? false
         }
+
+        /// What still needs the rep; the count on the closed island.
+        var pending: Int {
+            (stage == .ready || stage == .review ? 1 : 0)
+                + (email?.state == .ready ? 1 : 0)
+                + (meeting.map { $0.state != .added } == true ? 1 : 0)
+        }
+    }
+
+    /// Fixed row heights, so the island's size is exact and nothing jumps when a row arrives.
+    enum PostCallLayout {
+        static let top: CGFloat = 6
+        static let header: CGFloat = 26
+        static let line: CGFloat = 30
+        static let change: CGFloat = 24
+        static let more: CGFloat = 20
+        static let actions: CGFloat = 38
+        static let footer: CGFloat = 34
+        static let bottom: CGFloat = 8
+        static let collapsedChanges = 4
+        static let allChanges = 8
     }
 
     @Published var mode: Mode = .idle
     /// The dashboard has someone signed in to record for.
     @Published var recorderReady = false
     @Published var postCall: PostCall?
+    /// The changes the rep keeps ticked; starts as everything not flagged "check".
+    @Published var keptChanges: Set<String> = []
+    @Published var showAllChanges = false
     /// Lets the controller move the island when the memo's state changes.
     var onPostCallChange: (() -> Void)?
     /// Who the detected call is with, when the tab on screen is a CRM contact.
@@ -120,15 +186,33 @@ final class MeetingPillState: ObservableObject {
         geometry.size(mode, open: open, postCallBody: postCallBodyHeight)
     }
 
-    /// Name row, up to three changes, then the actions; "done" is just the name row.
+    var visibleChanges: Int {
+        guard let postCall else { return 0 }
+        let cap = showAllChanges ? PostCallLayout.allChanges : PostCallLayout.collapsedChanges
+        return min(postCall.changes.count, cap)
+    }
+
+    /// The card's height from what it shows, using the same fixed rows the view draws.
     private var postCallBodyHeight: CGFloat {
-        guard let postCall else { return 44 }
+        typealias L = PostCallLayout
+        guard let postCall else { return L.top + L.header + L.line + L.bottom }
+        var height = L.top + L.header
         switch postCall.stage {
-        case .done, .writing: return 46
-        case .ready, .approving, .review:
-            let lines = CGFloat(min(postCall.updates.count, 3))
-            return 84 + lines * 22
+        case .writing, .done:
+            height += L.line
+        case .applying:
+            height += L.line + 6
+        case .review:
+            height += L.line + L.actions
+        case .ready:
+            height += CGFloat(visibleChanges) * L.change
+            if postCall.changes.count > PostCallLayout.collapsedChanges { height += L.more }
+            height += L.actions
         }
+        if postCall.email != nil { height += L.line }
+        if postCall.offerStopEmails { height += L.line }
+        if postCall.meeting != nil { height += L.line }
+        return height + L.footer + L.bottom
     }
 
     /// Applies one `shell:state` update; keys that are absent keep their value.
@@ -137,6 +221,10 @@ final class MeetingPillState: ObservableObject {
         if let ready = state["recorderReady"] as? Bool, ready != recorderReady { recorderReady = ready }
         if state.keys.contains("postCall") {
             let next = (state["postCall"] as? [String: Any]).flatMap(PostCall.init)
+            if let next, next.memoId != postCall?.memoId || (postCall?.changes.isEmpty == true && !next.changes.isEmpty) {
+                keptChanges = Set(next.changes.filter { !$0.check }.map(\.key))
+                showAllChanges = false
+            }
             if next != postCall {
                 postCall = next
                 onPostCallChange?()
@@ -291,11 +379,16 @@ final class MeetingPillController {
     private var callHandled = false
     private var startTimeout: Task<Void, Never>?
     private var autoClose: Task<Void, Never>?
+    private var lastPostCallStage: MeetingPillState.PostCall.Stage?
     private var hangUp: Task<Void, Never>?
     /// The call app being recorded; its letting go of the mic is the hang-up.
     private var recordingCaller: MicActivityMonitor.Caller?
     /// The call app holding the mic right now, as last reported.
     private var currentCaller: MicActivityMonitor.Caller?
+    /// Dialers grab the mic again for a moment after a call (tones, readiness); that is not a
+    /// new call. The app just recorded is not offered again until this passes.
+    private var quiet: (bundleID: String, until: Date)?
+    private static let afterCallQuiet: TimeInterval = 120
     private static let idleLinger: TimeInterval = 5
     private static let callLinger: TimeInterval = 8
     private static let postCallLinger: TimeInterval = 14
@@ -336,6 +429,9 @@ final class MeetingPillController {
     func hide() {
         startTimeout?.cancel()
         hangUp?.cancel()
+        if state.mode == .recording, let bundleID = recordingCaller?.bundleID {
+            quiet = (bundleID, Date().addingTimeInterval(Self.afterCallQuiet))
+        }
         recordingCaller = nil
         calls.ignoresWebKit = false
         state.callContact = nil
@@ -344,11 +440,22 @@ final class MeetingPillController {
 
     private func rest() {
         if let postCall = state.postCall {
-            transition(to: .postCall, expanded: postCall.stage != .writing)
-            if postCall.stage != .writing { startCountdown(postCall.stage == .done ? Self.doneLinger : Self.postCallLinger) }
+            lastPostCallStage = postCall.stage
+            let open = postCall.stage != .writing
+            transition(to: .postCall, expanded: open)
+            if open, postCall.stage != .applying {
+                startCountdown(postCall.stage == .done && postCall.pending == 0 ? Self.doneLinger : Self.postCallLinger)
+            }
         } else {
             transition(to: .idle, expanded: false)
         }
+    }
+
+    /// Rows came or went in the open card: the window follows at once, the countdown keeps running.
+    private func fitPostCall() {
+        guard let panel, state.mode == .postCall else { return }
+        panel.setFrame(frame(for: state.size(for: .postCall, open: state.expanded)), display: true)
+        panel.invalidateShadow()
     }
 
     func toggle() {
@@ -397,7 +504,7 @@ final class MeetingPillController {
         autoClose = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard let self, !Task.isCancelled, self.state.countdown != nil else { return }
-            if self.state.mode == .postCall, self.state.postCall?.stage == .done {
+            if self.state.mode == .postCall, let postCall = self.state.postCall, postCall.stage == .done, postCall.pending == 0 {
                 self.dismissPostCall()
             } else {
                 self.collapse()
@@ -452,31 +559,87 @@ final class MeetingPillController {
         hide()
     }
 
-    func approvePostCall() {
-        bridge?.emitCommand("postcall:approve")
+    private func postCallAction(_ type: String, _ details: [String: Any] = [:]) {
+        var action = details
+        action["type"] = type
+        bridge?.emitPostCallAction(action)
     }
 
-    /// The memo's review screen, for anything the one click doesn't cover.
+    /// Writes the ticked changes; the dashboard holds the write for the undo window first.
+    func approvePostCall() {
+        guard let postCall = state.postCall else { return }
+        let omit = postCall.changes.map(\.key).filter { !state.keptChanges.contains($0) }
+        guard omit.count < postCall.changes.count else { return }
+        postCallAction("approve", ["omit": omit])
+    }
+
+    func undoPostCall() { postCallAction("undo") }
+
+    /// The memo's page in Vocify, for anything the island doesn't cover.
     func reviewPostCall() {
-        bridge?.emitCommand("postcall:review")
+        postCallAction("review")
         bridge?.showMainWindow()
     }
 
-    func dismissPostCall() {
-        bridge?.emitCommand("postcall:dismiss")
+    func openEmail() {
+        postCallAction("openEmail")
+        bridge?.showMainWindow()
     }
 
-    /// The dashboard moved the memo on (written, ready, approved...).
+    func skipEmail() { postCallAction("skipEmail") }
+    func unskipEmail() { postCallAction("unskipEmail") }
+    func stopEmails() { postCallAction("stopEmails") }
+    func keepEmails() { postCallAction("keepEmails") }
+    func addMeeting() { postCallAction("addMeeting") }
+
+    func openNotes() {
+        postCallAction("notes")
+        bridge?.showMainWindow()
+    }
+
+    /// Done with this call's card; anything left stays in Vocify.
+    func dismissPostCall() { postCallAction("dismiss") }
+
+    func toggleChange(_ key: String) {
+        if state.keptChanges.contains(key) {
+            state.keptChanges.remove(key)
+        } else {
+            state.keptChanges.insert(key)
+        }
+    }
+
+    func toggleAllChanges() {
+        state.showAllChanges.toggle()
+        fitPostCall()
+    }
+
+    /// The dashboard moved the call on (written, ready, email drafted...).
     private func postCallChanged() {
         switch state.mode {
         case .recording, .starting, .call:
             return  // shown once the island is back at rest
-        case .idle, .postCall:
-            if state.postCall == nil {
-                if state.mode == .postCall { transition(to: .idle, expanded: false) }
-            } else if state.postCall?.stage == .approving, state.mode == .postCall, state.expanded {
-                return  // the open menu shows the progress in place
-            } else {
+        case .idle:
+            if state.postCall != nil { rest() }
+        case .postCall:
+            guard let postCall = state.postCall else {
+                lastPostCallStage = nil
+                transition(to: .idle, expanded: false)
+                return
+            }
+            let previous = lastPostCallStage
+            lastPostCallStage = postCall.stage
+            guard previous != postCall.stage else {
+                fitPostCall()  // a row arrived (email, meeting): grow in place, closed island just counts it
+                return
+            }
+            switch postCall.stage {
+            case .writing:
+                fitPostCall()
+            case .applying:
+                autoClose?.cancel()
+                state.countdown = nil
+                fitPostCall()
+            case .ready, .review, .done:
                 rest()
             }
         }
@@ -495,7 +658,7 @@ final class MeetingPillController {
         case .starting:
             return
         case .idle, .call, .postCall:
-            if let caller, !callHandled, bridge?.isListening != true {
+            if let caller, !callHandled, bridge?.isListening != true, !isQuiet(caller) {
                 guard state.mode != .call(caller) else { return }
                 state.callContact = nil
                 // Drops down once to be noticed, then settles beside the camera.
@@ -506,6 +669,11 @@ final class MeetingPillController {
                 hide()
             }
         }
+    }
+
+    private func isQuiet(_ caller: MicActivityMonitor.Caller) -> Bool {
+        guard let quiet, Date() < quiet.until else { return false }
+        return caller.bundleID == quiet.bundleID
     }
 
     /// Recording a detected call: the call app letting go of the mic ends the recording too.
@@ -612,6 +780,8 @@ private enum IslandStyle {
     static let themBubble = Color.white.opacity(0.13)
     static let text = Color.white.opacity(0.92)
     static let secondary = Color.white.opacity(0.72)
+    /// "check" on a change the call wasn't clear about.
+    static let warning = Color(hue: 38 / 360, saturation: 0.62, brightness: 0.95)
     static let collapsedRadius: CGFloat = 12
     static let openRadius: CGFloat = 22
 }
@@ -648,7 +818,7 @@ struct IslandView: View {
                         .transition(.opacity)
                 case .postCall:
                     if let postCall = state.postCall {
-                        PostCallMenu(postCall: postCall, controller: controller)
+                        PostCallMenu(state: state, postCall: postCall, controller: controller)
                             .transition(.opacity)
                     }
                 default:
@@ -704,9 +874,11 @@ struct IslandView: View {
         case .postCall:
             switch state.postCall?.stage {
             case .writing: return "Writing the update"
-            case .ready: return open ? "Close" : "Update ready"
-            case .review: return open ? "Close" : "Needs a look"
-            default: return ""
+            case .applying: return "Updating HubSpot"
+            default:
+                guard !open else { return "Close" }
+                let pending = state.postCall?.pending ?? 0
+                return pending == 1 ? "1 thing from your call" : pending > 1 ? "\(pending) things from your call" : ""
             }
         }
     }
@@ -727,7 +899,7 @@ struct IslandView: View {
                 .opacity(hovering || open ? 1 : 0.85)
         case .postCall:
             switch state.postCall?.stage {
-            case .writing, .approving:
+            case .writing, .applying:
                 ProgressView().controlSize(.mini)
             case .done:
                 Image(systemName: "checkmark")
@@ -776,8 +948,8 @@ struct IslandView: View {
         case .postCall:
             if open {
                 OpenArrow(open: true)
-            } else if let postCall = state.postCall, postCall.stage == .ready || postCall.stage == .review {
-                UpdatesBadge(postCall: postCall)
+            } else if let postCall = state.postCall, postCall.pending > 0 {
+                PendingBadge(count: postCall.pending)
             }
         }
     }
@@ -871,87 +1043,320 @@ private struct RecordDot: View {
     }
 }
 
-/// After the call: who it was with, what changes in the CRM, and one click to apply it.
+/// After the call, one row per thing that exists for it and needs the rep: the CRM changes,
+/// the email draft, the agreed meeting. Notes are a link, never pushed.
 private struct PostCallMenu: View {
+    @ObservedObject var state: MeetingPillState
     let postCall: MeetingPillState.PostCall
     let controller: MeetingPillController
+    private typealias L = MeetingPillState.PostCallLayout
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
                 Text(postCall.contactName ?? "Your call")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(IslandStyle.text)
                     .lineLimit(1)
-                Text(subtitle)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(IslandStyle.secondary)
-                    .lineLimit(1)
                 Spacer(minLength: 0)
+                IconButton(symbol: "xmark", help: "Done with this call", action: controller.dismissPostCall)
             }
-            if showsChanges {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(postCall.updates.prefix(3)) { update in
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(update.label)
-                                .foregroundStyle(IslandStyle.secondary)
-                                .frame(width: 112, alignment: .leading)
-                                .lineLimit(1)
-                            Text(update.value)
-                                .foregroundStyle(IslandStyle.text)
-                                .lineLimit(1)
-                        }
-                        .font(.system(size: 11.5))
-                    }
+            .frame(height: L.header)
+
+            crm
+            if let email = postCall.email { emailRow(email) }
+            if postCall.offerStopEmails { stopEmailsRow }
+            if let meeting = postCall.meeting { meetingRow(meeting) }
+
+            HStack(spacing: 4) {
+                if postCall.notes {
+                    TextAction(title: "Notes", symbol: "doc.text", action: controller.openNotes)
                 }
-                HStack(spacing: 8) {
-                    if postCall.canApprove, postCall.stage != .review {
-                        QuietActionButton(
-                            title: postCall.stage == .approving ? "Updating" : "Approve",
-                            symbol: "checkmark",
-                            busy: postCall.stage == .approving,
-                            help: "Writes these changes to the contact in HubSpot",
-                            action: controller.approvePostCall
-                        )
-                    }
-                    QuietActionButton(title: "Review", symbol: "arrow.up.right", busy: false, help: "Opens the memo in Vocify", action: controller.reviewPostCall)
-                    Spacer(minLength: 0)
-                    IconButton(symbol: "xmark", help: "Later", action: controller.dismissPostCall)
-                }
+                Spacer(minLength: 0)
+                TextAction(title: "Later", symbol: nil, action: controller.collapse)
             }
+            .frame(height: L.footer)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 7)
+        .padding(.top, L.top)
         .frame(maxHeight: .infinity, alignment: .top)
-        .animation(.easeOut(duration: 0.2), value: postCall.stage)
+        .animation(.easeOut(duration: 0.2), value: postCall)
     }
 
-    private var showsChanges: Bool {
-        postCall.stage == .ready || postCall.stage == .approving || postCall.stage == .review
-    }
+    // MARK: CRM
 
-    private var subtitle: String {
+    @ViewBuilder private var crm: some View {
         switch postCall.stage {
-        case .writing: return "Writing the update…"
-        case .ready, .approving:
-            return postCall.total == 1 ? "1 change for HubSpot" : "\(postCall.total) changes for HubSpot"
-        case .done: return "Updated in HubSpot"
-        case .review: return postCall.note ?? "Needs a look"
+        case .writing:
+            line(symbol: nil, busy: true) { Text("Writing the update…").foregroundStyle(IslandStyle.secondary) }
+        case .ready:
+            ForEach(postCall.changes.prefix(state.visibleChanges)) { change in
+                ChangeRow(change: change, kept: state.keptChanges.contains(change.key)) {
+                    controller.toggleChange(change.key)
+                }
+                .frame(height: L.change)
+            }
+            if postCall.changes.count > L.collapsedChanges {
+                Button(action: controller.toggleAllChanges) {
+                    Text(state.showAllChanges ? "Show fewer" : "+\(postCall.changes.count - L.collapsedChanges) more")
+                        .font(.system(size: 11))
+                        .foregroundStyle(IslandStyle.secondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 22)
+                .frame(height: L.more)
+            }
+            HStack(spacing: 8) {
+                if postCall.canApprove {
+                    let kept = postCall.changes.filter { state.keptChanges.contains($0.key) }.count
+                    QuietActionButton(
+                        title: kept == 0 ? "Nothing selected" : "Approve \(kept)",
+                        symbol: "checkmark",
+                        busy: false,
+                        help: "Writes the ticked changes to the contact in HubSpot",
+                        action: controller.approvePostCall
+                    )
+                    .opacity(kept == 0 ? 0.5 : 1)
+                }
+                QuietActionButton(title: "Review", symbol: "arrow.up.right", busy: false, help: "Opens the memo in Vocify", action: controller.reviewPostCall)
+                Spacer(minLength: 0)
+            }
+            .frame(height: L.actions)
+        case .applying:
+            VStack(spacing: 4) {
+                line(symbol: nil, busy: true) {
+                    Text("Updating \(postCall.contactName ?? "the contact") in HubSpot…").foregroundStyle(IslandStyle.text)
+                } trailing: {
+                    SmallAction(title: "Undo", action: controller.undoPostCall)
+                }
+                if let until = postCall.undoUntil { UndoLine(until: until) }
+            }
+        case .done:
+            line(symbol: "checkmark", busy: false) {
+                Text(doneText).foregroundStyle(IslandStyle.text)
+            }
+        case .review:
+            line(symbol: "exclamationmark.circle", busy: false) {
+                Text(postCall.note ?? "Needs a look").foregroundStyle(IslandStyle.text)
+            }
+            HStack {
+                QuietActionButton(title: "Review", symbol: "arrow.up.right", busy: false, help: "Opens the memo in Vocify", action: controller.reviewPostCall)
+                Spacer(minLength: 0)
+            }
+            .frame(height: L.actions)
         }
+    }
+
+    private var doneText: String {
+        guard let applied = postCall.applied else { return "Updated in HubSpot" }
+        return applied == 1 ? "Updated in HubSpot · 1 field" : "Updated in HubSpot · \(applied) fields"
+    }
+
+    // MARK: Email and meeting
+
+    @ViewBuilder private func emailRow(_ email: MeetingPillState.PostCall.Email) -> some View {
+        switch email.state {
+        case .ready:
+            line(symbol: "envelope", busy: false) {
+                Text(email.to.map { "Email to \($0) ready" } ?? "Email ready").foregroundStyle(IslandStyle.text)
+            } trailing: {
+                SmallAction(title: "Open", action: controller.openEmail)
+                SmallAction(title: "Skip", action: controller.skipEmail)
+            }
+        case .skipped:
+            line(symbol: "envelope", busy: false) {
+                Text("Email skipped").foregroundStyle(IslandStyle.secondary)
+            } trailing: {
+                SmallAction(title: "Undo", action: controller.unskipEmail)
+            }
+        case .sent:
+            line(symbol: "checkmark", busy: false) { Text("Email sent").foregroundStyle(IslandStyle.secondary) }
+        }
+    }
+
+    private var stopEmailsRow: some View {
+        line(symbol: nil, busy: false) {
+            Text("Stop drafting emails after calls?").foregroundStyle(IslandStyle.secondary)
+        } trailing: {
+            SmallAction(title: "Stop", action: controller.stopEmails)
+            SmallAction(title: "Keep", action: controller.keepEmails)
+        }
+    }
+
+    @ViewBuilder private func meetingRow(_ meeting: MeetingPillState.PostCall.Meeting) -> some View {
+        switch meeting.state {
+        case .pending:
+            line(symbol: "calendar", busy: false) {
+                Text(meeting.when.map { "Meeting \($0)" } ?? "Meeting agreed").foregroundStyle(IslandStyle.text)
+            } trailing: {
+                SmallAction(title: "Add to HubSpot", action: controller.addMeeting)
+            }
+        case .check:
+            line(symbol: "calendar", busy: false) {
+                Text("Meeting to confirm").foregroundStyle(IslandStyle.text)
+            } trailing: {
+                SmallAction(title: "Review", action: controller.reviewPostCall)
+            }
+        case .added:
+            line(symbol: "checkmark", busy: false) {
+                Text(meeting.when.map { "Meeting \($0) added to HubSpot" } ?? "Meeting added to HubSpot")
+                    .foregroundStyle(IslandStyle.secondary)
+            }
+        }
+    }
+
+    /// One row of the card: an icon (or progress), the text, and its actions on the right.
+    private func line<Content: View, Trailing: View>(
+        symbol: String?,
+        busy: Bool,
+        @ViewBuilder content: () -> Content,
+        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) -> some View {
+        HStack(spacing: 8) {
+            Group {
+                if busy {
+                    ProgressView().controlSize(.mini)
+                } else if let symbol {
+                    Image(systemName: symbol).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(IslandStyle.beige)
+                } else {
+                    Color.clear
+                }
+            }
+            .frame(width: 14)
+            content()
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 6)
+            trailing()
+        }
+        .frame(height: L.line)
     }
 }
 
-/// How many changes wait for the closed island: a small beige count.
-private struct UpdatesBadge: View {
-    let postCall: MeetingPillState.PostCall
+/// One proposed change: tick to keep, label, and what it becomes (what it was, crossed out).
+private struct ChangeRow: View {
+    let change: MeetingPillState.PostCall.Change
+    let kept: Bool
+    let toggle: () -> Void
 
     var body: some View {
-        Text(postCall.stage == .review ? "!" : "\(postCall.total)")
+        Button(action: toggle) {
+            HStack(spacing: 8) {
+                Image(systemName: kept ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 12))
+                    .foregroundStyle(kept ? IslandStyle.beige : IslandStyle.secondary)
+                    .frame(width: 14)
+                HStack(spacing: 5) {
+                    Text(change.label)
+                        .foregroundStyle(IslandStyle.secondary)
+                        .lineLimit(1)
+                    if change.check {
+                        Text("check")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(IslandStyle.warning)
+                    }
+                }
+                .frame(width: 128, alignment: .leading)
+                HStack(spacing: 5) {
+                    if let from = change.from {
+                        Text(from)
+                            .strikethrough()
+                            .foregroundStyle(IslandStyle.secondary.opacity(0.75))
+                            .lineLimit(1)
+                            .layoutPriority(0)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(IslandStyle.secondary)
+                    }
+                    Text(change.to)
+                        .foregroundStyle(kept ? IslandStyle.text : IslandStyle.secondary)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 11.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(change.check ? "The call wasn't clear on this one: check it before writing" : (kept ? "Won't be written if unticked" : "Tick to write it"))
+        .accessibilityLabel("\(change.label): \(change.to)")
+        .accessibilityValue(kept ? "Will be written" : "Not written")
+    }
+}
+
+/// The undo window: a hairline that runs out when the write happens.
+private struct UndoLine: View {
+    let until: Date
+    private static let window: TimeInterval = 5
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+            GeometryReader { geo in
+                Capsule()
+                    .fill(Color.white.opacity(0.32))
+                    .frame(width: geo.size.width * max(0, min(1, until.timeIntervalSince(context.date) / Self.window)), height: 2)
+            }
+        }
+        .frame(height: 2)
+        .accessibilityHidden(true)
+    }
+}
+
+/// How many things from the call still need the rep, on the closed island.
+private struct PendingBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text("\(count)")
             .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
             .foregroundStyle(Color.black.opacity(0.85))
             .frame(minWidth: 18, minHeight: 18)
             .background(IslandStyle.beige, in: Capsule())
-            .help(postCall.stage == .review ? "The call's memo needs a look" : "Changes ready for HubSpot")
+    }
+}
+
+/// A row-level action: small glass capsule.
+private struct SmallAction: View {
+    let title: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(IslandStyle.text)
+                .padding(.horizontal, 9)
+                .frame(height: 24)
+                .background(Color.white.opacity(hovering ? 0.17 : 0.09), in: Capsule())
+        }
+        .buttonStyle(PressScale())
+        .onHover { hovering = $0 }
+    }
+}
+
+/// A footer link: text only, brightens on hover.
+private struct TextAction: View {
+    let title: String
+    let symbol: String?
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .medium)) }
+                Text(title).font(.system(size: 11.5, weight: .medium))
+            }
+            .foregroundStyle(hovering ? IslandStyle.text : IslandStyle.secondary)
+            .padding(.horizontal, 6)
+            .frame(height: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
     }
 }
 

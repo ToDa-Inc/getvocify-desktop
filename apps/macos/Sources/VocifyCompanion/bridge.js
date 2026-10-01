@@ -10,6 +10,7 @@
     'permissions:changed': new Set(),
     'call:pages': new Set(),
     'call:ended': new Set(),
+    'postcall:action': new Set(),
   };
   const on = (channel) => (cb) => {
     listeners[channel].add(cb);
@@ -62,6 +63,8 @@
         call('shell:command', { name });
       },
       onCommand: on('shell:command'),
+      // A choice made in the island's post-call card: { type, ...details }.
+      onPostCallAction: on('postcall:action'),
     },
     saas: { request: (payload) => call('saas:request', { payload }) },
     drafts: {

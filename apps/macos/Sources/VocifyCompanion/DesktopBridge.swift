@@ -195,6 +195,12 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         emit("call:pages", ["urls": urls], in: mainWebView)
     }
 
+    /// A choice made in the island's post-call card, e.g. ["type": "approve", "omit": [...]].
+    func emitPostCallAction(_ action: [String: Any]) {
+        guard let mainWebView else { return }
+        emit("postcall:action", action, in: mainWebView)
+    }
+
     /// The detected call ended: its contact must not carry over to the next recording.
     func emitCallEnded() {
         guard let mainWebView else { return }

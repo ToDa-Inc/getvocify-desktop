@@ -55,9 +55,52 @@ final class MeetingPillState: ObservableObject {
         case call(MicActivityMonitor.Caller)
         case starting
         case recording
+        /// The call is over: its memo is being written, then its CRM update is one click away.
+        case postCall
+    }
+
+    /// What the dashboard says about the memo of the call that just ended.
+    struct PostCall: Equatable {
+        enum Stage: String {
+            case writing, ready, approving, done, review
+        }
+
+        struct Update: Equatable, Identifiable {
+            let label: String
+            let value: String
+            var id: String { label + value }
+        }
+
+        let stage: Stage
+        let memoId: String
+        let contactName: String?
+        let updates: [Update]
+        let total: Int
+        let canApprove: Bool
+        let note: String?
+
+        init?(_ raw: [String: Any]) {
+            guard let stage = (raw["stage"] as? String).flatMap(Stage.init(rawValue:)),
+                  let memoId = raw["memoId"] as? String else { return nil }
+            self.stage = stage
+            self.memoId = memoId
+            contactName = (raw["contactName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            updates = (raw["updates"] as? [[String: Any]] ?? []).compactMap { item in
+                guard let label = item["label"] as? String, let value = item["value"] as? String else { return nil }
+                return Update(label: label, value: value)
+            }
+            total = (raw["total"] as? Int) ?? updates.count
+            canApprove = raw["canApprove"] as? Bool ?? false
+            note = (raw["note"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        }
     }
 
     @Published var mode: Mode = .idle
+    /// The dashboard has someone signed in to record for.
+    @Published var recorderReady = false
+    @Published var postCall: PostCall?
+    /// Lets the controller move the island when the memo's state changes.
+    var onPostCallChange: (() -> Void)?
     /// Who the detected call is with, when the tab on screen is a CRM contact.
     @Published var callContact: String?
     /// A dropdown that folds itself away; the line under it shows the time left.
@@ -73,9 +116,32 @@ final class MeetingPillState: ObservableObject {
     /// Read by the meters on their own timeline; publishing at audio rate would redraw the transcript.
     let levels = LevelStore()
 
+    func size(for mode: Mode, open: Bool) -> CGSize {
+        geometry.size(mode, open: open, postCallBody: postCallBodyHeight)
+    }
+
+    /// Name row, up to three changes, then the actions; "done" is just the name row.
+    private var postCallBodyHeight: CGFloat {
+        guard let postCall else { return 44 }
+        switch postCall.stage {
+        case .done, .writing: return 46
+        case .ready, .approving, .review:
+            let lines = CGFloat(min(postCall.updates.count, 3))
+            return 84 + lines * 22
+        }
+    }
+
     /// Applies one `shell:state` update; keys that are absent keep their value.
     func apply(_ state: [String: Any]) {
         if let paused = state["paused"] as? Bool, paused != self.paused { self.paused = paused }
+        if let ready = state["recorderReady"] as? Bool, ready != recorderReady { recorderReady = ready }
+        if state.keys.contains("postCall") {
+            let next = (state["postCall"] as? [String: Any]).flatMap(PostCall.init)
+            if next != postCall {
+                postCall = next
+                onPostCallChange?()
+            }
+        }
         if state.keys.contains("callContact") {
             let name = ((state["callContact"] as? [String: Any])?["name"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -166,12 +232,12 @@ struct IslandGeometry: Equatable {
         guard !open else { return Self.ear }
         switch mode {
         case .idle: return Self.idleEar
-        case .call: return Self.callEar
+        case .call, .postCall: return Self.callEar
         default: return Self.ear
         }
     }
 
-    func size(_ mode: MeetingPillState.Mode, open: Bool) -> CGSize {
+    func size(_ mode: MeetingPillState.Mode, open: Bool, postCallBody: CGFloat = 44) -> CGSize {
         let closed = CGSize(width: gap + earWidth(mode, open: false) * 2, height: barHeight)
         switch mode {
         case .idle:
@@ -180,6 +246,8 @@ struct IslandGeometry: Equatable {
             return open ? CGSize(width: max(gap + Self.ear * 2, 460), height: min(400, (screenHeight * 0.5).rounded())) : closed
         case .call:
             return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
+        case .postCall:
+            return open ? CGSize(width: max(gap + Self.ear * 2, 400), height: barHeight + postCallBody) : closed
         case .starting:
             return closed
         }
@@ -223,8 +291,17 @@ final class MeetingPillController {
     private var callHandled = false
     private var startTimeout: Task<Void, Never>?
     private var autoClose: Task<Void, Never>?
+    private var hangUp: Task<Void, Never>?
+    /// The call app being recorded; its letting go of the mic is the hang-up.
+    private var recordingCaller: MicActivityMonitor.Caller?
+    /// The call app holding the mic right now, as last reported.
+    private var currentCaller: MicActivityMonitor.Caller?
     private static let idleLinger: TimeInterval = 5
     private static let callLinger: TimeInterval = 8
+    private static let postCallLinger: TimeInterval = 14
+    private static let doneLinger: TimeInterval = 3
+    /// A call app can drop the mic for a moment (device switch); a hang-up lasts.
+    private static let hangUpGrace: TimeInterval = 3
     private var screenObserver: NSObjectProtocol?
 
     /// Offers to record when a call starts. Called once the dashboard can receive commands.
@@ -232,6 +309,7 @@ final class MeetingPillController {
         self.bridge = bridge
         calls.onCall = { [weak self] caller in self?.callChanged(caller) }
         calls.start()
+        state.onPostCallChange = { [weak self] in self?.postCallChanged() }
         transition(to: .idle, expanded: false)
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -245,14 +323,32 @@ final class MeetingPillController {
         self.bridge = bridge
         callHandled = true
         startTimeout?.cancel()
+        if case .call(let caller) = state.mode {
+            recordingCaller = caller
+        } else if state.mode != .recording {
+            recordingCaller = currentCaller
+        }
+        calls.ignoresWebKit = true
         transition(to: .recording, expanded: state.mode == .recording && state.expanded)
     }
 
-    /// Back to the mark beside the camera.
+    /// Back to rest: the last call's update if one is pending, else the mark beside the camera.
     func hide() {
         startTimeout?.cancel()
+        hangUp?.cancel()
+        recordingCaller = nil
+        calls.ignoresWebKit = false
         state.callContact = nil
-        transition(to: .idle, expanded: false)
+        rest()
+    }
+
+    private func rest() {
+        if let postCall = state.postCall {
+            transition(to: .postCall, expanded: postCall.stage != .writing)
+            if postCall.stage != .writing { startCountdown(postCall.stage == .done ? Self.doneLinger : Self.postCallLinger) }
+        } else {
+            transition(to: .idle, expanded: false)
+        }
     }
 
     func toggle() {
@@ -262,6 +358,9 @@ final class MeetingPillController {
         case .idle, .call:
             transition(to: state.mode, expanded: !state.expanded)
             if state.expanded { startCountdown(state.mode == .idle ? Self.idleLinger : Self.callLinger) }
+        case .postCall:
+            transition(to: .postCall, expanded: !state.expanded)
+            if state.expanded { startCountdown(Self.postCallLinger) }
         case .starting:
             break
         }
@@ -298,14 +397,18 @@ final class MeetingPillController {
         autoClose = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard let self, !Task.isCancelled, self.state.countdown != nil else { return }
-            self.collapse()
+            if self.state.mode == .postCall, self.state.postCall?.stage == .done {
+                self.dismissPostCall()
+            } else {
+                self.collapse()
+            }
         }
     }
 
+    /// The memo is written in the background; the island shows its update when it's ready.
     func stop() {
         hide()
         bridge?.emitCommand("stop")
-        bridge?.showMainWindow()
     }
 
     func openApp() {
@@ -323,14 +426,22 @@ final class MeetingPillController {
     }
 
     /// Starts in the background so the call keeps focus; errors bring Vocify forward.
+    /// Signed out, it opens Vocify to sign in instead of waiting on a recorder that isn't there.
     func record() {
         let previous = state.mode
         guard previous == .idle || { if case .call = previous { return true } else { return false } }() else { return }
+        guard state.recorderReady else {
+            openApp()
+            return
+        }
+        if case .call(let caller) = previous { recordingCaller = caller }
+        calls.ignoresWebKit = true
         transition(to: .starting, expanded: false)
         bridge?.emitCommand("listen")
         startTimeout = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 12_000_000_000)
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
             guard let self, !Task.isCancelled, self.state.mode == .starting else { return }
+            self.calls.ignoresWebKit = false
             self.transition(to: previous, expanded: false)
             self.bridge?.showMainWindow()
         }
@@ -341,12 +452,49 @@ final class MeetingPillController {
         hide()
     }
 
-    private func callChanged(_ caller: MicActivityMonitor.Caller?) {
-        if caller == nil { callHandled = false }
+    func approvePostCall() {
+        bridge?.emitCommand("postcall:approve")
+    }
+
+    /// The memo's review screen, for anything the one click doesn't cover.
+    func reviewPostCall() {
+        bridge?.emitCommand("postcall:review")
+        bridge?.showMainWindow()
+    }
+
+    func dismissPostCall() {
+        bridge?.emitCommand("postcall:dismiss")
+    }
+
+    /// The dashboard moved the memo on (written, ready, approved...).
+    private func postCallChanged() {
         switch state.mode {
-        case .recording, .starting:
+        case .recording, .starting, .call:
+            return  // shown once the island is back at rest
+        case .idle, .postCall:
+            if state.postCall == nil {
+                if state.mode == .postCall { transition(to: .idle, expanded: false) }
+            } else if state.postCall?.stage == .approving, state.mode == .postCall, state.expanded {
+                return  // the open menu shows the progress in place
+            } else {
+                rest()
+            }
+        }
+    }
+
+    private func callChanged(_ caller: MicActivityMonitor.Caller?) {
+        currentCaller = caller
+        if caller == nil {
+            callHandled = false
+            if state.mode != .recording, state.mode != .starting { bridge?.emitCallEnded() }
+        }
+        switch state.mode {
+        case .recording:
+            watchForHangUp(caller)
             return
-        case .idle, .call:
+        case .starting:
+            return
+        case .idle, .call, .postCall:
             if let caller, !callHandled, bridge?.isListening != true {
                 guard state.mode != .call(caller) else { return }
                 state.callContact = nil
@@ -357,6 +505,23 @@ final class MeetingPillController {
             } else if case .call = state.mode {
                 hide()
             }
+        }
+    }
+
+    /// Recording a detected call: the call app letting go of the mic ends the recording too.
+    /// Safari's calls can't be told apart from Vocify's own capture, so they end on Stop.
+    private func watchForHangUp(_ caller: MicActivityMonitor.Caller?) {
+        guard let recorded = recordingCaller, recorded.bundleID != nil else { return }
+        guard caller == nil else {
+            hangUp?.cancel()
+            return
+        }
+        hangUp?.cancel()
+        hangUp = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.hangUpGrace * 1_000_000_000))
+            guard let self, !Task.isCancelled, self.state.mode == .recording, self.currentCaller == nil else { return }
+            self.bridge?.emitCallEnded()
+            self.stop()
         }
     }
 
@@ -373,7 +538,7 @@ final class MeetingPillController {
     private func remeasure() {
         state.geometry = IslandGeometry.measure(IslandGeometry.screen())
         guard let panel, panel.isVisible else { return }
-        panel.setFrame(frame(for: state.geometry.size(state.mode, open: state.expanded)), display: true)
+        panel.setFrame(frame(for: state.size(for: state.mode, open: state.expanded)), display: true)
     }
 
     /// Hangs from the top edge, centred on the camera housing.
@@ -394,7 +559,7 @@ final class MeetingPillController {
         let panel = ensure()
         let wasVisible = panel.isVisible
         state.geometry = IslandGeometry.measure(IslandGeometry.screen())
-        let target = state.geometry.size(mode, open: expanded)
+        let target = state.size(for: mode, open: expanded)
         let current = wasVisible ? panel.frame.size : target
         let cover = CGSize(width: max(current.width, target.width), height: max(current.height, target.height))
         panel.setFrame(frame(for: cover), display: true)
@@ -416,7 +581,7 @@ final class MeetingPillController {
     private func ensure() -> NSPanel {
         if let panel { return panel }
         let panel = IslandPanel(
-            contentRect: NSRect(origin: .zero, size: state.geometry.size(.idle, open: false)),
+            contentRect: NSRect(origin: .zero, size: state.size(for: .idle, open: false)),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -457,8 +622,13 @@ struct IslandView: View {
     @State private var hovering = false
 
     private var open: Bool { state.expanded && state.mode != .starting }
-    private var isCall: Bool { if case .call = state.mode { return true } else { return false } }
-    private var size: CGSize { state.geometry.size(state.mode, open: open) }
+    private var isCall: Bool {
+        switch state.mode {
+        case .call, .postCall: return true
+        default: return false
+        }
+    }
+    private var size: CGSize { state.size(for: state.mode, open: open) }
     private var ear: CGFloat { state.geometry.earWidth(state.mode, open: open) }
     private var radius: CGFloat {
         guard open else { return IslandStyle.collapsedRadius }
@@ -474,10 +644,15 @@ struct IslandView: View {
                     OpenIsland(state: state, controller: controller)
                         .transition(.opacity)
                 case .call(let caller):
-                    CallMenu(caller: caller, contact: state.callContact, controller: controller)
+                    CallMenu(caller: caller, contact: state.callContact, ready: state.recorderReady, controller: controller)
                         .transition(.opacity)
+                case .postCall:
+                    if let postCall = state.postCall {
+                        PostCallMenu(postCall: postCall, controller: controller)
+                            .transition(.opacity)
+                    }
                 default:
-                    IdleMenu(controller: controller)
+                    IdleMenu(ready: state.recorderReady, controller: controller)
                         .transition(.opacity)
                 }
             }
@@ -526,6 +701,13 @@ struct IslandView: View {
         case .idle: return open ? "Close" : "Record a meeting"
         case .call: return open ? "Close" : ""
         case .starting: return ""
+        case .postCall:
+            switch state.postCall?.stage {
+            case .writing: return "Writing the update"
+            case .ready: return open ? "Close" : "Update ready"
+            case .review: return open ? "Close" : "Needs a look"
+            default: return ""
+            }
         }
     }
 
@@ -543,6 +725,17 @@ struct IslandView: View {
         case .idle:
             VocifyMarkIcon()
                 .opacity(hovering || open ? 1 : 0.85)
+        case .postCall:
+            switch state.postCall?.stage {
+            case .writing, .approving:
+                ProgressView().controlSize(.mini)
+            case .done:
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(IslandStyle.beige)
+            default:
+                VocifyMarkIcon()
+            }
         }
     }
 
@@ -571,7 +764,7 @@ struct IslandView: View {
             if open {
                 OpenArrow(open: true)
             } else {
-                RecordDot(caller: caller, action: controller.record)
+                RecordDot(caller: caller, ready: state.recorderReady, action: controller.record)
             }
         case .starting:
             Text("Starting")
@@ -580,17 +773,24 @@ struct IslandView: View {
         case .idle:
             OpenArrow(open: open)
                 .opacity(hovering || open ? 1 : 0.8)
+        case .postCall:
+            if open {
+                OpenArrow(open: true)
+            } else if let postCall = state.postCall, postCall.stage == .ready || postCall.stage == .review {
+                UpdatesBadge(postCall: postCall)
+            }
         }
     }
 }
 
 /// Opened from the mark when nothing is recording: the one thing to do here is record.
 private struct IdleMenu: View {
+    let ready: Bool
     let controller: MeetingPillController
 
     var body: some View {
         HStack(spacing: 8) {
-            QuietRecordButton(title: "Record meeting", help: "Records your mic as You and the call as Them", action: controller.record)
+            QuietRecordButton(title: "Record meeting", ready: ready, action: controller.record)
             Spacer(minLength: 0)
             IconButton(symbol: "arrow.up.right", help: "Open Vocify", action: controller.openApp)
         }
@@ -604,16 +804,17 @@ private struct IdleMenu: View {
 private struct CallMenu: View {
     let caller: MicActivityMonitor.Caller
     let contact: String?
+    let ready: Bool
     let controller: MeetingPillController
 
     var body: some View {
         HStack(spacing: 8) {
             Text(contact ?? caller.name.map { "\($0) call" } ?? "Call in progress")
                 .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(IslandStyle.secondary)
+                .foregroundStyle(contact == nil ? IslandStyle.secondary : IslandStyle.text)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            QuietRecordButton(title: "Record", help: "Records your mic as You and the call as Them", action: controller.record)
+            QuietRecordButton(title: "Record", ready: ready, action: controller.record)
             IconButton(symbol: "xmark", help: "Not now", action: controller.dismissCall)
         }
         .padding(.horizontal, 14)
@@ -622,17 +823,20 @@ private struct CallMenu: View {
 }
 
 /// Glass like the island, with only a small red dot saying what it does.
+/// Signed out, it says so and opens Vocify instead.
 private struct QuietRecordButton: View {
     let title: String
-    let help: String
+    let ready: Bool
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 7) {
-                Circle().fill(IslandStyle.danger).frame(width: 7, height: 7)
-                Text(title).font(.system(size: 12.5, weight: .medium))
+                if ready {
+                    Circle().fill(IslandStyle.danger).frame(width: 7, height: 7)
+                }
+                Text(ready ? title : "Sign in to record").font(.system(size: 12.5, weight: .medium))
             }
             .foregroundStyle(IslandStyle.text)
             .padding(.horizontal, 12)
@@ -641,28 +845,144 @@ private struct QuietRecordButton: View {
         }
         .buttonStyle(PressScale())
         .onHover { hovering = $0 }
-        .help(help)
+        .help(ready ? "Records your mic as You and the call as Them" : "Opens Vocify to sign in")
     }
 }
 
 /// The record action in the closed call island: a red dot in a faint circle.
 private struct RecordDot: View {
     let caller: MicActivityMonitor.Caller
+    let ready: Bool
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             Circle()
-                .fill(IslandStyle.danger)
+                .fill(ready ? IslandStyle.danger : IslandStyle.secondary)
                 .frame(width: 7, height: 7)
                 .frame(width: 22, height: 22)
                 .background(Color.white.opacity(hovering ? 0.2 : 0.11), in: Circle())
         }
         .buttonStyle(PressScale())
         .onHover { hovering = $0 }
-        .help(caller.name.map { "Record this \($0) call" } ?? "Record this call")
+        .help(ready ? caller.name.map { "Record this \($0) call" } ?? "Record this call" : "Sign in to record")
         .accessibilityLabel("Record")
+    }
+}
+
+/// After the call: who it was with, what changes in the CRM, and one click to apply it.
+private struct PostCallMenu: View {
+    let postCall: MeetingPillState.PostCall
+    let controller: MeetingPillController
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text(postCall.contactName ?? "Your call")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(IslandStyle.text)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(IslandStyle.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            if showsChanges {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(postCall.updates.prefix(3)) { update in
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(update.label)
+                                .foregroundStyle(IslandStyle.secondary)
+                                .frame(width: 112, alignment: .leading)
+                                .lineLimit(1)
+                            Text(update.value)
+                                .foregroundStyle(IslandStyle.text)
+                                .lineLimit(1)
+                        }
+                        .font(.system(size: 11.5))
+                    }
+                }
+                HStack(spacing: 8) {
+                    if postCall.canApprove, postCall.stage != .review {
+                        QuietActionButton(
+                            title: postCall.stage == .approving ? "Updating" : "Approve",
+                            symbol: "checkmark",
+                            busy: postCall.stage == .approving,
+                            help: "Writes these changes to the contact in HubSpot",
+                            action: controller.approvePostCall
+                        )
+                    }
+                    QuietActionButton(title: "Review", symbol: "arrow.up.right", busy: false, help: "Opens the memo in Vocify", action: controller.reviewPostCall)
+                    Spacer(minLength: 0)
+                    IconButton(symbol: "xmark", help: "Later", action: controller.dismissPostCall)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 7)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .animation(.easeOut(duration: 0.2), value: postCall.stage)
+    }
+
+    private var showsChanges: Bool {
+        postCall.stage == .ready || postCall.stage == .approving || postCall.stage == .review
+    }
+
+    private var subtitle: String {
+        switch postCall.stage {
+        case .writing: return "Writing the update…"
+        case .ready, .approving:
+            return postCall.total == 1 ? "1 change for HubSpot" : "\(postCall.total) changes for HubSpot"
+        case .done: return "Updated in HubSpot"
+        case .review: return postCall.note ?? "Needs a look"
+        }
+    }
+}
+
+/// How many changes wait for the closed island: a small beige count.
+private struct UpdatesBadge: View {
+    let postCall: MeetingPillState.PostCall
+
+    var body: some View {
+        Text(postCall.stage == .review ? "!" : "\(postCall.total)")
+            .font(.system(size: 10.5, weight: .semibold).monospacedDigit())
+            .foregroundStyle(Color.black.opacity(0.85))
+            .frame(minWidth: 18, minHeight: 18)
+            .background(IslandStyle.beige, in: Capsule())
+            .help(postCall.stage == .review ? "The call's memo needs a look" : "Changes ready for HubSpot")
+    }
+}
+
+/// Glass button with an icon; the island's quiet secondary action.
+private struct QuietActionButton: View {
+    let title: String
+    let symbol: String
+    let busy: Bool
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if busy {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
+                }
+                Text(title).font(.system(size: 12.5, weight: .medium))
+            }
+            .foregroundStyle(IslandStyle.text)
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background(Color.white.opacity(hovering ? 0.17 : 0.10), in: Capsule())
+        }
+        .buttonStyle(PressScale())
+        .disabled(busy)
+        .onHover { hovering = $0 }
+        .help(help)
     }
 }
 

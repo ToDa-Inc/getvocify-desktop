@@ -15,6 +15,9 @@ final class MicActivityMonitor {
     private static let poll: TimeInterval = 1
 
     var onCall: ((Caller?) -> Void)?
+    /// While Vocify records, its own capture runs in a WebKit process: skip it, so the call
+    /// app letting go of the mic (the hang-up) is still seen.
+    var ignoresWebKit = false
 
     private var timer: Timer?
     private var since: Date?
@@ -30,7 +33,7 @@ final class MicActivityMonitor {
     }
 
     private func tick() {
-        let caller = Self.currentCaller()
+        let caller = Self.currentCaller(ignoringWebKit: ignoresWebKit)
         if caller == nil {
             since = nil
         } else if since == nil {
@@ -46,17 +49,18 @@ final class MicActivityMonitor {
     }
 
     /// The app using the mic, or nil when only Vocify or the system is listening.
-    private static func currentCaller() -> Caller? {
+    private static func currentCaller(ignoringWebKit: Bool) -> Caller? {
         if #available(macOS 14.2, *) {
-            return processCaller()
+            return processCaller(ignoringWebKit: ignoringWebKit)
         }
         return defaultInputRunning() ? Caller(name: nil, bundleID: nil) : nil
     }
 
     @available(macOS 14.2, *)
-    private static func processCaller() -> Caller? {
+    private static func processCaller(ignoringWebKit: Bool) -> Caller? {
         let ownPID = ProcessInfo.processInfo.processIdentifier
         let ownBundle = Bundle.main.bundleIdentifier ?? ""
+        var webKit: Caller?
         for process in objects(kAudioHardwarePropertyProcessObjectList) {
             guard uint32(process, kAudioProcessPropertyIsRunningInput) == 1 else { continue }
             let pid = pid_t(bitPattern: uint32(process, kAudioProcessPropertyPID) ?? 0)
@@ -64,12 +68,17 @@ final class MicActivityMonitor {
             if pid == ownPID || (!ownBundle.isEmpty && bundle.hasPrefix(ownBundle)) { continue }
             // Only calls: note-takers and dictation (Granola, Fathom, Wispr Flow) hold the mic too.
             guard isCallApp(bundle) else { continue }
+            if bundle.hasPrefix("com.apple.WebKit") {
+                // Safari's calls and Vocify's own capture look the same: a named app wins.
+                if !ignoringWebKit, webKit == nil { webKit = Caller(name: nil, bundleID: nil) }
+                continue
+            }
             let app = owningApp(bundle: bundle, pid: pid)
             // Zoom's app is literally named "zoom.us".
             let name = app?.bundleIdentifier == "us.zoom.xos" ? "Zoom" : app?.localizedName
             return Caller(name: name, bundleID: app?.bundleIdentifier)
         }
-        return nil
+        return webKit
     }
 
     /// Apps people take calls in. Browsers count for Meet and other web calls; Safari's

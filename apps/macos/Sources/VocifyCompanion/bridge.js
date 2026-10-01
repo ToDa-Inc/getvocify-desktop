@@ -9,6 +9,7 @@
     'shell:command': new Set(),
     'permissions:changed': new Set(),
     'call:pages': new Set(),
+    'call:ended': new Set(),
   };
   const on = (channel) => (cb) => {
     listeners[channel].add(cb);
@@ -38,6 +39,8 @@
       openAutomationSettings: () => call('crm:open-automation-settings'),
       // The island detected a call with these CRM pages on screen: { urls }.
       onCallPages: on('call:pages'),
+      // That call ended (the call app let go of the mic).
+      onCallEnded: on('call:ended'),
     },
     permissions: {
       status: () => call('permissions:status'),

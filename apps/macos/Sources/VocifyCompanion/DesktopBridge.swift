@@ -195,6 +195,12 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         emit("call:pages", ["urls": urls], in: mainWebView)
     }
 
+    /// The detected call ended: its contact must not carry over to the next recording.
+    func emitCallEnded() {
+        guard let mainWebView else { return }
+        emit("call:ended", [:], in: mainWebView)
+    }
+
     func emit(_ channel: String, _ payload: Any, in webView: WKWebView) {
         let channelJSON = Self.jsonLiteral(channel)
         let payloadJS = Self.jsonLiteral(forPayload: payload)

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import VocifyCore
 
 /// What the dashboard streams to the notch island through `shell:state`.
 @MainActor
@@ -178,6 +179,8 @@ final class MeetingPillState: ObservableObject {
     @Published var clock: Clock?
     @Published var paused = false
     @Published var turns: [Turn] = []
+    /// The Mac records and transcribes the call itself: the dashboard's copy of the transcript is ignored.
+    var nativeTranscript = false
     @Published var assist: Assist?
     /// The last answer after it retires, so help fades to "Earlier" instead of vanishing.
     @Published var lastHelp: Assist?
@@ -271,7 +274,7 @@ final class MeetingPillState: ObservableObject {
                 assist = next
             }
         }
-        if let overlay = state["overlay"] as? [String: Any] {
+        if !nativeTranscript, let overlay = state["overlay"] as? [String: Any] {
             let next = (overlay["turns"] as? [[String: Any]] ?? []).enumerated().map { index, raw in
                 Turn(
                     id: raw["key"] as? String ?? "row-\(index)",
@@ -283,6 +286,14 @@ final class MeetingPillState: ObservableObject {
             }
             if next != turns { turns = next }
         }
+    }
+}
+
+extension MeetingPillState {
+    /// The native recorder's transcript, straight to the bubbles.
+    func showLive(_ rows: [LiveTranscript.Row]) {
+        let next = rows.map { Turn(id: $0.key, you: $0.you, label: $0.label, text: $0.text, pending: $0.pending) }
+        if next != turns { turns = next }
     }
 }
 
@@ -406,6 +417,8 @@ final class MeetingPillController {
         calls.onCall = { [weak self] caller in self?.callChanged(caller) }
         calls.start()
         state.onPostCallChange = { [weak self] in self?.postCallChanged() }
+        RecordShortcut.shared.onPress = { [weak self] in self?.shortcutPressed() }
+        RecordShortcut.shared.activate()
         transition(to: .idle, expanded: false)
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -519,6 +532,22 @@ final class MeetingPillController {
     func stop() {
         hide()
         bridge?.emitCommand("stop")
+    }
+
+    /// The record shortcut: the same as pressing Record, or Stop while recording.
+    func shortcutPressed() {
+        switch state.mode {
+        case .recording:
+            stop()
+        case .starting:
+            return
+        case .postCall:
+            // A new call: the last one's card stays in Vocify.
+            transition(to: .idle, expanded: false)
+            record()
+        default:
+            record()
+        }
     }
 
     func openApp() {

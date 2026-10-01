@@ -11,6 +11,9 @@
     'call:pages': new Set(),
     'call:ended': new Set(),
     'postcall:action': new Set(),
+    'recorder:transcript': new Set(),
+    'recorder:levels': new Set(),
+    'recorder:warning': new Set(),
   };
   const on = (channel) => (cb) => {
     listeners[channel].add(cb);
@@ -32,6 +35,22 @@
       stop: () => call('system-audio:stop'),
       onPcm: on('system-audio:pcm'),
       onLost: on('system-audio:lost'),
+    },
+    // The Mac records the call itself (mic + call audio + transcription); the page gets copies.
+    recorder: {
+      start: (options) => call('recorder:start', options),
+      pause: (paused) => call('recorder:pause', { paused }),
+      // Resolves with the finished transcript once its last words are in.
+      stop: () => call('recorder:stop'),
+      onTranscript: on('recorder:transcript'),
+      onLevels: on('recorder:levels'),
+      onWarning: on('recorder:warning'),
+    },
+    // The global record shortcut: { label, defaultLabel }; set takes a keydown's code + modifiers.
+    shortcut: {
+      get: () => call('shortcut:get'),
+      set: (combo) => call('shortcut:set', combo),
+      clear: () => call('shortcut:clear'),
     },
     crm: {
       // CRM page URLs open in the rep's browsers, front window first; asks for

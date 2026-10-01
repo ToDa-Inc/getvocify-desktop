@@ -90,4 +90,35 @@ check(CrmPages.browsersToRead(running: [], frontmost: "com.google.Chrome").isEmp
 check(CrmPages.browser(bundleID: "com.apple.Safari")?.script.contains("current tab") == true, "safari tab term")
 check(CrmPages.browser(bundleID: "com.google.Chrome")?.script.contains("tell application id \"com.google.Chrome\"") == true, "addressed by bundle id")
 
+// Live transcript: same rules as the dashboard's meeting-transcript.ts.
+var live = LiveTranscript()
+live.apply(text: "hola", isFinal: true, channel: "rep", start: 1, end: 2)
+live.apply(text: "buenas", isFinal: false, channel: "prospect", start: 2, end: nil)
+check(live.rows().map { [$0.key, $0.text, $0.pending] } == [["u0", "hola", ""], ["u1", "", "buenas"]], "tail has its own bubble")
+live.apply(text: "buenas tardes", isFinal: true, channel: "prospect", start: 2, end: 3)
+check(live.rows().map { [$0.key, $0.text] } == [["u0", "hola"], ["u1", "buenas tardes"]], "final keeps the tail's bubble")
+
+var late = LiveTranscript()
+late.apply(text: "Which", isFinal: true, channel: "prospect", start: 10, end: 11)
+late.apply(text: "is it", isFinal: false, channel: "prospect", start: 12, end: nil)
+late.apply(text: "is it?", isFinal: true, channel: "prospect", start: 12, end: 13)
+late.apply(text: "Yes.", isFinal: true, channel: "rep", start: 11, end: 12)
+check(late.rows().map { [$0.key, $0.text] } == [["u0", "Which is it?"], ["u2", "Yes."]], "a late final never splits a bubble")
+
+var echo = LiveTranscript()
+echo.apply(text: "This was much better than the last one.", isFinal: true, channel: "prospect", start: 20, end: 22)
+echo.apply(text: "much better than", isFinal: true, channel: "rep", start: 21, end: 21.6)
+check(echo.rows().count == 1 && echo.rows()[0].speaker == .prospect, "mic echo of the call is hidden")
+
+var restarted = LiveTranscript()
+restarted.apply(text: "Hola", isFinal: true, channel: "rep", start: 1, end: 2)
+restarted.apply(text: "Bon dia Jordi", isFinal: true, channel: "prospect", start: 2, end: 3)
+restarted.apply(text: "Gracias per", isFinal: false, channel: "prospect", start: 4, end: nil)
+check(restarted.reset(channel: "prospect", from: 0), "reset changes the side")
+check(restarted.rows().map(\.text) == ["Hola"] && !restarted.reset(channel: "prospect", from: 0), "reset drops only that side")
+let json = restarted.json()
+check((json["segments"] as? [[String: Any]])?.first?["seen"] as? Int == 0, "json carries seen")
+check(json["nextSeen"] as? Int == 3, "json carries the counter")
+check(LiveTranscript.joinChunks("hola", ", qué tal") == "hola, qué tal", "chunks join")
+
 print("ok")

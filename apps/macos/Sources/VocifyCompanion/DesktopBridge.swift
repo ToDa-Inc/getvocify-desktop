@@ -10,6 +10,8 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
 
     private let capture = MeetingCapture()
     private var shellState: [String: Any] = [:]
+    /// The call being recorded natively, if any.
+    private var recorder: NativeRecorder?
 
     var isListening: Bool { shellState["listening"] as? Bool ?? false }
 
@@ -42,6 +44,35 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         case "system-audio:stop":
             capture.stopSystemAudioOnly()
             return ["ok": true]
+        case "shortcut:get":
+            return shortcutSnapshot()
+        case "shortcut:set":
+            let result = RecordShortcut.shared.set(
+                code: args["code"] as? String ?? "",
+                command: args["meta"] as? Bool ?? false,
+                option: args["alt"] as? Bool ?? false,
+                control: args["ctrl"] as? Bool ?? false,
+                shift: args["shift"] as? Bool ?? false
+            )
+            switch result {
+            case .ok: return shortcutSnapshot().merging(["ok": true]) { $1 }
+            case .invalid: return shortcutSnapshot().merging(["ok": false, "reason": "invalid"]) { $1 }
+            case .taken: return shortcutSnapshot().merging(["ok": false, "reason": "taken"]) { $1 }
+            }
+        case "shortcut:clear":
+            RecordShortcut.shared.clear()
+            return shortcutSnapshot()
+        case "recorder:start":
+            return await startRecorder(url: args["url"] as? String)
+        case "recorder:pause":
+            recorder?.setPaused(args["paused"] as? Bool ?? false)
+            return ["ok": true]
+        case "recorder:stop":
+            guard let active = recorder else { return ["transcript": NSNull()] }
+            recorder = nil
+            let transcript = await active.stop()
+            MeetingPillController.shared.state.nativeTranscript = false
+            return ["transcript": transcript]
         case "permissions:status":
             return permissionSnapshot()
         case "permissions:request":
@@ -92,6 +123,50 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         default:
             return nil
         }
+    }
+
+    private func shortcutSnapshot() -> [String: Any] {
+        ["label": RecordShortcut.shared.combo?.label ?? NSNull(), "defaultLabel": RecordShortcut.defaultCombo.label]
+    }
+
+    /// Records the call in the Mac app: mic, call audio and transcription socket, no web audio.
+    private func startRecorder(url raw: String?) async -> [String: Any] {
+        guard recorder == nil else { return ["ok": false, "reason": "already_recording"] }
+        guard let raw, let url = URL(string: raw), ["ws", "wss"].contains(url.scheme ?? ""),
+              url.path.hasSuffix("/transcription/live") else {
+            return ["ok": false, "reason": "bad_url"]
+        }
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+            return ["ok": false, "reason": "no_microphone"]
+        }
+        capture.stopSystemAudioOnly()
+        let emitTo: (String, Any) -> Void = { [weak self] channel, payload in
+            guard let self, let webView = self.mainWebView else { return }
+            self.emit(channel, payload, in: webView)
+        }
+        let recorder = NativeRecorder(
+            url: url,
+            capture: capture,
+            events: .init(
+                transcript: { json in MainActor.assumeIsolated { emitTo("recorder:transcript", json) } },
+                levels: { you, them in MainActor.assumeIsolated { emitTo("recorder:levels", ["you": you, "them": them]) } },
+                warning: { text in MainActor.assumeIsolated { emitTo("recorder:warning", ["text": (text as Any?) ?? NSNull()]) } },
+                callAudioLost: { MainActor.assumeIsolated { emitTo("system-audio:lost", ["reason": "no_system_audio"]) } }
+            )
+        )
+        MeetingPillController.shared.state.nativeTranscript = true
+        do {
+            try await recorder.start()
+        } catch NativeRecorder.RecorderError.noSystemAudio {
+            MeetingPillController.shared.state.nativeTranscript = false
+            let reason = SystemAudioPermission.probe().preflight ? "needs_restart" : "no_system_audio"
+            return ["ok": false, "reason": reason]
+        } catch {
+            MeetingPillController.shared.state.nativeTranscript = false
+            return ["ok": false, "reason": "no_microphone"]
+        }
+        self.recorder = recorder
+        return ["ok": true]
     }
 
     private func startSystemAudio() async -> [String: Any] {

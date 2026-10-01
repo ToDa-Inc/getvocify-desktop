@@ -176,7 +176,7 @@ final class MeetingPillState: ObservableObject {
     @Published var countdown: Countdown?
     @Published var geometry = IslandGeometry.measure(IslandGeometry.screen())
     @Published var expanded = false
-    /// The pointer is over the closed island: it swells a little, like the Dynamic Island.
+    /// The pointer is over the closed island: it widens slightly and brightens.
     @Published var hovered = false
     @Published var clock: Clock?
     @Published var paused = false
@@ -193,7 +193,6 @@ final class MeetingPillState: ObservableObject {
         var size = geometry.size(mode, open: open, postCallBody: postCallBodyHeight)
         if hovered ?? self.hovered, !open, mode != .starting {
             size.width += IslandGeometry.hoverGrow * 2
-            size.height += IslandGeometry.hoverDrop
         }
         return size
     }
@@ -336,9 +335,8 @@ struct IslandGeometry: Equatable {
 
     /// Room for an app icon or a small record dot, no more.
     static let callEar: CGFloat = 46
-    /// How much each ear widens, and the island drops, under the pointer.
-    static let hoverGrow: CGFloat = 7
-    static let hoverDrop: CGFloat = 4
+    /// How much each ear widens under the pointer: enough to feel it respond, no more.
+    static let hoverGrow: CGFloat = 4
 
     func earWidth(_ mode: MeetingPillState.Mode, open: Bool) -> CGFloat {
         guard !open else { return Self.ear }
@@ -521,8 +519,8 @@ final class MeetingPillController {
         state.countdown = countdown
     }
 
-    /// Swells the closed island under the pointer. The window grows first and shrinks after,
-    /// so the spring never gets clipped.
+    /// Widens the closed island under the pointer. The window grows first and shrinks after,
+    /// so the change never gets clipped.
     private func hover(_ inside: Bool) {
         guard inside != state.hovered else { return }
         guard let panel, panel.isVisible, !state.expanded, state.mode != .starting else {
@@ -530,7 +528,8 @@ final class MeetingPillController {
             return
         }
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let spring: Animation = reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.32, dampingFraction: 0.62)
+        // Settles without overshoot: a response, not a bounce.
+        let spring: Animation = reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.28, dampingFraction: 1)
         if inside {
             panel.setFrame(frame(for: state.size(for: state.mode, open: false, hovered: true)), display: true)
             withAnimation(spring) { state.hovered = true }
@@ -868,7 +867,7 @@ struct IslandView: View {
     private var ear: CGFloat {
         state.geometry.earWidth(state.mode, open: open) + (lifted ? IslandGeometry.hoverGrow : 0)
     }
-    /// Swollen under the pointer (closed only).
+    /// Under the pointer (closed only).
     private var lifted: Bool { state.hovered && !open && state.mode != .starting }
     private var radius: CGFloat {
         guard open else { return IslandStyle.collapsedRadius }
@@ -908,7 +907,7 @@ struct IslandView: View {
         .frame(width: size.width, height: size.height, alignment: .top)
         .background(IslandBackground(open: open, barHeight: state.geometry.barHeight))
         .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous))
-        .overlay(GlassRim(radius: radius, barHeight: state.geometry.barHeight).opacity(open ? 1 : lifted ? 0.7 : 0))
+        .overlay(GlassRim(radius: radius, barHeight: state.geometry.barHeight).opacity(open ? 1 : lifted ? 0.35 : 0))
         .onHover { inside in controller.pointer(inside: inside) }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environment(\.colorScheme, .dark)
@@ -918,19 +917,15 @@ struct IslandView: View {
     private var topBar: some View {
         HStack(spacing: 0) {
             leftEar
-                .scaleEffect(lifted ? 1.12 : 1)
-                .offset(y: lifted ? 1.5 : 0)
                 .padding(.leading, !open && state.mode != .recording ? 12 : 14)
                 .frame(width: ear, alignment: .leading)
             Spacer(minLength: state.geometry.notchWidth)
             rightEar
-                .scaleEffect(lifted ? 1.12 : 1)
-                .offset(y: lifted ? 1.5 : 0)
                 .padding(.trailing, !open && isCall ? 10 : 12)
                 .frame(width: ear, alignment: .trailing)
         }
         .padding(.horizontal, open ? 6 : 0)
-        .frame(height: state.geometry.barHeight + (lifted ? IslandGeometry.hoverDrop : 0))
+        .frame(height: state.geometry.barHeight)
         .contentShape(Rectangle())
         .onTapGesture { controller.toggle() }
         .help(helpText)

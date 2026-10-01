@@ -58,4 +58,36 @@ check(tails.last == "…esto.", "then whole words only")
 check(tails.allSatisfy { !$0.hasPrefix("…") || !$0.dropFirst().hasPrefix(" ") }, "no dangling space")
 check(PhraseFit.candidates("   ").isEmpty, "empty")
 
+// CRM pages: only HubSpot/Pipedrive app URLs leave the machine.
+check(CrmPages.isCrmURL("https://app-eu1.hubspot.com/contacts/147506535/record/0-1/879829962968"), "hubspot eu record")
+check(CrmPages.isCrmURL("https://app.hubspot.com/contacts/1/objects/0-1/views/all/list"), "hubspot list")
+check(CrmPages.isCrmURL("https://acme.pipedrive.com/person/42"), "pipedrive person")
+check(!CrmPages.isCrmURL("https://www.hubspot.com/pricing"), "hubspot marketing site")
+check(!CrmPages.isCrmURL("https://knowledge.hubspot.com/a"), "hubspot docs")
+check(!CrmPages.isCrmURL("https://evil.app.hubspot.com.example.com/x"), "lookalike host")
+check(!CrmPages.isCrmURL("https://api.pipedrive.com/v1/persons/1"), "pipedrive api")
+check(!CrmPages.isCrmURL("http://app.hubspot.com/contacts/1/record/0-1/2"), "plain http")
+check(!CrmPages.isCrmURL("https://mail.google.com/mail/u/0"), "other sites stay local")
+
+let output = """
+https://mail.google.com/mail/u/0/#inbox
+https://app-eu1.hubspot.com/calling-integration-popup-ui/147506535
+  https://app-eu1.hubspot.com/contacts/147506535/record/0-1/879829962968
+missing value
+
+"""
+check(CrmPages.crmURLs(fromScriptOutput: output) == [
+    "https://app-eu1.hubspot.com/calling-integration-popup-ui/147506535",
+    "https://app-eu1.hubspot.com/contacts/147506535/record/0-1/879829962968",
+], "script output keeps CRM URLs in window order")
+
+let order = CrmPages.browsersToRead(
+    running: ["com.apple.finder", "com.apple.Safari", "com.google.Chrome", "com.example.Other"],
+    frontmost: "com.google.Chrome"
+).map(\.bundleID)
+check(order == ["com.google.Chrome", "com.apple.Safari"], "front-most browser first, unsupported apps skipped")
+check(CrmPages.browsersToRead(running: [], frontmost: "com.google.Chrome").isEmpty, "nothing running, nothing read")
+check(CrmPages.browser(bundleID: "com.apple.Safari")?.script.contains("current tab") == true, "safari tab term")
+check(CrmPages.browser(bundleID: "com.google.Chrome")?.script.contains("tell application id \"com.google.Chrome\"") == true, "addressed by bundle id")
+
 print("ok")

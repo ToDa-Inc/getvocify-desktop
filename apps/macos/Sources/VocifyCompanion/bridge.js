@@ -30,6 +30,12 @@
       onPcm: on('system-audio:pcm'),
       onLost: on('system-audio:lost'),
     },
+    crm: {
+      // CRM page URLs open in the rep's browsers, front window first; asks for
+      // Automation consent the first time unless { ask: false }.
+      pages: (options = {}) => call('crm:pages', options),
+      openAutomationSettings: () => call('crm:open-automation-settings'),
+    },
     permissions: {
       status: () => call('permissions:status'),
       request: (type) => call('permissions:request', { type }),

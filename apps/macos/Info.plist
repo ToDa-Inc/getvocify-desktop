@@ -26,6 +26,8 @@
   <string>Vocify graba tu micrófono como tú.</string>
   <key>NSAudioCaptureUsageDescription</key>
   <string>Vocify oye la reunión como el otro.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Vocify mira qué ficha de tu CRM tienes abierta para saber con quién hablas.</string>
   <key>NSScreenCaptureUsageDescription</key>
   <string>Grabación de pantalla deja a Vocify oír Zoom, Meet y Teams. La pantalla no se guarda.</string>
 </dict>

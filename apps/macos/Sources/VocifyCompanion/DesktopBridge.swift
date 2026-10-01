@@ -84,6 +84,11 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         case "overlay:hide":
             MeetingPillController.shared.hide()
             return ["ok": true]
+        case "crm:pages":
+            return await CrmPageReader.read(ask: args["ask"] as? Bool ?? true)
+        case "crm:open-automation-settings":
+            NSWorkspace.shared.open(CrmPageReader.automationSettingsURL)
+            return ["ok": true]
         default:
             return nil
         }

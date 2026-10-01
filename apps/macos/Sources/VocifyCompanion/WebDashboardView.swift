@@ -82,6 +82,9 @@ final class BridgeHolder: ObservableObject {
         if let cachedWebView { return cachedWebView }
         let config = WKWebViewConfiguration()
         config.mediaTypesRequiringUserActionForPlayback = []
+        // The page is the call recorder: closing the window must not throttle or pause it,
+        // or the transcript and the island fall behind the call.
+        config.preferences.inactiveSchedulingPolicy = .none
         if let source = DesktopBridge.bridgeScriptSource() {
             config.userContentController.addUserScript(
                 WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true)

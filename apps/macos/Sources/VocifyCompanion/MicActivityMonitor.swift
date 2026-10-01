@@ -12,7 +12,7 @@ final class MicActivityMonitor {
 
     /// Only call apps count (dictation and note-takers are filtered out), so a short
     /// confirmation is enough: long enough to skip a blip, short enough to feel instant.
-    private static let settle: TimeInterval = 1.2
+    private static let settle: TimeInterval = 0.3
     /// Fallback for a call on a non-default input device; changes on the default one arrive at once.
     private static let poll: TimeInterval = 1
 
@@ -24,6 +24,9 @@ final class MicActivityMonitor {
     private var timer: Timer?
     private var listenedDevice: AudioObjectID?
     private var deviceListener: AudioObjectPropertyListenerBlock?
+    /// Each process's "is using input" flag: it flips the moment a call app takes the mic,
+    /// even when the device was already running for another app (Granola, Wispr, a browser).
+    private var processListeners: [AudioObjectID: AudioObjectPropertyListenerBlock] = [:]
     private var since: Date?
     private var reported: Caller?
     private var didReport = false
@@ -44,6 +47,37 @@ final class MicActivityMonitor {
             }
         }
         listenToDefaultInput()
+        if #available(macOS 14.2, *) {
+            var list = Self.address(kAudioHardwarePropertyProcessObjectList)
+            AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &list, .main) { [weak self] _, _ in
+                guard let monitor = self else { return }
+                MainActor.assumeIsolated {
+                    monitor.listenToProcesses()
+                    monitor.tick()
+                }
+            }
+            listenToProcesses()
+        }
+    }
+
+    /// Follows every audio process's input flag; new processes are added, gone ones dropped.
+    @available(macOS 14.2, *)
+    private func listenToProcesses() {
+        let current = Set(Self.objects(kAudioHardwarePropertyProcessObjectList))
+        var input = Self.address(kAudioProcessPropertyIsRunningInput)
+        for (process, block) in processListeners where !current.contains(process) {
+            AudioObjectRemovePropertyListenerBlock(process, &input, .main, block)
+            processListeners[process] = nil
+        }
+        for process in current where processListeners[process] == nil {
+            let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+                guard let monitor = self else { return }
+                MainActor.assumeIsolated { monitor.tick() }
+            }
+            if AudioObjectAddPropertyListenerBlock(process, &input, .main, block) == noErr {
+                processListeners[process] = block
+            }
+        }
     }
 
     /// Follows the default input device: its "running somewhere" flips as apps take the mic.

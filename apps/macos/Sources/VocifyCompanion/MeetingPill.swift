@@ -176,6 +176,8 @@ final class MeetingPillState: ObservableObject {
     @Published var countdown: Countdown?
     @Published var geometry = IslandGeometry.measure(IslandGeometry.screen())
     @Published var expanded = false
+    /// The pointer is over the closed island: it swells a little, like the Dynamic Island.
+    @Published var hovered = false
     @Published var clock: Clock?
     @Published var paused = false
     @Published var turns: [Turn] = []
@@ -187,8 +189,13 @@ final class MeetingPillState: ObservableObject {
     /// Read by the meters on their own timeline; publishing at audio rate would redraw the transcript.
     let levels = LevelStore()
 
-    func size(for mode: Mode, open: Bool) -> CGSize {
-        geometry.size(mode, open: open, postCallBody: postCallBodyHeight)
+    func size(for mode: Mode, open: Bool, hovered: Bool? = nil) -> CGSize {
+        var size = geometry.size(mode, open: open, postCallBody: postCallBodyHeight)
+        if hovered ?? self.hovered, !open, mode != .starting {
+            size.width += IslandGeometry.hoverGrow * 2
+            size.height += IslandGeometry.hoverDrop
+        }
+        return size
     }
 
     var visibleChanges: Int {
@@ -329,6 +336,9 @@ struct IslandGeometry: Equatable {
 
     /// Room for an app icon or a small record dot, no more.
     static let callEar: CGFloat = 46
+    /// How much each ear widens, and the island drops, under the pointer.
+    static let hoverGrow: CGFloat = 7
+    static let hoverDrop: CGFloat = 4
 
     func earWidth(_ mode: MeetingPillState.Mode, open: Bool) -> CGFloat {
         guard !open else { return Self.ear }
@@ -495,6 +505,7 @@ final class MeetingPillController {
 
     /// The pointer holds a self-closing dropdown open; leaving lets the line run out again.
     func pointer(inside: Bool) {
+        hover(inside)
         guard var countdown = state.countdown, state.expanded else { return }
         let now = Date()
         if inside, let since = countdown.runningSince {
@@ -508,6 +519,29 @@ final class MeetingPillController {
             scheduleAutoClose(after: countdown.remaining)
         }
         state.countdown = countdown
+    }
+
+    /// Swells the closed island under the pointer. The window grows first and shrinks after,
+    /// so the spring never gets clipped.
+    private func hover(_ inside: Bool) {
+        guard inside != state.hovered else { return }
+        guard let panel, panel.isVisible, !state.expanded, state.mode != .starting else {
+            state.hovered = inside
+            return
+        }
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let spring: Animation = reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.32, dampingFraction: 0.62)
+        if inside {
+            panel.setFrame(frame(for: state.size(for: state.mode, open: false, hovered: true)), display: true)
+            withAnimation(spring) { state.hovered = true }
+        } else {
+            withAnimation(spring) {
+                state.hovered = false
+            } completion: { [weak self] in
+                guard let self, !self.state.hovered, !self.state.expanded else { return }
+                panel.setFrame(self.frame(for: self.state.size(for: self.state.mode, open: false)), display: true)
+            }
+        }
     }
 
     private func startCountdown(_ total: TimeInterval) {
@@ -822,7 +856,6 @@ private enum IslandStyle {
 struct IslandView: View {
     @ObservedObject var state: MeetingPillState
     let controller: MeetingPillController
-    @State private var hovering = false
 
     private var open: Bool { state.expanded && state.mode != .starting }
     private var isCall: Bool {
@@ -832,7 +865,11 @@ struct IslandView: View {
         }
     }
     private var size: CGSize { state.size(for: state.mode, open: open) }
-    private var ear: CGFloat { state.geometry.earWidth(state.mode, open: open) }
+    private var ear: CGFloat {
+        state.geometry.earWidth(state.mode, open: open) + (lifted ? IslandGeometry.hoverGrow : 0)
+    }
+    /// Swollen under the pointer (closed only).
+    private var lifted: Bool { state.hovered && !open && state.mode != .starting }
     private var radius: CGFloat {
         guard open else { return IslandStyle.collapsedRadius }
         return state.mode == .recording ? IslandStyle.openRadius : 18
@@ -871,11 +908,8 @@ struct IslandView: View {
         .frame(width: size.width, height: size.height, alignment: .top)
         .background(IslandBackground(open: open, barHeight: state.geometry.barHeight))
         .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous))
-        .overlay(GlassRim(radius: radius, barHeight: state.geometry.barHeight).opacity(open ? 1 : 0))
-        .onHover { inside in
-            hovering = inside
-            controller.pointer(inside: inside)
-        }
+        .overlay(GlassRim(radius: radius, barHeight: state.geometry.barHeight).opacity(open ? 1 : lifted ? 0.7 : 0))
+        .onHover { inside in controller.pointer(inside: inside) }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .environment(\.colorScheme, .dark)
     }
@@ -884,15 +918,19 @@ struct IslandView: View {
     private var topBar: some View {
         HStack(spacing: 0) {
             leftEar
+                .scaleEffect(lifted ? 1.12 : 1)
+                .offset(y: lifted ? 1.5 : 0)
                 .padding(.leading, !open && state.mode != .recording ? 12 : 14)
                 .frame(width: ear, alignment: .leading)
             Spacer(minLength: state.geometry.notchWidth)
             rightEar
+                .scaleEffect(lifted ? 1.12 : 1)
+                .offset(y: lifted ? 1.5 : 0)
                 .padding(.trailing, !open && isCall ? 10 : 12)
                 .frame(width: ear, alignment: .trailing)
         }
         .padding(.horizontal, open ? 6 : 0)
-        .frame(height: state.geometry.barHeight)
+        .frame(height: state.geometry.barHeight + (lifted ? IslandGeometry.hoverDrop : 0))
         .contentShape(Rectangle())
         .onTapGesture { controller.toggle() }
         .help(helpText)
@@ -929,7 +967,7 @@ struct IslandView: View {
             ProgressView().controlSize(.mini)
         case .idle:
             VocifyMarkIcon()
-                .opacity(hovering || open ? 1 : 0.85)
+                .opacity(lifted || open ? 1 : 0.85)
         case .postCall:
             // Closed, the ear carries the status; open, the card does, so it is never shown twice.
             if open {
@@ -989,7 +1027,7 @@ struct IslandView: View {
                 .foregroundStyle(IslandStyle.secondary)
         case .idle:
             OpenArrow(open: open)
-                .opacity(hovering || open ? 1 : 0.8)
+                .opacity(lifted || open ? 1 : 0.8)
         case .postCall:
             if open {
                 OpenArrow(open: true)

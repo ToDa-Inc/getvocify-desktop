@@ -1,8 +1,7 @@
 import AppKit
 import SwiftUI
-import VocifyCore
 
-/// What the dashboard streams to the floating pill through `shell:state`.
+/// What the dashboard streams to the notch island through `shell:state`.
 @MainActor
 final class MeetingPillState: ObservableObject {
     struct Turn: Identifiable, Equatable {
@@ -13,51 +12,194 @@ final class MeetingPillState: ObservableObject {
         let pending: String
     }
 
-    @Published var elapsed = "00:00"
-    @Published var line = ""
-    @Published var lineLabel: String?
+    /// Meeting time is kept here, not streamed: the web view's timers stall while Vocify is behind the call.
+    struct Clock: Equatable {
+        let startedAt: Date
+        let paused: TimeInterval
+        let pausedAt: Date?
+
+        func elapsed(at now: Date) -> TimeInterval {
+            max(0, (pausedAt ?? now).timeIntervalSince(startedAt) - paused)
+        }
+
+        /// Ticks land on whole seconds of meeting time, so no second is skipped or shown twice.
+        var tickOrigin: Date { startedAt.addingTimeInterval(paused) }
+    }
+
     struct Assist: Equatable {
         let label: String
+        let isQuestion: Bool
+        /** True while the answer is still being written: only the bridge line is known. */
+        let drafting: Bool
+        let bridge: String
         let sayThis: String
         let thenAsk: String
     }
 
-    @Published var recent: [Turn] = []
-    @Published var expanded = false
-    @Published var paused = false
-    @Published var assist: Assist?
+    struct Countdown: Equatable {
+        let total: TimeInterval
+        var remaining: TimeInterval
+        /// nil while the pointer holds it open.
+        var runningSince: Date?
 
+        func fraction(at now: Date) -> Double {
+            let left = remaining - (runningSince.map { now.timeIntervalSince($0) } ?? 0)
+            return max(0, min(1, left / total))
+        }
+    }
+
+    enum Mode: Equatable {
+        /// Always there: the Vocify mark beside the camera; click it to record.
+        case idle
+        /// Another app holds the mic: offer to record, record nothing yet.
+        case call(MicActivityMonitor.Caller)
+        case starting
+        case recording
+    }
+
+    @Published var mode: Mode = .idle
+    /// A dropdown that folds itself away; the line under it shows the time left.
+    @Published var countdown: Countdown?
+    @Published var geometry = IslandGeometry.measure(IslandGeometry.screen())
+    @Published var expanded = false
+    @Published var clock: Clock?
+    @Published var paused = false
+    @Published var turns: [Turn] = []
+    @Published var assist: Assist?
+    /// The last answer after it retires, so help fades to "Earlier" instead of vanishing.
+    @Published var lastHelp: Assist?
+    /// Read by the meters on their own timeline; publishing at audio rate would redraw the transcript.
+    let levels = LevelStore()
+
+    /// Applies one `shell:state` update; keys that are absent keep their value.
     func apply(_ state: [String: Any]) {
-        if let elapsed = state["elapsed"] as? String, elapsed != self.elapsed { self.elapsed = elapsed }
         if let paused = state["paused"] as? Bool, paused != self.paused { self.paused = paused }
+        if let raw = state["clock"] as? [String: Any], let started = raw["startedAt"] as? Double {
+            let next = Clock(
+                startedAt: Date(timeIntervalSince1970: started / 1000),
+                paused: (raw["pausedMs"] as? Double ?? 0) / 1000,
+                pausedAt: (raw["pausedAt"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
+            )
+            if next != clock { clock = next }
+        }
+        if let raw = state["levels"] as? [String: Any] {
+            levels.update(you: raw["you"] as? Double ?? 0, them: raw["them"] as? Double ?? 0)
+        }
         if state.keys.contains("assist") {
             let raw = state["assist"] as? [String: Any]
             let next = raw.flatMap { raw -> Assist? in
-                guard let say = raw["sayThis"] as? String, !say.isEmpty else { return nil }
-                return Assist(label: raw["label"] as? String ?? "", sayThis: say, thenAsk: raw["thenAsk"] as? String ?? "")
+                let drafting = (raw["stage"] as? String) == "draft"
+                let say = raw["sayThis"] as? String ?? ""
+                let bridge = raw["bridge"] as? String ?? ""
+                guard drafting ? !bridge.isEmpty : !say.isEmpty else { return nil }
+                return Assist(
+                    label: raw["label"] as? String ?? "",
+                    isQuestion: (raw["kind"] as? String) == "question",
+                    drafting: drafting,
+                    bridge: bridge,
+                    sayThis: say,
+                    thenAsk: raw["thenAsk"] as? String ?? ""
+                )
             }
-            if next != assist { assist = next }
+            if next != assist {
+                if let current = assist, !current.drafting, next == nil { lastHelp = current }
+                assist = next
+            }
         }
-        guard let overlay = state["overlay"] as? [String: Any] else { return }
-        let line = overlay["line"] as? String ?? ""
-        if line != self.line { self.line = line }
-        let label = (overlay["lineLabel"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        if label != lineLabel { lineLabel = label }
-        let turns = (overlay["recent"] as? [[String: Any]] ?? []).map { raw in
-            Turn(
-                id: raw["key"] as? String ?? UUID().uuidString,
-                you: raw["you"] as? Bool ?? false,
-                label: raw["label"] as? String,
-                text: raw["text"] as? String ?? "",
-                pending: raw["pending"] as? String ?? ""
-            )
+        if let overlay = state["overlay"] as? [String: Any] {
+            let next = (overlay["turns"] as? [[String: Any]] ?? []).enumerated().map { index, raw in
+                Turn(
+                    id: raw["key"] as? String ?? "row-\(index)",
+                    you: raw["you"] as? Bool ?? false,
+                    label: raw["label"] as? String,
+                    text: raw["text"] as? String ?? "",
+                    pending: raw["pending"] as? String ?? ""
+                )
+            }
+            if next != turns { turns = next }
         }
-        if turns != recent { recent = turns }
     }
 }
 
-/// Keeps the pill clickable on the first click without activating Vocify.
-private final class PillPanel: NSPanel {
+/// Latest loudness per side. A side that stops sending (silence) fades out on its own.
+final class LevelStore {
+    private var you: (value: Double, at: Date) = (0, .distantPast)
+    private var them: (value: Double, at: Date) = (0, .distantPast)
+    private static let fade: TimeInterval = 0.5
+
+    func update(you: Double, them: Double) {
+        let now = Date()
+        if you != self.you.value { self.you = (you, now) }
+        if them != self.them.value { self.them = (them, now) }
+    }
+
+    func value(you side: Bool, at now: Date) -> Double {
+        let level = side ? you : them
+        return level.value * max(0, 1 - now.timeIntervalSince(level.at) / Self.fade)
+    }
+}
+
+/// Where the island sits: around the camera housing, or under the menu bar on screens without one.
+struct IslandGeometry: Equatable {
+    static let ear: CGFloat = 82
+    /// Just room for the mark, so the idle island barely widens the camera housing.
+    static let idleEar: CGFloat = 36
+
+    var notchWidth: CGFloat
+    var barHeight: CGFloat
+    var screenHeight: CGFloat
+
+    private var gap: CGFloat { max(notchWidth, 12) }
+
+    /// Room for an app icon or a small record dot, no more.
+    static let callEar: CGFloat = 46
+
+    func earWidth(_ mode: MeetingPillState.Mode, open: Bool) -> CGFloat {
+        guard !open else { return Self.ear }
+        switch mode {
+        case .idle: return Self.idleEar
+        case .call: return Self.callEar
+        default: return Self.ear
+        }
+    }
+
+    func size(_ mode: MeetingPillState.Mode, open: Bool) -> CGSize {
+        let closed = CGSize(width: gap + earWidth(mode, open: false) * 2, height: barHeight)
+        switch mode {
+        case .idle:
+            return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
+        case .recording:
+            return open ? CGSize(width: max(gap + Self.ear * 2, 460), height: min(400, (screenHeight * 0.5).rounded())) : closed
+        case .call:
+            return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
+        case .starting:
+            return closed
+        }
+    }
+
+    /// The built-in display when it has a notch, otherwise the screen with the menu bar.
+    static func screen() -> NSScreen? {
+        NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.screens.first
+    }
+
+    static func measure(_ screen: NSScreen?) -> IslandGeometry {
+        guard let screen else { return IslandGeometry(notchWidth: 0, barHeight: 30, screenHeight: 800) }
+        let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
+        if screen.safeAreaInsets.top > 0,
+           let left = screen.auxiliaryTopLeftArea,
+           let right = screen.auxiliaryTopRightArea {
+            return IslandGeometry(
+                notchWidth: screen.frame.width - left.width - right.width,
+                barHeight: screen.safeAreaInsets.top,
+                screenHeight: screen.frame.height
+            )
+        }
+        return IslandGeometry(notchWidth: 0, barHeight: max(menuBar, 30), screenHeight: screen.frame.height)
+    }
+}
+
+/// Clickable on the first click without activating Vocify, so the call keeps focus.
+private final class IslandPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
@@ -65,43 +207,90 @@ private final class PillPanel: NSPanel {
 final class MeetingPillController {
     static let shared = MeetingPillController()
 
-    static let collapsed = NSSize(width: 340, height: 44)
-    static let open = NSSize(width: 372, height: 300)
-    private static let margin: CGFloat = 16
-
-    static let collapsedRadius: CGFloat = 22
-    static let openRadius: CGFloat = 18
-
     let state = MeetingPillState()
     private var panel: NSPanel?
-    private var surface: NSVisualEffectView?
     private weak var bridge: DesktopBridge?
+    private let calls = MicActivityMonitor()
+    /// Set by a recording or a dismiss; cleared once the mic goes quiet, i.e. the call ended.
+    private var callHandled = false
+    private var startTimeout: Task<Void, Never>?
+    private var autoClose: Task<Void, Never>?
+    private static let idleLinger: TimeInterval = 5
+    private static let callLinger: TimeInterval = 8
+    private var screenObserver: NSObjectProtocol?
+
+    /// Offers to record when a call starts. Called once the dashboard can receive commands.
+    func watchCalls(bridge: DesktopBridge) {
+        self.bridge = bridge
+        calls.onCall = { [weak self] caller in self?.callChanged(caller) }
+        calls.start()
+        transition(to: .idle, expanded: false)
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let controller = self else { return }
+            MainActor.assumeIsolated { controller.remeasure() }
+        }
+    }
 
     func show(bridge: DesktopBridge) {
         self.bridge = bridge
-        let panel = ensure()
-        if !panel.isVisible {
-            state.expanded = false
-            setCorner(Self.collapsedRadius)
-            if let area = NSScreen.main?.visibleFrame {
-                let size = Self.collapsed
-                panel.setFrame(
-                    NSRect(x: area.maxX - size.width - Self.margin, y: area.minY + Self.margin, width: size.width, height: size.height),
-                    display: true
-                )
-            }
-        }
-        panel.orderFrontRegardless()
-        panel.invalidateShadow()
+        callHandled = true
+        startTimeout?.cancel()
+        transition(to: .recording, expanded: state.mode == .recording && state.expanded)
     }
 
+    /// Back to the mark beside the camera.
     func hide() {
-        panel?.orderOut(nil)
-        state.expanded = false
+        startTimeout?.cancel()
+        transition(to: .idle, expanded: false)
     }
 
     func toggle() {
-        setExpanded(!state.expanded)
+        switch state.mode {
+        case .recording:
+            transition(to: .recording, expanded: !state.expanded)
+        case .idle, .call:
+            transition(to: state.mode, expanded: !state.expanded)
+            if state.expanded { startCountdown(state.mode == .idle ? Self.idleLinger : Self.callLinger) }
+        case .starting:
+            break
+        }
+    }
+
+    func collapse() {
+        if state.expanded { transition(to: state.mode, expanded: false) }
+    }
+
+    /// The pointer holds a self-closing dropdown open; leaving lets the line run out again.
+    func pointer(inside: Bool) {
+        guard var countdown = state.countdown, state.expanded else { return }
+        let now = Date()
+        if inside, let since = countdown.runningSince {
+            countdown.remaining -= now.timeIntervalSince(since)
+            countdown.runningSince = nil
+            autoClose?.cancel()
+        } else if !inside, countdown.runningSince == nil {
+            // Never snaps shut the moment the pointer leaves.
+            countdown.remaining = max(countdown.remaining, 1.5)
+            countdown.runningSince = now
+            scheduleAutoClose(after: countdown.remaining)
+        }
+        state.countdown = countdown
+    }
+
+    private func startCountdown(_ total: TimeInterval) {
+        state.countdown = .init(total: total, remaining: total, runningSince: Date())
+        scheduleAutoClose(after: total)
+    }
+
+    private func scheduleAutoClose(after delay: TimeInterval) {
+        autoClose?.cancel()
+        autoClose = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled, self.state.countdown != nil else { return }
+            self.collapse()
+        }
     }
 
     func stop() {
@@ -118,302 +307,762 @@ final class MeetingPillController {
         bridge?.emitCommand(state.paused ? "resume" : "pause")
     }
 
-    func collapse() {
-        if state.expanded { setExpanded(false) }
-    }
-
-    /// Hands the drag to AppKit so the pill moves like any window, anywhere on screen.
-    func beginDrag() {
-        guard let panel, let event = NSApp.currentEvent else { return }
-        panel.performDrag(with: event)
-    }
-
     /// Search lives with the full transcript in the main window.
     func search() {
         bridge?.emitCommand("search")
         bridge?.showMainWindow()
     }
 
-    /// The material itself is masked, so corners and the system shadow follow the real shape.
-    private func setCorner(_ radius: CGFloat) {
-        surface?.maskImage = Self.roundedMask(radius)
-        panel?.invalidateShadow()
+    /// Starts in the background so the call keeps focus; errors bring Vocify forward.
+    func record() {
+        let previous = state.mode
+        guard previous == .idle || { if case .call = previous { return true } else { return false } }() else { return }
+        transition(to: .starting, expanded: false)
+        bridge?.emitCommand("listen")
+        startTimeout = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 12_000_000_000)
+            guard let self, !Task.isCancelled, self.state.mode == .starting else { return }
+            self.transition(to: previous, expanded: false)
+            self.bridge?.showMainWindow()
+        }
     }
 
-    private static func roundedMask(_ radius: CGFloat) -> NSImage {
-        let edge = radius * 2 + 1
-        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
-            NSColor.black.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            return true
-        }
-        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
-        image.resizingMode = .stretch
-        return image
+    func dismissCall() {
+        callHandled = true
+        hide()
     }
 
-    /// Grows from the bottom-right corner (or wherever the user dragged it), kept on screen.
-    private func setExpanded(_ expanded: Bool) {
-        guard let panel else { return }
-        let size = expanded ? Self.open : Self.collapsed
-        var frame = NSRect(x: panel.frame.maxX - size.width, y: panel.frame.minY, width: size.width, height: size.height)
-        if let area = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
-            frame.origin.x = min(max(frame.minX, area.minX + Self.margin), area.maxX - size.width - Self.margin)
-            frame.origin.y = min(max(frame.minY, area.minY + Self.margin), area.maxY - size.height - Self.margin)
-        }
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        if expanded { setCorner(Self.openRadius) }
-        withAnimation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.38, dampingFraction: 0.84)) {
-            state.expanded = expanded
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = reduceMotion ? 0 : 0.34
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1.0)
-            panel.animator().setFrame(frame, display: true)
-        } completionHandler: {
-            Task { @MainActor in
-                if !expanded { self.setCorner(Self.collapsedRadius) }
-                panel.invalidateShadow()
+    private func callChanged(_ caller: MicActivityMonitor.Caller?) {
+        if caller == nil { callHandled = false }
+        switch state.mode {
+        case .recording, .starting:
+            return
+        case .idle, .call:
+            if let caller, !callHandled, bridge?.isListening != true {
+                guard state.mode != .call(caller) else { return }
+                // Drops down once to be noticed, then settles beside the camera.
+                transition(to: .call(caller), expanded: true)
+                startCountdown(Self.callLinger)
+            } else if case .call = state.mode {
+                hide()
             }
+        }
+    }
+
+    private func remeasure() {
+        state.geometry = IslandGeometry.measure(IslandGeometry.screen())
+        guard let panel, panel.isVisible else { return }
+        panel.setFrame(frame(for: state.geometry.size(state.mode, open: state.expanded)), display: true)
+    }
+
+    /// Hangs from the top edge, centred on the camera housing.
+    private func frame(for size: CGSize) -> NSRect {
+        guard let screen = IslandGeometry.screen() else { return NSRect(origin: .zero, size: size) }
+        var midX = screen.frame.midX
+        if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea {
+            midX = (left.maxX + right.minX) / 2
+        }
+        return NSRect(x: (midX - size.width / 2).rounded(), y: screen.frame.maxY - size.height, width: size.width, height: size.height)
+    }
+
+    /// The window first covers both the old and new shape, the shape animates inside it,
+    /// then the window fits the new shape. The frame and SwiftUI never animate against each other.
+    private func transition(to mode: MeetingPillState.Mode, expanded: Bool) {
+        autoClose?.cancel()
+        state.countdown = nil
+        let panel = ensure()
+        let wasVisible = panel.isVisible
+        state.geometry = IslandGeometry.measure(IslandGeometry.screen())
+        let target = state.geometry.size(mode, open: expanded)
+        let current = wasVisible ? panel.frame.size : target
+        let cover = CGSize(width: max(current.width, target.width), height: max(current.height, target.height))
+        panel.setFrame(frame(for: cover), display: true)
+        panel.hasShadow = expanded
+        if !wasVisible { panel.orderFrontRegardless() }
+
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let animation: Animation = reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.34, dampingFraction: 0.86)
+        withAnimation(wasVisible ? animation : nil) {
+            state.mode = mode
+            state.expanded = expanded
+        } completion: { [weak self] in
+            guard let self, self.state.mode == mode, self.state.expanded == expanded else { return }
+            panel.setFrame(self.frame(for: target), display: true)
+            panel.invalidateShadow()
         }
     }
 
     private func ensure() -> NSPanel {
         if let panel { return panel }
-        let panel = PillPanel(
-            contentRect: NSRect(origin: .zero, size: Self.collapsed),
+        let panel = IslandPanel(
+            contentRect: NSRect(origin: .zero, size: state.geometry.size(.idle, open: false)),
             styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         panel.isFloatingPanel = true
+        // Above the menu bar, so the island can sit beside the camera housing.
         panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.hidesOnDeactivate = false
-        panel.isMovableByWindowBackground = true
-        // Vocify's paper look in light and dark mode alike; dark mode made the text unreadable.
-        panel.appearance = NSAppearance(named: .aqua)
-        let surface = NSVisualEffectView(frame: NSRect(origin: .zero, size: Self.collapsed))
-        surface.material = .popover
-        surface.blendingMode = .behindWindow
-        surface.state = .active
-        surface.autoresizingMask = [.width, .height]
-        let host = NSHostingView(rootView: MeetingPillView(state: state, controller: self))
+        panel.isMovable = false
+        // Black like the camera housing it grows out of, in light and dark mode alike.
+        panel.appearance = NSAppearance(named: .darkAqua)
+        let host = NSHostingView(rootView: IslandView(state: state, controller: self))
         host.sizingOptions = []
-        host.frame = surface.bounds
-        host.autoresizingMask = [.width, .height]
-        surface.addSubview(host)
-        panel.contentView = surface
+        panel.contentView = host
         self.panel = panel
-        self.surface = surface
-        setCorner(Self.collapsedRadius)
         return panel
     }
 }
 
-private enum PillStyle {
-    static let beige = Color(hue: 35 / 360, saturation: 0.30, brightness: 0.45)
-    static let danger = Color(hue: 0, saturation: 0.66, brightness: 0.78)
-    static let youBubble = Color(hue: 36 / 360, saturation: 0.30, brightness: 0.94)
-    static let themBubble = Color.primary.opacity(0.06)
+private enum IslandStyle {
+    static let beige = Color(hue: 35 / 360, saturation: 0.30, brightness: 0.86)
+    static let danger = Color(hue: 0, saturation: 0.66, brightness: 0.86)
+    static let youBubble = Color(hue: 36 / 360, saturation: 0.30, brightness: 0.34)
+    static let themBubble = Color.white.opacity(0.13)
+    static let text = Color.white.opacity(0.92)
+    static let secondary = Color.white.opacity(0.72)
+    static let collapsedRadius: CGFloat = 12
+    static let openRadius: CGFloat = 22
 }
 
-struct MeetingPillView: View {
+struct IslandView: View {
     @ObservedObject var state: MeetingPillState
     let controller: MeetingPillController
-    @State private var pulse = false
-    private let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    @State private var hovering = false
 
+    private var open: Bool { state.expanded && state.mode != .starting }
+    private var isCall: Bool { if case .call = state.mode { return true } else { return false } }
+    private var size: CGSize { state.geometry.size(state.mode, open: open) }
+    private var ear: CGFloat { state.geometry.earWidth(state.mode, open: open) }
     private var radius: CGFloat {
-        state.expanded ? MeetingPillController.openRadius : MeetingPillController.collapsedRadius
+        guard open else { return IslandStyle.collapsedRadius }
+        return state.mode == .recording ? IslandStyle.openRadius : 18
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            if state.expanded {
-                if let assist = state.assist {
-                    AssistCard(assist: assist)
-                        .padding(.horizontal, 12)
-                        .padding(.top, 12)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+            topBar
+            if open {
+                switch state.mode {
+                case .recording:
+                    OpenIsland(state: state, controller: controller)
+                        .transition(.opacity)
+                case .call(let caller):
+                    CallMenu(caller: caller, controller: controller)
+                        .transition(.opacity)
+                default:
+                    IdleMenu(controller: controller)
+                        .transition(.opacity)
                 }
-                conversation
-                    .transition(.opacity.combined(with: .offset(y: 8)))
-            }
-            bar
-        }
-        .animation(reduceMotion ? nil : .spring(response: 0.34, dampingFraction: 0.86), value: state.assist)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .contentShape(Rectangle())
-        .gesture(DragGesture(minimumDistance: 3).onChanged { _ in controller.beginDrag() })
-        .environment(\.colorScheme, .light)
-        .overlay(
-            RoundedRectangle(cornerRadius: radius, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
-    }
-
-    private var bar: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(state.paused ? Color.secondary.opacity(0.5) : PillStyle.danger)
-                .frame(width: 7, height: 7)
-                .opacity(pulse && !state.paused ? 0.35 : 1)
-                .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulse)
-                .onAppear { pulse = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
-            Text(state.elapsed)
-                .font(.system(size: 13, weight: .medium).monospacedDigit())
-                .foregroundStyle(.secondary)
-                .padding(.trailing, 2)
-            if state.expanded {
-                Spacer(minLength: 0)
-                IconButton(symbol: "magnifyingglass", help: "Search transcript", action: controller.search)
-                IconButton(symbol: "arrow.up.right", help: "Open Vocify", action: controller.openApp)
-                IconButton(symbol: "chevron.down", help: "Make smaller", action: controller.collapse)
-            } else if state.paused {
-                Text("Paused")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                liveLine
-            }
-            IconButton(
-                symbol: state.paused ? "play.fill" : "pause.fill",
-                help: state.paused ? "Resume recording" : "Pause recording",
-                action: controller.togglePause
-            )
-            StopButton(showLabel: state.expanded, action: controller.stop)
-        }
-        .padding(.leading, 16)
-        .padding(.trailing, 7)
-        .frame(height: MeetingPillController.collapsed.height)
-        .contentShape(Rectangle())
-        .onTapGesture(perform: controller.toggle)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(state.expanded ? "Make smaller" : "Show conversation")
-    }
-
-    private var liveLine: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            if let label = state.lineLabel, !state.line.isEmpty {
-                Text(label)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(PillStyle.beige)
-            }
-            // The longest ending that fits: whole sentences, then whole words. Never a clipped word.
-            ViewThatFits(in: .horizontal) {
-                ForEach(PhraseFit.candidates(state.line.isEmpty ? "Listening…" : state.line), id: \.self) { candidate in
-                    Text(candidate).lineLimit(1).fixedSize()
-                }
-                Color.clear.frame(width: 0, height: 0)
-            }
-            .font(.system(size: 13))
-            .foregroundStyle(.primary.opacity(0.8))
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var conversation: some View {
-        VStack(spacing: 6) {
-            Spacer(minLength: 0)
-            if state.recent.isEmpty {
-                Text("The conversation shows up here.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                Spacer(minLength: 0)
-            }
-            ForEach(state.recent) { turn in
-                TurnBubble(turn: turn)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
-        // Animate bubbles arriving and leaving only; animating text changes drew old and new words on top of each other.
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: state.recent.map(\.id))
-        .padding(.horizontal, 12)
-        .padding(.top, 12)
-        .frame(maxHeight: .infinity, alignment: .bottom)
-        .mask(
-            LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.16)], startPoint: .top, endPoint: .bottom)
-        )
-        .clipped()
-    }
-}
-
-private struct TurnBubble: View {
-    let turn: MeetingPillState.Turn
-
-    private var fill: Color { turn.you ? PillStyle.youBubble : PillStyle.themBubble }
-
-    var body: some View {
-        VStack(alignment: turn.you ? .trailing : .leading, spacing: 2) {
-            if !turn.you, let label = turn.label {
-                Text(label)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(PillStyle.beige)
-                    .padding(.horizontal, 4)
-            }
-            if !turn.text.isEmpty {
-                Text(turn.text)
-                    .transaction { $0.animation = nil }
-                    .font(.system(size: 12.5))
-                    .lineSpacing(1.5)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(fill, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            // Words still settling read as "typing", so bubbles never jump with every guess.
-            if !turn.pending.isEmpty {
-                TypingDots()
-                    .padding(.horizontal, 11)
-                    .frame(height: 26)
-                    .background(fill, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(alignment: .bottom) {
+            if open, let countdown = state.countdown {
+                CountdownLine(countdown: countdown)
+                    .padding(.horizontal, 22)
+                    .padding(.bottom, 5)
                     .transition(.opacity)
             }
         }
-        .frame(maxWidth: 290, alignment: turn.you ? .trailing : .leading)
-        .frame(maxWidth: .infinity, alignment: turn.you ? .trailing : .leading)
+        .frame(width: size.width, height: size.height, alignment: .top)
+        .background(IslandBackground(open: open, barHeight: state.geometry.barHeight))
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous))
+        .overlay(GlassRim(radius: radius, barHeight: state.geometry.barHeight).opacity(open ? 1 : 0))
+        .onHover { inside in
+            hovering = inside
+            controller.pointer(inside: inside)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .environment(\.colorScheme, .dark)
+    }
+
+    /// The strip level with the camera: one ear each side of it, the same when open or closed.
+    private var topBar: some View {
+        HStack(spacing: 0) {
+            leftEar
+                .padding(.leading, !open && state.mode != .recording ? 12 : 14)
+                .frame(width: ear, alignment: .leading)
+            Spacer(minLength: state.geometry.notchWidth)
+            rightEar
+                .padding(.trailing, !open && isCall ? 10 : 12)
+                .frame(width: ear, alignment: .trailing)
+        }
+        .padding(.horizontal, open ? 6 : 0)
+        .frame(height: state.geometry.barHeight)
+        .contentShape(Rectangle())
+        .onTapGesture { controller.toggle() }
+        .help(helpText)
+    }
+
+    private var helpText: String {
+        switch state.mode {
+        case .recording: return open ? "Hide transcript" : "Show transcript"
+        case .idle: return open ? "Close" : "Record a meeting"
+        case .call: return open ? "Close" : ""
+        case .starting: return ""
+        }
+    }
+
+    @ViewBuilder private var leftEar: some View {
+        switch state.mode {
+        case .recording:
+            HStack(spacing: 6) {
+                RecordingDot(paused: state.paused)
+                ElapsedText(clock: state.clock)
+            }
+        case .call(let caller):
+            CallerIcon(caller: caller)
+        case .starting:
+            ProgressView().controlSize(.mini)
+        case .idle:
+            VocifyMarkIcon()
+                .opacity(hovering || open ? 1 : 0.85)
+        }
+    }
+
+    @ViewBuilder private var rightEar: some View {
+        switch state.mode {
+        case .recording:
+            HStack(spacing: 7) {
+                if state.paused {
+                    Text("Paused")
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(IslandStyle.secondary)
+                } else {
+                    if state.assist != nil, !open {
+                        Image(systemName: "sparkle")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(IslandStyle.beige)
+                            .help("Live help is ready")
+                            .transition(.opacity)
+                    }
+                    VoiceWave(levels: state.levels)
+                }
+                OpenArrow(open: open)
+            }
+            .animation(.easeOut(duration: 0.4), value: state.assist != nil)
+        case .call(let caller):
+            if open {
+                OpenArrow(open: true)
+            } else {
+                RecordDot(caller: caller, action: controller.record)
+            }
+        case .starting:
+            Text("Starting")
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(IslandStyle.secondary)
+        case .idle:
+            OpenArrow(open: open)
+                .opacity(hovering || open ? 1 : 0.8)
+        }
     }
 }
 
-/// Live help in the opened pill: the same card the meeting screen shows, compact.
-private struct AssistCard: View {
-    let assist: MeetingPillState.Assist
+/// Opened from the mark when nothing is recording: the one thing to do here is record.
+private struct IdleMenu: View {
+    let controller: MeetingPillController
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            if !assist.label.isEmpty {
-                Text(assist.label)
-                    .font(.system(size: 10.5, weight: .medium))
-                    .foregroundStyle(PillStyle.beige)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
-                    .background(PillStyle.beige.opacity(0.1), in: Capsule())
+        HStack(spacing: 8) {
+            QuietRecordButton(title: "Record meeting", help: "Records your mic as You and the call as Them", action: controller.record)
+            Spacer(minLength: 0)
+            IconButton(symbol: "arrow.up.right", help: "Open Vocify", action: controller.openApp)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxHeight: .infinity)
+    }
+}
+
+/// A call just started: which app, and one quiet way to record it.
+private struct CallMenu: View {
+    let caller: MicActivityMonitor.Caller
+    let controller: MeetingPillController
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(caller.name.map { "\($0) call" } ?? "Call in progress")
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(IslandStyle.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            QuietRecordButton(title: "Record", help: "Records your mic as You and the call as Them", action: controller.record)
+            IconButton(symbol: "xmark", help: "Not now", action: controller.dismissCall)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxHeight: .infinity)
+    }
+}
+
+/// Glass like the island, with only a small red dot saying what it does.
+private struct QuietRecordButton: View {
+    let title: String
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Circle().fill(IslandStyle.danger).frame(width: 7, height: 7)
+                Text(title).font(.system(size: 12.5, weight: .medium))
             }
-            Text(assist.sayThis)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.primary)
-                .fixedSize(horizontal: false, vertical: true)
-            if !assist.thenAsk.isEmpty {
-                Text(assist.thenAsk)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            .foregroundStyle(IslandStyle.text)
+            .padding(.horizontal, 12)
+            .frame(height: 30)
+            .background(Color.white.opacity(hovering ? 0.17 : 0.10), in: Capsule())
+        }
+        .buttonStyle(PressScale())
+        .onHover { hovering = $0 }
+        .help(help)
+    }
+}
+
+/// The record action in the closed call island: a red dot in a faint circle.
+private struct RecordDot: View {
+    let caller: MicActivityMonitor.Caller
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Circle()
+                .fill(IslandStyle.danger)
+                .frame(width: 7, height: 7)
+                .frame(width: 22, height: 22)
+                .background(Color.white.opacity(hovering ? 0.2 : 0.11), in: Circle())
+        }
+        .buttonStyle(PressScale())
+        .onHover { hovering = $0 }
+        .help(caller.name.map { "Record this \($0) call" } ?? "Record this call")
+        .accessibilityLabel("Record")
+    }
+}
+
+/// How long a dropdown stays: a hairline that shrinks to nothing, then it folds away.
+private struct CountdownLine: View {
+    let countdown: MeetingPillState.Countdown
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30)) { context in
+            GeometryReader { geo in
+                Capsule()
+                    .fill(Color.white.opacity(0.32))
+                    .frame(width: geo.size.width * countdown.fraction(at: context.date), height: 2)
+                    .frame(maxWidth: .infinity)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(Color.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(PillStyle.beige.opacity(0.2), lineWidth: 0.5))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Live help: \(assist.sayThis)")
+        .frame(height: 2)
+        .accessibilityHidden(true)
     }
+}
+
+/// Says the island opens; points up once it has. The whole strip is the button.
+private struct OpenArrow: View {
+    let open: Bool
+
+    var body: some View {
+        Image(systemName: "chevron.down")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(IslandStyle.secondary)
+            .rotationEffect(.degrees(open ? 180 : 0))
+            .accessibilityLabel(open ? "Close" : "Open")
+    }
+}
+
+private struct VocifyMarkIcon: View {
+    var body: some View {
+        Group {
+            if let mark = VocifyMark.image {
+                Image(nsImage: mark).resizable().interpolation(.high)
+            } else {
+                Image(systemName: "waveform").foregroundStyle(IslandStyle.text)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .accessibilityLabel("Vocify")
+    }
+}
+
+/// Controls, live help and the whole conversation.
+private struct OpenIsland: View {
+    @ObservedObject var state: MeetingPillState
+    let controller: MeetingPillController
+    private let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                CircleButton(
+                    symbol: state.paused ? "play.fill" : "pause.fill",
+                    help: state.paused ? "Resume recording" : "Pause recording",
+                    action: controller.togglePause
+                )
+                StopButton(action: controller.stop)
+                Spacer(minLength: 0)
+                IconButton(symbol: "magnifyingglass", help: "Search transcript", action: controller.search)
+                IconButton(symbol: "arrow.up.right", help: "Open Vocify", action: controller.openApp)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 38)
+            // Live help has its own fixed place above the conversation; only the conversation gives up space.
+            HelpSection(current: state.assist, earlier: state.lastHelp)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+            Rectangle().fill(Color.white.opacity(0.07)).frame(height: 0.5)
+            TranscriptScroll(turns: state.turns)
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: state.assist)
+    }
+}
+
+private struct BottomEdgeKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// Scrolls freely; follows the newest line only while the reader is at the bottom.
+private struct TranscriptScroll: View {
+    let turns: [MeetingPillState.Turn]
+    @State private var following = true
+    private static let bottom = "bottom"
+    /// More than one streamed update grows the content, so growth alone never counts as scrolling away.
+    private static let followSlack: CGFloat = 120
+
+    var body: some View {
+        GeometryReader { viewport in
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    VStack(spacing: 0) {
+                        if turns.isEmpty {
+                            Text("Listening…")
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(IslandStyle.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 28)
+                        }
+                        LazyVStack(spacing: 8) {
+                            ForEach(turns) { turn in
+                                TurnBubble(turn: turn).equatable()
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.top, 10)
+                        Color.clear
+                            .frame(height: 12)
+                            .id(Self.bottom)
+                            .background(
+                                GeometryReader { edge in
+                                    Color.clear.preference(key: BottomEdgeKey.self, value: edge.frame(in: .named("transcript")).maxY)
+                                }
+                            )
+                    }
+                }
+                .coordinateSpace(name: "transcript")
+                .defaultScrollAnchor(.bottom)
+                .onPreferenceChange(BottomEdgeKey.self) { edge in
+                    let next = edge <= viewport.size.height + Self.followSlack
+                    if next != following { following = next }
+                }
+                .onChange(of: turns) {
+                    if following { jump(proxy) }
+                }
+                .onAppear { jump(proxy) }
+                .overlay(alignment: .bottom) {
+                    if !following {
+                        LatestButton { jump(proxy) }
+                            .padding(.bottom, 10)
+                            .transition(.opacity)
+                    }
+                }
+            }
+        }
+    }
+
+    private func jump(_ proxy: ScrollViewProxy) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+    }
+}
+
+/// One speaker's paragraph. Words still settling are dimmed inline, so the bubble only ever grows.
+private struct TurnBubble: View, Equatable {
+    let turn: MeetingPillState.Turn
+
+    var body: some View {
+        VStack(alignment: turn.you ? .trailing : .leading, spacing: 3) {
+            if !turn.you, let label = turn.label {
+                Text(label)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(IslandStyle.beige)
+                    .padding(.horizontal, 4)
+            }
+            words
+                .font(.system(size: 12.5))
+                .lineSpacing(1.5)
+                .textSelection(.enabled)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 7)
+                .background(
+                    turn.you ? IslandStyle.youBubble : IslandStyle.themBubble,
+                    in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                )
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: 340, alignment: turn.you ? .trailing : .leading)
+        .frame(maxWidth: .infinity, alignment: turn.you ? .trailing : .leading)
+        .transaction { $0.animation = nil }
+    }
+
+    private var words: Text {
+        let settled = Text(turn.text).foregroundColor(IslandStyle.text)
+        guard !turn.pending.isEmpty else { return settled }
+        let joined = turn.text.isEmpty || turn.pending.first.map { ",.;:!?…)".contains($0) } == true
+        let tail = Text((joined ? "" : " ") + turn.pending).foregroundColor(IslandStyle.secondary)
+        return turn.text.isEmpty ? tail : settled + tail
+    }
+}
+
+private struct ElapsedText: View {
+    let clock: MeetingPillState.Clock?
+
+    var body: some View {
+        Group {
+            if let clock, clock.pausedAt == nil {
+                TimelineView(.periodic(from: clock.tickOrigin, by: 1)) { context in
+                    label(clock.elapsed(at: context.date))
+                }
+            } else {
+                label(clock?.elapsed(at: Date()) ?? 0)
+            }
+        }
+        .font(.system(size: 12.5, weight: .medium).monospacedDigit())
+        .foregroundStyle(IslandStyle.text)
+        .fixedSize()
+    }
+
+    private func label(_ elapsed: TimeInterval) -> Text {
+        // A tick can land a hair before the whole second it stands for.
+        let total = Int((elapsed + 0.05).rounded(.down))
+        let (h, m, s) = (total / 3600, total % 3600 / 60, total % 60)
+        return Text(h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%02d:%02d", m, s))
+    }
+}
+
+/// One small voice wave: moves while anyone talks, beige when it's you, white when it's them.
+/// Flat and dim in silence, so it never looks like activity that isn't there.
+private struct VoiceWave: View {
+    let levels: LevelStore
+    private let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    private static let rest: [CGFloat] = [3, 4.5, 6, 4.5, 3]
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 24, paused: reduceMotion)) { context in
+            let you = levels.value(you: true, at: context.date)
+            let them = levels.value(you: false, at: context.date)
+            let level = min(1, max(you, them) * 1.4)
+            let t = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 2) {
+                ForEach(0..<5, id: \.self) { index in
+                    let wave = reduceMotion ? 1 : 0.55 + 0.45 * sin(t * 9 + Double(index) * 1.2)
+                    Capsule()
+                        .fill(you >= them ? IslandStyle.beige : Color.white.opacity(0.85))
+                        .frame(width: 2.5, height: Self.rest[index] + 10 * level * CGFloat(wave))
+                }
+            }
+            .frame(height: 16)
+            .opacity(level > 0.05 ? 1 : 0.45)
+        }
+        .help("Beige: you speaking · White: them")
+        .accessibilityLabel("Voice activity")
+    }
+}
+
+private struct RecordingDot: View {
+    let paused: Bool
+    @State private var dim = false
+    private let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+
+    var body: some View {
+        Circle()
+            .fill(paused ? Color.white.opacity(0.4) : IslandStyle.danger)
+            .frame(width: 7, height: 7)
+            .opacity(dim && !paused ? 0.35 : 1)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: dim)
+            .onAppear { dim = !reduceMotion }
+            .accessibilityLabel(paused ? "Paused" : "Recording")
+    }
+}
+
+private struct CallerIcon: View {
+    let caller: MicActivityMonitor.Caller
+
+    var body: some View {
+        Group {
+            if let id = caller.bundleID, let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                    .resizable()
+                    .frame(width: 18, height: 18)
+            } else {
+                Image(systemName: "waveform")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(IslandStyle.text)
+            }
+        }
+        .help(caller.name.map { "\($0) is using the mic" } ?? "A call is using the mic")
+    }
+}
+
+private struct LatestButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.down").font(.system(size: 9.5, weight: .semibold))
+                Text("Latest").font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(IslandStyle.text)
+            .padding(.horizontal, 10)
+            .frame(height: 24)
+            .background(Color(white: 0.2), in: Capsule())
+        }
+        .buttonStyle(PressScale())
+        .help("Jump to the latest line")
+    }
+}
+
+/// Live help, quiet by design: plain text in a fixed place, no boxes or alerts.
+/// A draft offers the bridge line, the answer replaces it in place, and once it
+/// retires it stays dimmed as "Earlier" until the next one.
+private struct HelpSection: View {
+    let current: MeetingPillState.Assist?
+    let earlier: MeetingPillState.Assist?
+
+    private var shown: MeetingPillState.Assist? { current ?? earlier }
+    private var retired: Bool { current == nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(IslandStyle.beige.opacity(retired ? 0.5 : 1))
+                Text(heading)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(retired ? IslandStyle.secondary : IslandStyle.beige)
+            }
+            if let help = shown {
+                if help.drafting {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text("“\(help.bridge)”")
+                            .font(.system(size: 12.5).italic())
+                            .foregroundStyle(IslandStyle.text)
+                            .lineLimit(2)
+                        TypingDots()
+                    }
+                } else {
+                    Text(help.sayThis)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(IslandStyle.text)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !help.thenAsk.isEmpty {
+                        Text(help.thenAsk)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(IslandStyle.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } else {
+                Text("Answers show up here when they ask or push back.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(IslandStyle.secondary.opacity(0.8))
+            }
+        }
+        .opacity(retired && shown != nil ? 0.55 : 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .textSelection(.enabled)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var heading: String {
+        guard let shown else { return "Live help" }
+        if retired { return "Earlier" }
+        return shown.label.isEmpty ? "Live help" : shown.label
+    }
+}
+
+/// Solid black beside the camera so the island still reads as part of it;
+/// below that, dark glass: a blur of what's behind with a light sheen at the top.
+private struct IslandBackground: View {
+    let open: Bool
+    let barHeight: CGFloat
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            BehindWindowBlur()
+            Color.black.opacity(open ? 0.28 : 1)
+            LinearGradient(colors: [Color.white.opacity(open ? 0.07 : 0), .clear], startPoint: .top, endPoint: .center)
+            // The camera strip melts into the glass instead of ending on a hard line.
+            VStack(spacing: 0) {
+                Color.black.frame(height: barHeight)
+                LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom)
+                    .frame(height: open ? 16 : 0)
+            }
+        }
+    }
+}
+
+/// The glass edge: a thin light rim and a soft inner glow down the sides and round
+/// the bottom corners. It fades in below the camera strip, which stays plain black.
+private struct GlassRim: View {
+    let radius: CGFloat
+    let barHeight: CGFloat
+
+    var body: some View {
+        let shape = UnevenRoundedRectangle(bottomLeadingRadius: radius, bottomTrailingRadius: radius, style: .continuous)
+        ZStack {
+            shape
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 6)
+                .blur(radius: 5)
+                .clipShape(shape)
+            shape.strokeBorder(
+                LinearGradient(
+                    colors: [Color.white.opacity(0.34), Color.white.opacity(0.08), Color.white.opacity(0.24)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            )
+        }
+        .mask(
+            VStack(spacing: 0) {
+                Color.clear.frame(height: barHeight)
+                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: 28)
+                Color.black
+            }
+        )
+        .allowsHitTesting(false)
+    }
+}
+
+private struct BehindWindowBlur: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 private struct TypingDots: View {
@@ -425,38 +1074,58 @@ private struct TypingDots: View {
             HStack(spacing: 4) {
                 ForEach(0..<3, id: \.self) { index in
                     Circle()
-                        .fill(Color.primary.opacity(0.4))
+                        .fill(Color.white.opacity(0.5))
                         .frame(width: 5, height: 5)
                         .opacity(reduceMotion ? 0.6 : 0.35 + 0.65 * max(0, sin((t * 4) - Double(index) * 0.7)))
                 }
             }
         }
-        .accessibilityLabel("Speaking")
+        .accessibilityLabel("Writing")
     }
 }
 
 private struct StopButton: View {
-    let showLabel: Bool
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: "stop.fill").font(.system(size: 10, weight: .semibold))
-                if showLabel {
-                    Text("Stop").font(.system(size: 12.5, weight: .medium))
-                }
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(Color.white)
+                    .frame(width: 8, height: 8)
+                Text("Stop").font(.system(size: 12, weight: .semibold))
             }
-            .foregroundStyle(.white)
-            .padding(.horizontal, showLabel ? 12 : 0)
-            .frame(minWidth: 30, minHeight: 30)
-            .background(PillStyle.danger.opacity(hovering ? 0.88 : 1), in: Capsule())
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(IslandStyle.danger.opacity(hovering ? 0.85 : 1), in: Capsule())
         }
         .buttonStyle(PressScale())
         .onHover { hovering = $0 }
         .help("Stop and review")
         .accessibilityLabel("Stop recording")
+    }
+}
+
+private struct CircleButton: View {
+    let symbol: String
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(IslandStyle.text)
+                .frame(width: 28, height: 28)
+                .background(Color.white.opacity(hovering ? 0.18 : 0.11), in: Circle())
+        }
+        .buttonStyle(PressScale())
+        .onHover { hovering = $0 }
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
 
@@ -469,10 +1138,10 @@ private struct IconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(hovering ? .primary : .secondary)
-                .frame(width: 30, height: 30)
-                .background(Color.primary.opacity(hovering ? 0.07 : 0), in: Circle())
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(hovering ? IslandStyle.text : IslandStyle.secondary)
+                .frame(width: 26, height: 26)
+                .background(Color.white.opacity(hovering ? 0.1 : 0), in: Circle())
         }
         .buttonStyle(PressScale())
         .onHover { hovering = $0 }

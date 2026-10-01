@@ -57,7 +57,8 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
                 for (key, value) in state {
                     shellState[key] = value
                 }
-                MeetingPillController.shared.state.apply(shellState)
+                // Only what changed: level pushes arrive ~10×/s and must not re-parse the transcript.
+                MeetingPillController.shared.state.apply(state)
             }
             return nil
         case "shell:open-external":

@@ -8,6 +8,7 @@
     'system-audio:lost': new Set(),
     'shell:command': new Set(),
     'permissions:changed': new Set(),
+    'call:pages': new Set(),
   };
   const on = (channel) => (cb) => {
     listeners[channel].add(cb);
@@ -35,6 +36,8 @@
       // Automation consent the first time unless { ask: false }.
       pages: (options = {}) => call('crm:pages', options),
       openAutomationSettings: () => call('crm:open-automation-settings'),
+      // The island detected a call with these CRM pages on screen: { urls }.
+      onCallPages: on('call:pages'),
     },
     permissions: {
       status: () => call('permissions:status'),

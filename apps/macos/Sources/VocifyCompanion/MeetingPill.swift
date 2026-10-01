@@ -58,6 +58,8 @@ final class MeetingPillState: ObservableObject {
     }
 
     @Published var mode: Mode = .idle
+    /// Who the detected call is with, when the tab on screen is a CRM contact.
+    @Published var callContact: String?
     /// A dropdown that folds itself away; the line under it shows the time left.
     @Published var countdown: Countdown?
     @Published var geometry = IslandGeometry.measure(IslandGeometry.screen())
@@ -74,6 +76,12 @@ final class MeetingPillState: ObservableObject {
     /// Applies one `shell:state` update; keys that are absent keep their value.
     func apply(_ state: [String: Any]) {
         if let paused = state["paused"] as? Bool, paused != self.paused { self.paused = paused }
+        if state.keys.contains("callContact") {
+            let name = ((state["callContact"] as? [String: Any])?["name"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let next = name?.isEmpty == false ? name : nil
+            if next != callContact { callContact = next }
+        }
         if let raw = state["clock"] as? [String: Any], let started = raw["startedAt"] as? Double {
             let next = Clock(
                 startedAt: Date(timeIntervalSince1970: started / 1000),
@@ -243,6 +251,7 @@ final class MeetingPillController {
     /// Back to the mark beside the camera.
     func hide() {
         startTimeout?.cancel()
+        state.callContact = nil
         transition(to: .idle, expanded: false)
     }
 
@@ -340,12 +349,24 @@ final class MeetingPillController {
         case .idle, .call:
             if let caller, !callHandled, bridge?.isListening != true {
                 guard state.mode != .call(caller) else { return }
+                state.callContact = nil
                 // Drops down once to be noticed, then settles beside the camera.
                 transition(to: .call(caller), expanded: true)
                 startCountdown(Self.callLinger)
+                lookUpCallContact()
             } else if case .call = state.mode {
                 hide()
             }
+        }
+    }
+
+    /// Reads the CRM page on screen; the dashboard turns it into the contact's name.
+    private func lookUpCallContact() {
+        Task { @MainActor [weak self] in
+            let read = await CrmPageReader.read(ask: true)
+            guard let self, case .call = self.state.mode,
+                  let urls = read["urls"] as? [String], !urls.isEmpty else { return }
+            self.bridge?.emitCallPages(urls)
         }
     }
 
@@ -453,7 +474,7 @@ struct IslandView: View {
                     OpenIsland(state: state, controller: controller)
                         .transition(.opacity)
                 case .call(let caller):
-                    CallMenu(caller: caller, controller: controller)
+                    CallMenu(caller: caller, contact: state.callContact, controller: controller)
                         .transition(.opacity)
                 default:
                     IdleMenu(controller: controller)
@@ -578,14 +599,16 @@ private struct IdleMenu: View {
     }
 }
 
-/// A call just started: which app, and one quiet way to record it.
+/// A call just started: who it is with (the CRM contact on screen) or which app,
+/// and one quiet way to record it.
 private struct CallMenu: View {
     let caller: MicActivityMonitor.Caller
+    let contact: String?
     let controller: MeetingPillController
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(caller.name.map { "\($0) call" } ?? "Call in progress")
+            Text(contact ?? caller.name.map { "\($0) call" } ?? "Call in progress")
                 .font(.system(size: 12.5, weight: .medium))
                 .foregroundStyle(IslandStyle.secondary)
                 .lineLimit(1)

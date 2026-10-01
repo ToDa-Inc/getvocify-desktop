@@ -188,6 +188,13 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         emit("shell:command", name, in: mainWebView)
     }
 
+    /// A call started with these CRM pages on screen; the dashboard names the contact
+    /// (POST /live-calls/preview) and sends it back as `shell:state` callContact.
+    func emitCallPages(_ urls: [String]) {
+        guard let mainWebView else { return }
+        emit("call:pages", ["urls": urls], in: mainWebView)
+    }
+
     func emit(_ channel: String, _ payload: Any, in webView: WKWebView) {
         let channelJSON = Self.jsonLiteral(channel)
         let payloadJS = Self.jsonLiteral(forPayload: payload)

@@ -5,7 +5,7 @@ enum SaasProxy {
         guard let url = URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines)),
               let host = url.host?.lowercased()
         else { return false }
-        if url.scheme == "https", host == "api.getvocify.com" { return true }
+        if url.scheme == "https", host == "api.getvocify.com" || host == "staging-api.getvocify.com" { return true }
         if (url.scheme == "http" || url.scheme == "https"),
            host == "localhost" || host == "127.0.0.1" { return true }
         if host.contains("railway.app") { return true }

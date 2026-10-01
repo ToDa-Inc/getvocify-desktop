@@ -161,6 +161,8 @@ final class MeetingPillState: ObservableObject {
     @Published var mode: Mode = .idle
     /// The dashboard has someone signed in to record for.
     @Published var recorderReady = false
+    /// The call's side stopped reaching Vocify and restarting didn't bring it back.
+    @Published var callAudioLost = false
     @Published var postCall: PostCall?
     /// The changes the rep keeps ticked; starts as everything not flagged "check".
     @Published var keptChanges: Set<String> = []
@@ -219,6 +221,7 @@ final class MeetingPillState: ObservableObject {
     func apply(_ state: [String: Any]) {
         if let paused = state["paused"] as? Bool, paused != self.paused { self.paused = paused }
         if let ready = state["recorderReady"] as? Bool, ready != recorderReady { recorderReady = ready }
+        if let lost = state["callAudioLost"] as? Bool, lost != callAudioLost { callAudioLost = lost }
         if state.keys.contains("postCall") {
             let next = (state["postCall"] as? [String: Any]).flatMap(PostCall.init)
             if let next, next.memoId != postCall?.memoId || (postCall?.changes.isEmpty == true && !next.changes.isEmpty) {
@@ -634,7 +637,8 @@ final class MeetingPillController {
             }
             switch postCall.stage {
             case .writing:
-                fitPostCall()
+                // Nothing to decide yet: the closed island's spinner says enough.
+                if state.expanded { transition(to: .postCall, expanded: false) } else { fitPostCall() }
             case .applying:
                 autoClose?.cancel()
                 state.countdown = nil
@@ -898,15 +902,20 @@ struct IslandView: View {
             VocifyMarkIcon()
                 .opacity(hovering || open ? 1 : 0.85)
         case .postCall:
-            switch state.postCall?.stage {
-            case .writing, .applying:
-                ProgressView().controlSize(.mini)
-            case .done:
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(IslandStyle.beige)
-            default:
+            // Closed, the ear carries the status; open, the card does, so it is never shown twice.
+            if open {
                 VocifyMarkIcon()
+            } else {
+                switch state.postCall?.stage {
+                case .writing, .applying:
+                    ProgressView().controlSize(.mini)
+                case .done:
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(IslandStyle.beige)
+                default:
+                    VocifyMarkIcon()
+                }
             }
         }
     }
@@ -920,6 +929,13 @@ struct IslandView: View {
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundStyle(IslandStyle.secondary)
                 } else {
+                    if state.callAudioLost {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(IslandStyle.warning)
+                            .help("Can't hear the call: only your mic is recording. Check where the call's audio is playing.")
+                            .accessibilityLabel("Can't hear the call")
+                    }
                     if state.assist != nil, !open {
                         Image(systemName: "sparkle")
                             .font(.system(size: 10, weight: .semibold))

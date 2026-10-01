@@ -10,8 +10,10 @@ final class MicActivityMonitor {
         let bundleID: String?
     }
 
-    /// Dictation and Siri hold the mic briefly; a call holds it longer.
-    private static let settle: TimeInterval = 3
+    /// Only call apps count (dictation and note-takers are filtered out), so a short
+    /// confirmation is enough: long enough to skip a blip, short enough to feel instant.
+    private static let settle: TimeInterval = 1.2
+    /// Fallback for a call on a non-default input device; changes on the default one arrive at once.
     private static let poll: TimeInterval = 1
 
     var onCall: ((Caller?) -> Void)?
@@ -20,6 +22,8 @@ final class MicActivityMonitor {
     var ignoresWebKit = false
 
     private var timer: Timer?
+    private var listenedDevice: AudioObjectID?
+    private var deviceListener: AudioObjectPropertyListenerBlock?
     private var since: Date?
     private var reported: Caller?
     private var didReport = false
@@ -30,6 +34,33 @@ final class MicActivityMonitor {
             guard let monitor = self else { return }
             MainActor.assumeIsolated { monitor.tick() }
         }
+        // macOS says the moment any app starts or stops using the mic (what Granola reacts to).
+        var defaultInput = Self.address(kAudioHardwarePropertyDefaultInputDevice)
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &defaultInput, .main) { [weak self] _, _ in
+            guard let monitor = self else { return }
+            MainActor.assumeIsolated {
+                monitor.listenToDefaultInput()
+                monitor.tick()
+            }
+        }
+        listenToDefaultInput()
+    }
+
+    /// Follows the default input device: its "running somewhere" flips as apps take the mic.
+    private func listenToDefaultInput() {
+        guard let device = Self.objects(kAudioHardwarePropertyDefaultInputDevice).first, device != listenedDevice else { return }
+        var running = Self.address(kAudioDevicePropertyDeviceIsRunningSomewhere)
+        if let old = listenedDevice, let block = deviceListener {
+            AudioObjectRemovePropertyListenerBlock(old, &running, .main, block)
+        }
+        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let monitor = self else { return }
+            MainActor.assumeIsolated { monitor.tick() }
+        }
+        if AudioObjectAddPropertyListenerBlock(device, &running, .main, block) == noErr {
+            listenedDevice = device
+            deviceListener = block
+        }
     }
 
     private func tick() {
@@ -38,6 +69,11 @@ final class MicActivityMonitor {
             since = nil
         } else if since == nil {
             since = Date()
+            // Confirm right when the settle time is up, not at the next poll.
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.settle + 0.05) { [weak self] in
+                guard let monitor = self else { return }
+                MainActor.assumeIsolated { monitor.tick() }
+            }
         }
         let settled = since.map { Date().timeIntervalSince($0) >= Self.settle } ?? false
         let next: Caller? = settled ? caller : nil

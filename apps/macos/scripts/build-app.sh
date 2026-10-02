@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds Vocify.app: native shell + the dashboard, pointed at the production API.
 #   GETVOCIFY_ROOT   dashboard repo (default ~/getvocify)
-#   GETVOCIFY_REF    dashboard branch/commit to bundle (default feat/desktop-meeting-recorder).
+#   GETVOCIFY_REF    dashboard branch/commit to bundle (default staging).
 #                    Built from a separate worktree, so the branch checked out in
 #                    GETVOCIFY_ROOT never changes what ships. Set to "" to bundle
 #                    GETVOCIFY_ROOT's working tree as-is (local dashboard work).
@@ -11,7 +11,7 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 repo="$(cd "$root/../.." && pwd)"
 getvocify="${GETVOCIFY_ROOT:-$HOME/getvocify}"
-dashboard_ref="${GETVOCIFY_REF-feat/desktop-meeting-recorder}"
+dashboard_ref="${GETVOCIFY_REF-staging}"
 api_url="${VOCIFY_API_URL:-https://api.getvocify.com/api/v1}"
 # The live transcription service (app.live_main), apart from the API. Empty: the API serves it.
 live_api_url="${VOCIFY_LIVE_API_URL:-}"

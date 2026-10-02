@@ -2,6 +2,9 @@ name: Release Mac
 
 on:
   workflow_dispatch:
+  # Once a day: rebuilds only if the dashboard's staging or this repo's main moved since the last build.
+  schedule:
+    - cron: "17 5 * * *"
   push:
     branches:
       - main
@@ -16,12 +19,44 @@ on:
 permissions:
   contents: write
 
+# One build at a time.
+concurrency:
+  group: release-mac
+  cancel-in-progress: false
+
 env:
-  GETVOCIFY_REF: feat/desktop-meeting-recorder
+  GETVOCIFY_REF: staging
   VOCIFY_API_URL: https://api.getvocify.com/api/v1
 
 jobs:
+  # The daily run builds only if the dashboard or this repo changed since the last build.
+  # Every other trigger (push, tag, manual) always builds.
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ github.event_name != 'schedule' || steps.seen.outputs.cache-hit != 'true' }}
+    steps:
+      - id: dashboard
+        if: github.event_name == 'schedule'
+        run: |
+          sha="$(git ls-remote "https://github.com/ToDa-Inc/getvocify.git" "refs/heads/$GETVOCIFY_REF" | cut -f1)"
+          if [[ -z "$sha" ]]; then
+            echo "Could not read $GETVOCIFY_REF from ToDa-Inc/getvocify." >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      # A finished build leaves a marker under this key (last step of mac-dmg).
+      - id: seen
+        if: github.event_name == 'schedule'
+        uses: actions/cache/restore@v4
+        with:
+          path: .built
+          key: built-${{ steps.dashboard.outputs.sha }}-${{ github.sha }}
+          lookup-only: true
+
   mac-dmg:
+    needs: check
+    if: needs.check.outputs.build == 'true'
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -76,3 +111,15 @@ jobs:
         with:
           files: dist/Vocify-macos.dmg
           generate_release_notes: true
+
+      - name: Note which dashboard and desktop commits this build used
+        id: built
+        run: |
+          mkdir -p .built
+          echo "dashboard=$(git -C getvocify rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "$GITHUB_SHA" > .built/desktop
+      - name: Remember this build
+        uses: actions/cache/save@v4
+        with:
+          path: .built
+          key: built-${{ steps.built.outputs.dashboard }}-${{ github.sha }}

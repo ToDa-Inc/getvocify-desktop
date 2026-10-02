@@ -71,12 +71,17 @@ final class MeetingPillState: ObservableObject {
     /// the backend produced for that call; a part that doesn't apply is nil.
     struct LiveType: Equatable {
         let selected: String?
+        /// `selected` is still Vocify's proposal, not the rep's pick.
+        let proposed: Bool
         let options: [PostCall.CallType.Option]
 
-        var selectedLabel: String? { options.first { $0.key == selected }?.label }
+        var menu: TypeMenu {
+            TypeMenu(options: options.map { TypeMenu.Option(key: $0.key, label: $0.label) }, selected: selected, proposed: proposed)
+        }
 
-        init(selected: String?, options: [PostCall.CallType.Option]) {
+        init(selected: String?, proposed: Bool, options: [PostCall.CallType.Option]) {
             self.selected = selected
+            self.proposed = proposed
             self.options = options
         }
 
@@ -86,7 +91,7 @@ final class MeetingPillState: ObservableObject {
                 return PostCall.CallType.Option(key: key, label: label)
             }
             guard !options.isEmpty else { return nil }
-            self.init(selected: raw["selected"] as? String, options: options)
+            self.init(selected: raw["selected"] as? String, proposed: raw["proposed"] as? Bool ?? false, options: options)
         }
     }
 
@@ -208,6 +213,7 @@ final class MeetingPillState: ObservableObject {
         static let actions: CGFloat = 38
         static let footer: CGFloat = 34
         static let bottom: CGFloat = 8
+        static let typeRow: CGFloat = 26
     }
 
     @Published var mode: Mode = .idle
@@ -237,6 +243,10 @@ final class MeetingPillState: ObservableObject {
     @Published var turns: [Turn] = []
     /// The call type picker while recording; nil until the dashboard knows the company's types.
     @Published var liveType: LiveType?
+    /// Live help for this call, as the dashboard says (nil: an older dashboard without the switch).
+    @Published var liveHelp: Bool?
+    /// The after-call card's type list is open.
+    @Published var postTypeMenuOpen = false
     /// The Mac records and transcribes the call itself: the dashboard's copy of the transcript is ignored.
     var nativeTranscript = false
     @Published var assist: Assist?
@@ -266,6 +276,7 @@ final class MeetingPillState: ObservableObject {
             height += fits ? CGFloat(postCall.changes.count) * L.change : L.line
             height += L.actions
         }
+        if postTypeMenuOpen, let type = postCall.type { height += CGFloat(type.options.count + 1) * L.typeRow + 6 }
         if postCall.email != nil { height += L.line }
         if postCall.meeting != nil { height += L.line }
         return height + L.footer + L.bottom
@@ -288,12 +299,14 @@ final class MeetingPillState: ObservableObject {
             let next = (state["postCall"] as? [String: Any]).flatMap(PostCall.init)
             if let next, next.memoId != postCall?.memoId || (postCall?.changes.isEmpty == true && !next.changes.isEmpty) {
                 keptChanges = Set(next.changes.filter { !$0.check }.map(\.key))
+                postTypeMenuOpen = false
             }
             if next != postCall {
                 postCall = next
                 onPostCallChange?()
             }
         }
+        if let on = state["liveHelp"] as? Bool, on != liveHelp { liveHelp = on }
         if state.keys.contains("liveType") {
             let next = (state["liveType"] as? [String: Any]).flatMap(LiveType.init)
             if next != liveType { liveType = next }
@@ -734,14 +747,29 @@ final class MeetingPillController {
 
     func skipEmail() { postCallAction("skipEmail") }
     func unskipEmail() { postCallAction("unskipEmail") }
-    func setCallType(_ key: String) { postCallAction("setType", ["key": key]) }
+    /// After the call: score it as another type.
+    func setCallType(_ key: String) {
+        state.postTypeMenuOpen = false
+        fitPostCall()
+        if key != state.postCall?.type?.key { postCallAction("setType", ["key": key]) }
+    }
 
-    /// The type chosen while recording (nil: Vocify decides after the call).
+    func togglePostTypeMenu() {
+        state.postTypeMenuOpen.toggle()
+        fitPostCall()
+    }
+
+    /// The type the rep chose while recording; nil hands it back to Vocify's proposal.
     func pickCallType(_ key: String?) {
-        if let current = state.liveType {
-            state.liveType = MeetingPillState.LiveType(selected: key, options: current.options)
+        if let key, let current = state.liveType {
+            state.liveType = MeetingPillState.LiveType(selected: key, proposed: false, options: current.options)
         }
         bridge?.emitCallType(key)
+    }
+
+    /// Live help on or off for this call only.
+    func toggleLiveHelp() {
+        bridge?.emitCommand(LiveHelpSwitch.command(turningOn: state.liveHelp == false))
     }
     func addMeeting() { postCallAction("addMeeting") }
 
@@ -1270,12 +1298,34 @@ private struct PostCallMenu: View {
                     .foregroundStyle(IslandStyle.text)
                     .lineLimit(1)
                 if let type = postCall.type {
-                    TypePicker(type: type, choose: controller.setCallType)
+                    if type.options.isEmpty {
+                        TypeTag(label: type.label, open: false).help("What this call was scored as")
+                    } else {
+                        Button(action: controller.togglePostTypeMenu) {
+                            TypeTag(label: type.label, open: true)
+                        }
+                        .buttonStyle(.plain)
+                        .help("What this call was scored as. Change it to score it again.")
+                    }
                 }
                 Spacer(minLength: 0)
                 IconButton(symbol: "xmark", help: "Done", action: controller.dismissPostCall)
             }
             .frame(height: L.header)
+            if state.postTypeMenuOpen, let type = postCall.type {
+                let current = MeetingPillState.PostCall.CallType.Option(key: type.key, label: type.label)
+                TypeList(
+                    rows: TypeMenu(
+                        options: ([current] + type.options).map { TypeMenu.Option(key: $0.key, label: $0.label) },
+                        selected: type.key,
+                        proposed: false
+                    ).rows.filter { $0.key != nil },
+                    rowHeight: L.typeRow
+                ) { key in
+                    if let key { controller.setCallType(key) }
+                }
+                .padding(.bottom, 6)
+            }
 
             crm
             if let email = postCall.email { emailRow(email) }
@@ -1492,59 +1542,89 @@ private struct ChangeRow: View {
     }
 }
 
-/// The call's type as a quiet tag beside the contact; one click to correct it.
-private struct TypePicker: View {
-    let type: MeetingPillState.PostCall.CallType
-    let choose: (String) -> Void
-
-    var body: some View {
-        if type.options.isEmpty {
-            TypeTag(label: type.label, open: false)
-                .help("What this call was scored as")
-        } else {
-            Menu {
-                ForEach(type.options) { option in
-                    Button(option.label) { choose(option.key) }
-                }
-            } label: {
-                TypeTag(label: type.label, open: true)
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("What this call was scored as. Change it to score it again.")
-        }
-    }
-}
-
-/// While recording: the call's type if the rep knows it. Left alone, Vocify reads it from the
-/// conversation after the call, so it never asks for anything.
-private struct LiveTypePicker: View {
-    let type: MeetingPillState.LiveType
+/// The call-type list, drawn in the island's glass (a macOS menu can't be): one row per type,
+/// a tick on the rep's pick, a sparkle on Vocify's proposal.
+private struct TypeList: View {
+    let rows: [TypeMenu.Row]
+    var rowHeight: CGFloat = 26
     let choose: (String?) -> Void
 
     var body: some View {
-        Menu {
-            Button {
-                choose(nil)
-            } label: {
-                if type.selected == nil { Label("Let Vocify decide", systemImage: "checkmark") } else { Text("Let Vocify decide") }
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(rows, id: \.label) { row in
+                TypeListRow(row: row, height: rowHeight) { choose(row.key) }
             }
-            Divider()
-            ForEach(type.options) { option in
-                Button {
-                    choose(option.key)
-                } label: {
-                    if type.selected == option.key { Label(option.label, systemImage: "checkmark") } else { Text(option.label) }
-                }
-            }
-        } label: {
-            TypeTag(label: type.selectedLabel ?? "Call type", open: true, placeholder: type.selected == nil)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .help(type.selected == nil ? "Vocify picks the call type after the call. Choose it now if you know it." : "The call type you chose")
+        .padding(.vertical, 3)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private struct TypeListRow: View {
+    let row: TypeMenu.Row
+    let height: CGFloat
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(IslandStyle.beige)
+                    .opacity(row.checked ? 1 : 0)
+                    .frame(width: 12)
+                Text(row.label)
+                    .font(.system(size: 12))
+                    .foregroundStyle(row.key == nil ? IslandStyle.secondary : IslandStyle.text)
+                    .lineLimit(1)
+                if row.suggested {
+                    Image(systemName: "sparkle")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(IslandStyle.beige)
+                        .help("Vocify's proposal")
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: height)
+            .background(Color.white.opacity(hovering ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 3)
+        .onHover { hovering = $0 }
+        .accessibilityAddTraits(row.checked ? .isSelected : [])
+    }
+}
+
+/// Live help on or off for this call: a small glass switch beside its sparkle.
+private struct LiveHelpToggle: View {
+    let on: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(on ? IslandStyle.beige : IslandStyle.secondary)
+                Capsule()
+                    .fill(on ? IslandStyle.beige.opacity(0.85) : Color.white.opacity(hovering ? 0.2 : 0.14))
+                    .frame(width: 26, height: 15)
+                    .overlay(alignment: on ? .trailing : .leading) {
+                        Circle().fill(Color.white).frame(width: 11, height: 11).padding(2)
+                    }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: on)
+        .help(on ? "Live help is on for this call" : "Live help is off for this call")
+        .accessibilityLabel("Live help")
+        .accessibilityValue(on ? "On" : "Off")
     }
 }
 
@@ -1552,10 +1632,15 @@ private struct TypeTag: View {
     let label: String
     let open: Bool
     var placeholder = false
+    /// Vocify's proposal, not the rep's pick.
+    var sparkle = false
     @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 4) {
+            if sparkle {
+                Image(systemName: "sparkle").font(.system(size: 8.5, weight: .semibold)).foregroundStyle(IslandStyle.beige)
+            }
             Text(label).lineLimit(1)
             if open {
                 Image(systemName: "chevron.down").font(.system(size: 7.5, weight: .bold))
@@ -1724,6 +1809,7 @@ private struct VocifyMarkIcon: View {
 private struct OpenIsland: View {
     @ObservedObject var state: MeetingPillState
     let controller: MeetingPillController
+    @State private var typeMenuOpen = false
     private let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
     var body: some View {
@@ -1735,23 +1821,41 @@ private struct OpenIsland: View {
                     action: controller.togglePause
                 )
                 StopButton { controller.stop() }
-                if let type = state.liveType {
-                    LiveTypePicker(type: type, choose: controller.pickCallType)
+                if let menu = state.liveType?.menu {
+                    Button { typeMenuOpen.toggle() } label: {
+                        TypeTag(label: menu.title, open: true, placeholder: menu.placeholder, sparkle: menu.sparkle)
+                    }
+                    .buttonStyle(.plain)
+                    .help(menu.sparkle ? "Vocify's proposal for this call. Change it if it's another kind." : "The call type: live help uses its playbook")
                 }
                 Spacer(minLength: 0)
+                if let on = state.liveHelp {
+                    LiveHelpToggle(on: on, action: controller.toggleLiveHelp)
+                }
                 IconButton(symbol: "arrow.up.right", help: "Open Vocify", action: controller.openApp)
             }
             .padding(.horizontal, 14)
             .frame(height: 38)
+            if typeMenuOpen, let menu = state.liveType?.menu {
+                TypeList(rows: menu.rows) { key in
+                    controller.pickCallType(key)
+                    typeMenuOpen = false
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 6)
+            }
             if state.callAudioLost, !state.paused {
                 CallAudioLostLine()
                     .padding(.horizontal, 16)
                     .padding(.bottom, 2)
             }
             // Live help has its own fixed place above the conversation; only the conversation gives up space.
-            HelpSection(current: state.assist, earlier: state.lastHelp)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+            // Switched off for this call, the conversation takes its room.
+            if state.liveHelp != false {
+                HelpSection(current: state.assist, earlier: state.lastHelp)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+            }
             Rectangle().fill(Color.white.opacity(0.07)).frame(height: 0.5)
             TranscriptScroll(turns: state.turns)
         }
@@ -2042,15 +2146,21 @@ private struct HelpSection: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("“\(help.bridge)”")
                             .font(.system(size: 12.5).italic())
-                            .foregroundStyle(IslandStyle.text)
+                            .foregroundStyle(help.sayThis.isEmpty ? IslandStyle.text : IslandStyle.secondary)
                             .lineLimit(2)
-                        TypingDots()
+                        if help.sayThis.isEmpty { TypingDots() }
+                    }
+                    if !help.sayThis.isEmpty {
+                        // The answer appears word by word while it is written.
+                        Text(help.sayThis)
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(IslandStyle.text)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 } else {
                     Text(help.sayThis)
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(IslandStyle.text)
-                        .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                     if !help.thenAsk.isEmpty {
                         Text(help.thenAsk)

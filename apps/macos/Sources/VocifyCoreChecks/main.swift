@@ -235,4 +235,20 @@ check(!LostAudio.opensIsland(was: true, now: true, recording: true, open: false)
 check(!LostAudio.opensIsland(was: false, now: true, recording: false, open: false), "only while recording")
 check(!LostAudio.opensIsland(was: false, now: true, recording: true, open: true), "already open stays as is")
 
+// The call-type chip and its list: Vocify's proposal is marked, the rep's pick is final.
+let typeOptions = [TypeMenu.Option(key: "discovery", label: "Discovery"), TypeMenu.Option(key: "closing", label: "Demo y cierre")]
+let proposedMenu = TypeMenu(options: typeOptions, selected: "discovery", proposed: true)
+check(proposedMenu.title == "Discovery" && proposedMenu.sparkle, "a proposal shows its type with the sparkle")
+check(proposedMenu.rows.first?.key == nil && proposedMenu.rows.first?.checked == true, "while Vocify proposes, 'Let Vocify decide' is ticked")
+check(proposedMenu.rows.first(where: { $0.key == "discovery" })?.suggested == true, "the proposed type is marked in the list")
+check(proposedMenu.rows.first(where: { $0.key == "discovery" })?.checked == false, "a proposal is not the rep's pick")
+let pickedMenu = TypeMenu(options: typeOptions, selected: "closing", proposed: false)
+check(pickedMenu.title == "Demo y cierre" && !pickedMenu.sparkle, "the rep's pick shows without the sparkle")
+check(pickedMenu.rows.first(where: { $0.key == "closing" })?.checked == true && pickedMenu.rows.first?.checked == false, "the pick is ticked")
+let emptyMenu = TypeMenu(options: typeOptions, selected: nil, proposed: false)
+check(emptyMenu.title == "Call type" && emptyMenu.placeholder && !emptyMenu.sparkle, "nothing known yet reads Call type")
+
+// The island's live help switch is for this call only.
+check(LiveHelpSwitch.command(turningOn: false) == "assist-off" && LiveHelpSwitch.command(turningOn: true) == "assist-on", "switch commands")
+
 print("ok")

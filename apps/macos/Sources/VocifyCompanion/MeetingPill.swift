@@ -2753,23 +2753,25 @@ private struct HelpSection: View {
                     .foregroundStyle(retired ? IslandStyle.secondary : IslandStyle.beige)
             }
             if let help = shown {
+                // The filler line keeps its place and look from loading to answer; only what is
+                // under it changes (the dots, then the answer), so nothing the rep reads moves.
+                if !help.bridge.isEmpty {
+                    Text("“\(help.bridge)”")
+                        .font(.system(size: 12).italic())
+                        .foregroundStyle(IslandStyle.secondary)
+                        .lineLimit(1)
+                }
                 if help.drafting {
-                    // A filler line to say at once while the answer is written; the answer is
-                    // added below it, whole, so nothing the rep is reading changes.
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(help.bridge.isEmpty ? "Preparing a reply" : "“\(help.bridge)”")
-                            .font(help.bridge.isEmpty ? .system(size: 12) : .system(size: 12.5).italic())
-                            .foregroundStyle(help.bridge.isEmpty ? IslandStyle.secondary : IslandStyle.text)
-                            .lineLimit(2)
+                    HStack(spacing: 6) {
+                        if help.bridge.isEmpty {
+                            Text("Preparing a reply")
+                                .font(.system(size: 12))
+                                .foregroundStyle(IslandStyle.secondary)
+                        }
                         TypingDots()
                     }
+                    .frame(height: 17, alignment: .leading)
                 } else {
-                    if !help.bridge.isEmpty {
-                        Text("“\(help.bridge)”")
-                            .font(.system(size: 11.5).italic())
-                            .foregroundStyle(IslandStyle.secondary)
-                            .lineLimit(1)
-                    }
                     Text(help.sayThis)
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(IslandStyle.text)

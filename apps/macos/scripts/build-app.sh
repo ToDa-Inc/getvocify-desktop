@@ -6,12 +6,15 @@
 #                    GETVOCIFY_ROOT never changes what ships. Set to "" to bundle
 #                    GETVOCIFY_ROOT's working tree as-is (local dashboard work).
 #   VOCIFY_API_URL   API the embedded dashboard talks to (default production)
+#   VOCIFY_LIVE_API_URL  live transcription service (default: the API itself)
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 repo="$(cd "$root/../.." && pwd)"
 getvocify="${GETVOCIFY_ROOT:-$HOME/getvocify}"
 dashboard_ref="${GETVOCIFY_REF-feat/desktop-meeting-recorder}"
 api_url="${VOCIFY_API_URL:-https://api.getvocify.com/api/v1}"
+# The live transcription service (app.live_main), apart from the API. Empty: the API serves it.
+live_api_url="${VOCIFY_LIVE_API_URL:-}"
 sources="$root/Sources/VocifyCompanion"
 cd "$root"
 
@@ -87,7 +90,7 @@ fi
 
 web_stage="$root/build/web"
 echo "Building dashboard ${dashboard_ref:-working tree} @ $dashboard_commit against $api_url …"
-(cd "$dashboard" && VITE_API_URL="$api_url" npx vite build --outDir "$web_stage" --emptyOutDir --logLevel warn)
+(cd "$dashboard" && VITE_API_URL="$api_url" VITE_LIVE_API_URL="$live_api_url" npx vite build --outDir "$web_stage" --emptyOutDir --logLevel warn)
 
 app="$root/Vocify.app"
 rm -rf "$app"

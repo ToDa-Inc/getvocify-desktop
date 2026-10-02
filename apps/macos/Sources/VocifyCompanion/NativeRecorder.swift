@@ -37,6 +37,8 @@ final class NativeRecorder: @unchecked Sendable {
     private static let pingEvery: TimeInterval = 10
 
     private let url: URL
+    /// The live service's pass, sent first on every connection (it trusts nothing in the URL).
+    private let ticket: String?
     /// The call app being recorded, for reading who speaks on its screen.
     private let callApp: String?
     private let capture: MeetingCapture
@@ -83,8 +85,9 @@ final class NativeRecorder: @unchecked Sendable {
     @MainActor private var transcript = LiveTranscript()
     @MainActor private var snapshotScheduled = false
 
-    init(url: URL, callApp: String?, capture: MeetingCapture, events: Events) {
+    init(url: URL, ticket: String?, callApp: String?, capture: MeetingCapture, events: Events) {
         self.url = url
+        self.ticket = ticket
         self.callApp = callApp
         self.capture = capture
         self.events = events
@@ -272,6 +275,10 @@ final class NativeRecorder: @unchecked Sendable {
         self.socket = socket
         open = false
         socket.resume()
+        if let ticket, let auth = try? JSONSerialization.data(withJSONObject: ["type": "Auth", "ticket": ticket]),
+           let text = String(data: auth, encoding: .utf8) {
+            socket.send(.string(text)) { _ in }
+        }
         receive(on: socket)
     }
 

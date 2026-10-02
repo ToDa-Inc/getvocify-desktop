@@ -64,7 +64,7 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
             RecordShortcut.shared.clear()
             return shortcutSnapshot()
         case "recorder:start":
-            return await startRecorder(url: args["url"] as? String)
+            return await startRecorder(url: args["url"] as? String, ticket: args["ticket"] as? String)
         case "recorder:pause":
             recorder?.setPaused(args["paused"] as? Bool ?? false)
             return ["ok": true]
@@ -131,7 +131,7 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
     }
 
     /// Records the call in the Mac app: mic, call audio and transcription socket, no web audio.
-    private func startRecorder(url raw: String?) async -> [String: Any] {
+    private func startRecorder(url raw: String?, ticket: String?) async -> [String: Any] {
         guard recorder == nil else { return ["ok": false, "reason": "already_recording"] }
         guard let raw, let url = URL(string: raw), ["ws", "wss"].contains(url.scheme ?? ""),
               url.path.hasSuffix("/transcription/live") else {
@@ -147,6 +147,7 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         }
         let recorder = NativeRecorder(
             url: url,
+            ticket: ticket,
             callApp: MeetingPillController.shared.callAppBundleID,
             capture: capture,
             events: .init(

@@ -406,9 +406,9 @@ final class MeetingPillState: ObservableObject {
             case .applying:
                 height += L.line + 6
             case .review:
-                height += L.line + L.actions
+                height += L.line
             case .ready:
-                height += nothingSure ? L.line + L.actions : listHeight + L.actions
+                height += nothingSure ? L.line : listHeight + L.actions
             }
             if postCall.meeting != nil, postCall.stage != .internal { height += L.meeting }
         case .email:
@@ -970,14 +970,15 @@ final class MeetingPillController {
 
     /// A click anywhere but the options (or a scroll) closes them, as a menu does.
     private func watchOptions() {
-        if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .scrollWheel], handler: { [weak self] event in
+        if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseUp, .rightMouseDown, .scrollWheel], handler: { [weak self] event in
             MainActor.assumeIsolated {
                 guard let self, event.window !== self.optionsPanel else { return }
-                if event.type == .scrollWheel {
+                if event.type != .leftMouseUp {
                     self.closeOptions()
                     return
                 }
-                // A click on a value opens or closes its own options; anything else closes them.
+                // Decided once the click is done: a click on a value has already opened or closed
+                // its own options by then; any other click leaves them as they were, so they close.
                 let open = self.state.openOptions
                 DispatchQueue.main.async {
                     if open != nil, self.state.openOptions == open { self.closeOptions() }
@@ -1539,12 +1540,9 @@ private struct PostCallMenu: View {
         case .ready where state.nothingSure:
             line(symbol: "exclamationmark.circle", busy: false) {
                 Text("Nothing clear enough to write from here").foregroundStyle(IslandStyle.text)
+            } trailing: {
+                TextAction(title: "Review in Vocify", symbol: "arrow.up.right", action: controller.reviewPostCall)
             }
-            HStack {
-                PrimaryActionButton(title: "Review in Vocify", symbol: "arrow.up.right", help: "Opens the memo in Vocify", action: controller.reviewPostCall)
-                Spacer(minLength: 0)
-            }
-            .frame(height: L.actions)
         case .ready:
             ScrollView(.vertical, showsIndicators: state.changesHeight > L.listMax) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -1579,7 +1577,7 @@ private struct PostCallMenu: View {
                     Spacer(minLength: 0)
                     TextAction(title: "Review in Vocify", symbol: "arrow.up.right", action: controller.reviewPostCall)
                 } else {
-                    PrimaryActionButton(title: "Review in Vocify", symbol: "arrow.up.right", help: "Opens the memo in Vocify", action: controller.reviewPostCall)
+                    TextAction(title: "Review in Vocify", symbol: "arrow.up.right", action: controller.reviewPostCall)
                     Spacer(minLength: 0)
                 }
             }
@@ -1604,12 +1602,9 @@ private struct PostCallMenu: View {
         case .review:
             line(symbol: "exclamationmark.circle", busy: false) {
                 Text(postCall.note ?? "Needs a look").foregroundStyle(IslandStyle.text)
+            } trailing: {
+                TextAction(title: "Review", symbol: "arrow.up.right", action: controller.reviewPostCall)
             }
-            HStack {
-                PrimaryActionButton(title: "Review in Vocify", symbol: "arrow.up.right", help: "Opens the memo in Vocify", action: controller.reviewPostCall)
-                Spacer(minLength: 0)
-            }
-            .frame(height: L.actions)
         }
     }
 
@@ -2010,7 +2005,7 @@ private struct GlassPanel: View {
     }
 }
 
-/// The card's one main action: the island's glass, tinted with its beige.
+/// The card's one main action: a quiet capsule of the island's glass, tinted beige.
 private struct PrimaryActionButton: View {
     let title: String
     let symbol: String?
@@ -2021,21 +2016,17 @@ private struct PrimaryActionButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .semibold)) }
-                Text(title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+            HStack(spacing: 5) {
+                if let symbol { Image(systemName: symbol).font(.system(size: 9, weight: .semibold)) }
+                Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1)
             }
             .foregroundStyle(IslandStyle.beige)
-            .padding(.horizontal, 14)
-            .frame(height: 30)
+            .padding(.horizontal, 11)
+            .frame(height: 26)
             .background {
                 Capsule()
-                    .fill(IslandStyle.beige.opacity(hovering && !disabled ? 0.26 : 0.18))
-                    .overlay(Capsule().fill(LinearGradient(colors: [Color.white.opacity(0.10), .clear], startPoint: .top, endPoint: .center)))
-                    .overlay(Capsule().strokeBorder(
-                        LinearGradient(colors: [IslandStyle.beige.opacity(0.65), IslandStyle.beige.opacity(0.2)], startPoint: .top, endPoint: .bottom),
-                        lineWidth: 1
-                    ))
+                    .fill(IslandStyle.beige.opacity(hovering && !disabled ? 0.2 : 0.13))
+                    .overlay(Capsule().strokeBorder(IslandStyle.beige.opacity(0.3), lineWidth: 0.5))
             }
         }
         .buttonStyle(PressScale())
@@ -2110,17 +2101,20 @@ private struct TypeTag: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 4) {
-            Text(label).lineLimit(1)
+        HStack(spacing: 3) {
+            Text(label)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: 120, alignment: .leading)
+                .fixedSize(horizontal: true, vertical: false)
             if open {
-                Image(systemName: "chevron.down").font(.system(size: 7.5, weight: .bold))
+                Image(systemName: "chevron.down").font(.system(size: 7, weight: .bold))
             }
         }
         .font(.system(size: 11.5))
-        .foregroundStyle(placeholder ? IslandStyle.secondary : IslandStyle.text)
-        .padding(.horizontal, 8)
-        .frame(height: 20)
-        .background(Color.white.opacity(open && hovering ? 0.16 : 0.09), in: Capsule())
+        .foregroundStyle(hovering && open ? IslandStyle.text : IslandStyle.secondary)
+        .opacity(placeholder && !hovering ? 0.8 : 1)
+        .contentShape(Rectangle())
         .onHover { hovering = $0 }
     }
 }

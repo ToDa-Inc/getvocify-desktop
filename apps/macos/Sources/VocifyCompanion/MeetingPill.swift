@@ -2754,14 +2754,22 @@ private struct HelpSection: View {
             }
             if let help = shown {
                 if help.drafting {
-                    // An answer is on its way: the label above says what kind, the words come whole.
-                    HStack(spacing: 6) {
-                        Text("Preparing a reply")
-                            .font(.system(size: 12))
-                            .foregroundStyle(IslandStyle.secondary)
+                    // A filler line to say at once while the answer is written; the answer is
+                    // added below it, whole, so nothing the rep is reading changes.
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(help.bridge.isEmpty ? "Preparing a reply" : "“\(help.bridge)”")
+                            .font(help.bridge.isEmpty ? .system(size: 12) : .system(size: 12.5).italic())
+                            .foregroundStyle(help.bridge.isEmpty ? IslandStyle.secondary : IslandStyle.text)
+                            .lineLimit(2)
                         TypingDots()
                     }
                 } else {
+                    if !help.bridge.isEmpty {
+                        Text("“\(help.bridge)”")
+                            .font(.system(size: 11.5).italic())
+                            .foregroundStyle(IslandStyle.secondary)
+                            .lineLimit(1)
+                    }
                     Text(help.sayThis)
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(IslandStyle.text)

@@ -24,7 +24,11 @@ final class NativeRecorder: @unchecked Sendable {
     private static let drainTimeout: TimeInterval = 6
     /// Audio kept while the socket reconnects, then sent at once (the server takes it faster than real time).
     private static let maxBacklogBytes = 30 * 32000
-    private static let snapshotEvery: TimeInterval = 0.25
+    /// The dashboard's copy (its view, the draft, the upload): it's usually hidden during a
+    /// call, and the copy grows with the call, so once a second is plenty.
+    private static let snapshotEvery: TimeInterval = 1
+    /// The island's voice wave wants ~12 levels a second; the dashboard's meter far fewer.
+    private static let pageLevelsEvery: TimeInterval = 0.25
     /// A side further behind the wall clock than this gets silence: the call's audio starts
     /// later than the mic and macOS sends nothing while the call is quiet, and both sides must
     /// stay on one clock or the mic's echo of the call can't be told apart from the rep.
@@ -72,6 +76,7 @@ final class NativeRecorder: @unchecked Sendable {
     private let speakerQueue = DispatchQueue(label: "vocify.recorder.speakers", qos: .utility)
     private static let speakerEvery: TimeInterval = 0.4
     private var levelsSentAt = Date.distantPast
+    private var pageLevelsSentAt = Date.distantPast
     private var drained: (() -> Void)?
 
     // main
@@ -199,9 +204,11 @@ final class NativeRecorder: @unchecked Sendable {
         if now.timeIntervalSince(levelsSentAt) > 0.08 {
             levelsSentAt = now
             let you = level["rep"] ?? 0, them = level["prospect"] ?? 0
+            let toPage = now.timeIntervalSince(pageLevelsSentAt) > Self.pageLevelsEvery
+            if toPage { pageLevelsSentAt = now }
             DispatchQueue.main.async {
                 MeetingPillController.shared.state.levels.update(you: you, them: them)
-                self.events.levels(you, them)
+                if toPage { self.events.levels(you, them) }
             }
         }
         var buffer = pending[channel] ?? Data()

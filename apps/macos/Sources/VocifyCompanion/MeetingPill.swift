@@ -220,7 +220,7 @@ final class MeetingPillState: ObservableObject {
     @Published var countdown: Countdown?
     @Published var geometry = IslandGeometry.measure(IslandGeometry.screen())
     @Published var expanded = false
-    /// The pointer is over the closed island: it widens slightly and brightens.
+    /// The pointer is over the closed island: it brightens a little.
     @Published var hovered = false
     @Published var clock: Clock?
     @Published var paused = false
@@ -235,12 +235,8 @@ final class MeetingPillState: ObservableObject {
     /// Read by the meters on their own timeline; publishing at audio rate would redraw the transcript.
     let levels = LevelStore()
 
-    func size(for mode: Mode, open: Bool, hovered: Bool? = nil) -> CGSize {
-        var size = geometry.size(mode, open: open, postCallBody: postCallBodyHeight)
-        if hovered ?? self.hovered, !open, mode != .starting {
-            size.width += IslandGeometry.hoverGrow * 2
-        }
-        return size
+    func size(for mode: Mode, open: Bool) -> CGSize {
+        geometry.size(mode, open: open, postCallBody: postCallBodyHeight)
     }
 
     var visibleChanges: Int {
@@ -385,8 +381,6 @@ struct IslandGeometry: Equatable {
 
     /// Room for an app icon or a small record dot, no more.
     static let callEar: CGFloat = 46
-    /// How much each ear widens under the pointer: enough to feel it respond, no more.
-    static let hoverGrow: CGFloat = 4
 
     func earWidth(_ mode: MeetingPillState.Mode, open: Bool) -> CGFloat {
         guard !open else { return Self.ear }
@@ -437,6 +431,11 @@ struct IslandGeometry: Equatable {
 /// Clickable on the first click without activating Vocify, so the call keeps focus.
 private final class IslandPanel: NSPanel {
     override var canBecomeKey: Bool { true }
+}
+
+/// The island never takes focus from the call, so its first click must act, not just activate it.
+private final class IslandHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 @MainActor
@@ -571,28 +570,12 @@ final class MeetingPillController {
         state.countdown = countdown
     }
 
-    /// Widens the closed island under the pointer. The window grows first and shrinks after,
-    /// so the change never gets clipped.
+    /// Under the pointer the closed island brightens a little. Its size never changes, so
+    /// nothing moves and the window is never resized while the pointer is on it.
     private func hover(_ inside: Bool) {
         guard inside != state.hovered else { return }
-        guard let panel, panel.isVisible, !state.expanded, state.mode != .starting else {
-            state.hovered = inside
-            return
-        }
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        // Settles without overshoot: a response, not a bounce.
-        let spring: Animation = reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.28, dampingFraction: 1)
-        if inside {
-            panel.setFrame(frame(for: state.size(for: state.mode, open: false, hovered: true)), display: true)
-            withAnimation(spring) { state.hovered = true }
-        } else {
-            withAnimation(spring) {
-                state.hovered = false
-            } completion: { [weak self] in
-                guard let self, !self.state.hovered, !self.state.expanded else { return }
-                panel.setFrame(self.frame(for: self.state.size(for: self.state.mode, open: false)), display: true)
-            }
-        }
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) { state.hovered = inside }
     }
 
     private func startCountdown(_ total: TimeInterval) {
@@ -914,7 +897,7 @@ final class MeetingPillController {
         panel.isMovable = false
         // Black like the camera housing it grows out of, in light and dark mode alike.
         panel.appearance = NSAppearance(named: .darkAqua)
-        let host = NSHostingView(rootView: IslandView(state: state, controller: self))
+        let host = IslandHostingView(rootView: IslandView(state: state, controller: self))
         host.sizingOptions = []
         panel.contentView = host
         self.panel = panel
@@ -947,9 +930,7 @@ struct IslandView: View {
         }
     }
     private var size: CGSize { state.size(for: state.mode, open: open) }
-    private var ear: CGFloat {
-        state.geometry.earWidth(state.mode, open: open) + (lifted ? IslandGeometry.hoverGrow : 0)
-    }
+    private var ear: CGFloat { state.geometry.earWidth(state.mode, open: open) }
     /// Under the pointer (closed only).
     private var lifted: Bool { state.hovered && !open && state.mode != .starting }
     private var radius: CGFloat {

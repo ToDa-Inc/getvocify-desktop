@@ -1,6 +1,8 @@
 import Foundation
 import VocifyCore
 
+if ProcessInfo.processInfo.environment["VOCIFY_PERF"] != nil { measureLongCall() }
+
 func check(_ condition: Bool, _ message: String) {
     if !condition {
         fputs("FAIL \(message)\n", stderr)
@@ -176,5 +178,26 @@ check(guests.rows().count == 3, "a new person starts a paragraph")
 check(ZoomTile.speakingName("Marta García, Computer audio, Active speaker") == "Marta García", "zoom tile name")
 check(ZoomTile.speakingName("Juan, Computer audio") == nil, "not speaking, no name")
 check(ZoomTile.speakingName("Ana Pérez, Active speaker") == "Ana Pérez", "no audio marker")
+
+// A long call: paragraphs set aside after a minute read exactly as if rebuilt every time.
+var hour = LiveTranscript()
+var expected: [String] = []
+for i in 0..<300 {
+    let channel = i % 2 == 0 ? "rep" : "prospect"
+    let text = "frase número \(i) del cliente \(i % 7)"
+    let start = Double(i) * 10
+    hour.apply(text: text, isFinal: false, channel: channel, start: start, end: nil)
+    hour.apply(text: text, isFinal: true, channel: channel, start: start, end: start + 3)
+    expected.append(text)
+}
+let got = hour.rows().map(\.text)
+if got != expected {
+    print("rows", got.count, "expected", expected.count)
+    if let i = zip(got, expected).enumerated().first(where: { $0.element.0 != $0.element.1 })?.offset { print("first diff at", i, "got:", got[i], "| expected:", expected[i]) }
+}
+check(got == expected, "frozen paragraphs keep their text and order")
+check(Set(hour.rows().map(\.key)).count == 300, "keys stay unique")
+hour.apply(text: "y una más", isFinal: true, channel: "prospect", start: 2995, end: 2996)
+check(hour.rows().last?.text == "frase número 299 del cliente 5 y una más", "the newest paragraph still grows")
 
 print("ok")

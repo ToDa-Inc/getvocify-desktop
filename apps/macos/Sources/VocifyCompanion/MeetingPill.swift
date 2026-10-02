@@ -270,6 +270,19 @@ final class MeetingPillState: ObservableObject {
         static let valueSize: CGFloat = 12
         static let emailLines = 3
         static let noteLines = 5
+        /// A change's options open under it, inside the card.
+        static let option: CGFloat = 26
+        static let optionsVisible = 6
+        static let optionsFooter: CGFloat = 30
+        static let optionsPadding: CGFloat = 4
+        static let optionsGap: CGFloat = 4
+        /// The options line up with the value column.
+        static let optionsIndent: CGFloat = flaggedInset + tick + 8 + label + 8
+
+        static func optionsHeight(_ change: PostCall.Change) -> CGFloat {
+            CGFloat(min(change.options.count, optionsVisible)) * option + optionsPadding * 2
+                + (change.multiple ? optionsFooter : 0) + optionsGap * 2
+        }
 
         static func lineHeight(_ size: CGFloat) -> CGFloat {
             let font = NSFont.systemFont(ofSize: size)
@@ -313,6 +326,8 @@ final class MeetingPillState: ObservableObject {
     /// Options the rep picked in the card, by change key.
     @Published var editedValues: [String: String] = [:]
     @Published var postCallTab: PostCallTab = .crm
+    /// The change whose options are open under it.
+    @Published var openOptions: String?
     /// Lets the controller move the island when the memo's state changes.
     var onPostCallChange: (() -> Void)?
     /// Who the detected call is with, when the tab on screen is a CRM contact.
@@ -364,21 +379,31 @@ final class MeetingPillState: ObservableObject {
 
     func shown(_ change: PostCall.Change) -> String { change.shown(editedValues[change.key]) }
 
+    /// A change's row with its options when they're open.
+    func rowHeight(_ change: PostCall.Change) -> CGFloat {
+        PostCallLayout.rowHeight(change, shown: shown(change))
+            + (openOptions == change.key ? PostCallLayout.optionsHeight(change) : 0)
+    }
+
     /// The whole list's height; the card shows up to `listMax` of it and scrolls the rest.
     var changesHeight: CGFloat {
         typealias L = PostCallLayout
         var height: CGFloat = 0
         let flagged = flaggedChanges
         if !flagged.isEmpty {
-            height += L.flaggedPadding + L.flaggedLabel + flagged.reduce(0) { $0 + L.rowHeight($1, shown: shown($1)) } + L.gap
+            height += L.flaggedPadding + L.flaggedLabel + flagged.reduce(0) { $0 + rowHeight($1) } + L.gap
         }
         for group in groupedChanges {
-            height += L.groupLabel + group.changes.reduce(0) { $0 + L.rowHeight($1, shown: shown($1)) }
+            height += L.groupLabel + group.changes.reduce(0) { $0 + rowHeight($1) }
         }
         return height
     }
 
-    var listHeight: CGFloat { min(changesHeight, PostCallLayout.listMax) }
+    /// Open options get their own room: the list grows by them instead of hiding them.
+    var listHeight: CGFloat {
+        let open = postCall?.changes.first { $0.key == openOptions }
+        return min(changesHeight, PostCallLayout.listMax + (open.map(PostCallLayout.optionsHeight) ?? 0))
+    }
 
     /// The card's height from what it shows, using the same sizes the view draws.
     private var postCallBodyHeight: CGFloat {
@@ -448,6 +473,7 @@ final class MeetingPillState: ObservableObject {
             if let next, next.memoId != postCall?.memoId || (postCall?.changes.isEmpty == true && !next.changes.isEmpty) {
                 keptChanges = Set(next.changes.filter { !$0.check }.map(\.key))
                 editedValues = [:]
+                openOptions = nil
                 if next.memoId != postCall?.memoId { postCallTab = .crm }
             }
             if next != postCall {
@@ -906,12 +932,20 @@ final class MeetingPillController {
         }
         state.editedValues[change.key] = next == change.value ? nil : next
         state.keptChanges.insert(change.key)
+        // A list of one is answered by the pick; a checkbox list stays open until Done.
+        if !change.multiple { state.openOptions = nil }
+        fitPostCall()
+    }
+
+    func toggleOptions(_ key: String) {
+        state.openOptions = state.openOptions == key ? nil : key
         fitPostCall()
     }
 
     func showTab(_ tab: MeetingPillState.PostCallTab) {
         guard state.postCallTab != tab else { return }
         state.postCallTab = tab
+        state.openOptions = nil
         fitPostCall()
     }
 
@@ -1062,7 +1096,8 @@ final class MeetingPillController {
             state.expanded = expanded
         } completion: { [weak self] in
             guard let self, self.state.mode == mode, self.state.expanded == expanded else { return }
-            panel.setFrame(self.frame(for: target), display: true)
+            // The size now, not at the start: rows can arrive or open while the shape animates.
+            panel.setFrame(self.frame(for: self.state.size(for: mode, open: expanded)), display: true)
             panel.invalidateShadow()
         }
     }
@@ -1438,6 +1473,7 @@ private struct PostCallMenu: View {
         case .writing:
             line(symbol: nil, busy: true) { Text("Writing the update…").foregroundStyle(IslandStyle.secondary) }
         case .ready:
+            ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: state.changesHeight > L.listMax) {
                 VStack(alignment: .leading, spacing: 0) {
                     let flagged = state.flaggedChanges
@@ -1462,6 +1498,22 @@ private struct PostCallMenu: View {
             .defaultScrollAnchor(.top)
             .id(postCall.memoId)
             .frame(height: state.listHeight)
+            // A list that scrolls fades out at its bottom edge instead of cutting a row.
+            .mask {
+                VStack(spacing: 0) {
+                    Color.black
+                    LinearGradient(colors: [.black, .black.opacity(state.changesHeight > state.listHeight ? 0 : 1)], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 14)
+                }
+            }
+            // Options opened near the bottom scroll into view once the list has grown for them.
+            .onChange(of: state.openOptions) { _, key in
+                guard let key else { return }
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(key, anchor: nil) }
+                }
+            }
+            }
             HStack(spacing: 8) {
                 if postCall.canApprove {
                     PrimaryActionButton(
@@ -1516,9 +1568,12 @@ private struct PostCallMenu: View {
             selected: change.values(state.editedValues[change.key]),
             kept: state.keptChanges.contains(change.key),
             height: L.rowHeight(change, shown: shown),
+            open: state.openOptions == change.key,
             toggle: { controller.toggleChange(change.key) },
+            toggleOptions: { controller.toggleOptions(change.key) },
             pick: { controller.pick($0, for: change) }
         )
+        .id(change.key)
     }
 
     private func caption(_ title: String, color: Color) -> some View {
@@ -1752,63 +1807,76 @@ private struct PostCallTabButton: View {
 }
 
 /// One proposed change: tick to keep, its field, and what it becomes (then what it was).
-/// A value with options opens them in a menu; free text is edited in Vocify.
+/// A value with options opens them under it; free text is edited in Vocify.
 private struct ChangeRow: View {
     let change: MeetingPillState.PostCall.Change
     let shown: String
     let selected: [String]
     let kept: Bool
     let height: CGFloat
+    let open: Bool
     let toggle: () -> Void
+    let toggleOptions: () -> Void
     let pick: (String) -> Void
-    @State private var hovering = false
+    @State private var overValue = false
     private typealias L = MeetingPillState.PostCallLayout
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Button(action: toggle) {
-                HStack(alignment: .top, spacing: 8) {
-                    tick
-                    Text(change.label)
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(IslandStyle.secondary)
-                        .lineLimit(1)
-                        .frame(width: L.label, height: L.lineHeight(L.valueSize), alignment: .leading)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
+                Button(action: toggle) {
+                    HStack(alignment: .top, spacing: 8) {
+                        tick
+                        Text(change.label)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(IslandStyle.secondary)
+                            .lineLimit(1)
+                            .frame(width: L.label, height: L.lineHeight(L.valueSize), alignment: .leading)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(kept ? "Untick to leave it out" : "Tick to write it")
+                .accessibilityLabel(change.label)
+                .accessibilityValue(kept ? "Will be written" : "Not written")
+
+                HStack(alignment: .top, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        value
+                        if change.check {
+                            Text("The call wasn't clear on this one")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(IslandStyle.warning)
+                                .lineLimit(1)
+                                .frame(height: L.reason, alignment: .leading)
+                        }
+                    }
+                    .frame(width: L.valueWidth, alignment: .leading)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(open || overValue ? IslandStyle.text : IslandStyle.secondary)
+                        .rotationEffect(.degrees(open ? 180 : 0))
+                        .opacity(change.options.isEmpty ? 0 : 1)
+                        .frame(width: L.chevron, height: L.lineHeight(L.valueSize))
                 }
                 .contentShape(Rectangle())
+                .onTapGesture { change.options.isEmpty ? toggle() : toggleOptions() }
+                .onHover { overValue = $0 }
+                .help(change.options.isEmpty ? "Edit it in Vocify" : change.multiple ? "Pick one or more" : "Pick another value")
+                .accessibilityAddTraits(.isButton)
             }
-            .buttonStyle(.plain)
-            .help(kept ? "Untick to leave it out" : "Tick to write it")
-            .accessibilityLabel(change.label)
-            .accessibilityValue(kept ? "Will be written" : "Not written")
+            .padding(.horizontal, L.flaggedInset)
+            .padding(.vertical, L.rowPadding / 2)
+            .frame(height: height, alignment: .top)
 
-            HStack(alignment: .top, spacing: 0) {
-                VStack(alignment: .leading, spacing: 0) {
-                    value
-                    if change.check {
-                        Text("The call wasn't clear on this one")
-                            .font(.system(size: 10.5))
-                            .foregroundStyle(IslandStyle.warning)
-                            .lineLimit(1)
-                            .frame(height: L.reason, alignment: .leading)
-                    }
-                }
-                .frame(width: L.valueWidth, alignment: .leading)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(IslandStyle.secondary)
-                    .opacity(change.options.isEmpty ? 0 : hovering ? 1 : 0.6)
-                    .frame(width: L.chevron, height: L.lineHeight(L.valueSize))
+            if open {
+                OptionList(change: change, selected: selected, pick: pick, done: toggleOptions)
+                    .padding(.leading, L.optionsIndent)
+                    .padding(.trailing, L.flaggedInset)
+                    .padding(.vertical, L.optionsGap)
+                    .transition(.opacity)
             }
-            .contentShape(Rectangle())
-            .onTapGesture { change.options.isEmpty ? toggle() : OptionMenu.show(change, selected: selected, pick: pick) }
-            .onHover { hovering = $0 }
-            .help(change.options.isEmpty ? "Edit it in Vocify" : change.multiple ? "Pick one or more" : "Pick another value")
         }
-        .padding(.horizontal, L.flaggedInset)
-        .padding(.vertical, L.rowPadding / 2)
-        .frame(height: height, alignment: .top)
-        .background(Color.white.opacity(hovering ? 0.05 : 0), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var tick: some View {
@@ -1836,36 +1904,105 @@ private struct ChangeRow: View {
     }
 }
 
-/// A change's options as a native menu at the pointer. A checkbox list ticks several.
-@MainActor
-private enum OptionMenu {
-    private final class Target: NSObject {
-        let pick: (String) -> Void
-        init(pick: @escaping (String) -> Void) { self.pick = pick }
-        @objc func choose(_ item: NSMenuItem) {
-            if let value = item.representedObject as? String { pick(value) }
-        }
-    }
+/// A change's options, in the island's glass, under the value. A checkbox list ticks several.
+private struct OptionList: View {
+    let change: MeetingPillState.PostCall.Change
+    let selected: [String]
+    let pick: (String) -> Void
+    let done: () -> Void
+    private typealias L = MeetingPillState.PostCallLayout
 
-    static func show(_ change: MeetingPillState.PostCall.Change, selected: [String], pick: @escaping (String) -> Void) {
-        let target = Target(pick: pick)
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        for option in change.options {
-            let item = NSMenuItem(title: option.label, action: #selector(Target.choose(_:)), keyEquivalent: "")
-            item.target = target
-            item.representedObject = option.value
-            item.state = selected.contains(option.value) ? .on : .off
-            menu.addItem(item)
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView(.vertical, showsIndicators: change.options.count > L.optionsVisible) {
+                VStack(spacing: 0) {
+                    ForEach(change.options) { option in
+                        OptionRow(label: option.label, selected: selected.contains(option.value), multiple: change.multiple) {
+                            pick(option.value)
+                        }
+                    }
+                }
+            }
+            .frame(height: CGFloat(min(change.options.count, L.optionsVisible)) * L.option)
+            if change.multiple {
+                HStack {
+                    Spacer(minLength: 0)
+                    TextAction(title: "Done", symbol: nil, action: done)
+                }
+                .frame(height: L.optionsFooter)
+            }
         }
-        menu.appearance = NSAppearance(named: .darkAqua)
-        // Runs until the menu closes, so `target` lives as long as it does.
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
-        withExtendedLifetime(target) {}
+        .padding(L.optionsPadding)
+        .background(GlassPanel(radius: 10))
     }
 }
 
-/// The card's one main action: the beige of the island's count, with dark text on it.
+private struct OptionRow: View {
+    let label: String
+    let selected: Bool
+    let multiple: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                ZStack {
+                    if multiple {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(selected ? IslandStyle.beige : .clear)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(selected ? IslandStyle.beige : IslandStyle.secondary, lineWidth: 1.2)
+                        if selected {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 7.5, weight: .heavy))
+                                .foregroundStyle(Color.black.opacity(0.85))
+                        }
+                    } else if selected {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(IslandStyle.beige)
+                    }
+                }
+                .frame(width: 14, height: 14)
+                Text(label)
+                    .font(.system(size: 12))
+                    .foregroundStyle(selected || hovering ? IslandStyle.text : IslandStyle.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: MeetingPillState.PostCallLayout.option)
+            .background(Color.white.opacity(hovering ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The island's glass at a smaller scale: a faint fill with a light sheen and the same rim.
+private struct GlassPanel: View {
+    let radius: CGFloat
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        shape
+            .fill(Color.white.opacity(0.07))
+            .overlay(shape.fill(LinearGradient(colors: [Color.white.opacity(0.06), .clear], startPoint: .top, endPoint: .center)))
+            .overlay(shape.strokeBorder(
+                LinearGradient(
+                    colors: [Color.white.opacity(0.30), Color.white.opacity(0.08), Color.white.opacity(0.20)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            ))
+    }
+}
+
+/// The card's one main action: the island's glass, tinted with its beige.
 private struct PrimaryActionButton: View {
     let title: String
     let symbol: String?
@@ -1878,12 +2015,20 @@ private struct PrimaryActionButton: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .semibold)) }
-                Text(title).font(.system(size: 12.5, weight: .medium)).lineLimit(1)
+                Text(title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
             }
-            .foregroundStyle(Color.black.opacity(0.85))
-            .padding(.horizontal, 13)
+            .foregroundStyle(IslandStyle.beige)
+            .padding(.horizontal, 14)
             .frame(height: 30)
-            .background(IslandStyle.beige.opacity(hovering && !disabled ? 1 : 0.9), in: Capsule())
+            .background {
+                Capsule()
+                    .fill(IslandStyle.beige.opacity(hovering && !disabled ? 0.26 : 0.18))
+                    .overlay(Capsule().fill(LinearGradient(colors: [Color.white.opacity(0.10), .clear], startPoint: .top, endPoint: .center)))
+                    .overlay(Capsule().strokeBorder(
+                        LinearGradient(colors: [IslandStyle.beige.opacity(0.65), IslandStyle.beige.opacity(0.2)], startPoint: .top, endPoint: .bottom),
+                        lineWidth: 1
+                    ))
+            }
         }
         .buttonStyle(PressScale())
         .disabled(disabled)
@@ -1892,6 +2037,7 @@ private struct PrimaryActionButton: View {
         .help(help)
     }
 }
+
 
 /// The call's type as a quiet tag beside the contact; one click to correct it.
 private struct TypePicker: View {

@@ -11,6 +11,7 @@
     'call:pages': new Set(),
     'call:ended': new Set(),
     'call:source': new Set(),
+    'call:type': new Set(),
     'postcall:action': new Set(),
     'recorder:transcript': new Set(),
     'recorder:levels': new Set(),
@@ -87,6 +88,8 @@
       onCommand: on('shell:command'),
       // A choice made in the island's post-call card: { type, ...details }.
       onPostCallAction: on('postcall:action'),
+      // The call type picked in the island while recording: { key } (null: Vocify decides).
+      onCallType: on('call:type'),
     },
     saas: { request: (payload) => call('saas:request', { payload }) },
     drafts: {

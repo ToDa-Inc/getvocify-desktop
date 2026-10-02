@@ -271,6 +271,12 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         emit("call:pages", ["urls": urls], in: mainWebView)
     }
 
+    /// The call type the rep chose in the island while recording; nil hands it back to Vocify.
+    func emitCallType(_ key: String?) {
+        guard let mainWebView else { return }
+        emit("call:type", ["key": (key as Any?) ?? NSNull()], in: mainWebView)
+    }
+
     /// Where the call happens (app or page) and whether that makes it a call or a meeting.
     func emitCallSource(_ source: CallSource?) {
         guard let mainWebView else { return }

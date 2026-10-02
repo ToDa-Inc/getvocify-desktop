@@ -62,9 +62,31 @@ final class MeetingPillState: ObservableObject {
 
     /// What the dashboard says about the call that just ended. Every part comes from something
     /// the backend produced for that call; a part that doesn't apply is nil.
+    struct LiveType: Equatable {
+        let selected: String?
+        let options: [PostCall.CallType.Option]
+
+        var selectedLabel: String? { options.first { $0.key == selected }?.label }
+
+        init(selected: String?, options: [PostCall.CallType.Option]) {
+            self.selected = selected
+            self.options = options
+        }
+
+        init?(_ raw: [String: Any]) {
+            let options = (raw["options"] as? [[String: Any]] ?? []).compactMap { option -> PostCall.CallType.Option? in
+                guard let key = option["key"] as? String, let label = option["label"] as? String else { return nil }
+                return PostCall.CallType.Option(key: key, label: label)
+            }
+            guard !options.isEmpty else { return nil }
+            self.init(selected: raw["selected"] as? String, options: options)
+        }
+    }
+
     struct PostCall: Equatable {
         enum Stage: String {
-            case writing, ready, applying, done, review
+            /// `internal`: a conversation without a customer; nothing goes to the CRM.
+            case writing, ready, applying, done, review, `internal`
         }
 
         struct Change: Equatable, Identifiable {
@@ -203,6 +225,8 @@ final class MeetingPillState: ObservableObject {
     @Published var clock: Clock?
     @Published var paused = false
     @Published var turns: [Turn] = []
+    /// The call type picker while recording; nil until the dashboard knows the company's types.
+    @Published var liveType: LiveType?
     /// The Mac records and transcribes the call itself: the dashboard's copy of the transcript is ignored.
     var nativeTranscript = false
     @Published var assist: Assist?
@@ -231,7 +255,7 @@ final class MeetingPillState: ObservableObject {
         guard let postCall else { return L.top + L.header + L.line + L.bottom }
         var height = L.top + L.header
         switch postCall.stage {
-        case .writing, .done:
+        case .writing, .done, .internal:
             height += L.line
         case .applying:
             height += L.line + 6
@@ -263,6 +287,10 @@ final class MeetingPillState: ObservableObject {
                 postCall = next
                 onPostCallChange?()
             }
+        }
+        if state.keys.contains("liveType") {
+            let next = (state["liveType"] as? [String: Any]).flatMap(LiveType.init)
+            if next != liveType { liveType = next }
         }
         if state.keys.contains("callContact") {
             let name = ((state["callContact"] as? [String: Any])?["name"] as? String)?
@@ -681,6 +709,14 @@ final class MeetingPillController {
     func unskipEmail() { postCallAction("unskipEmail") }
     func stopEmails() { postCallAction("stopEmails") }
     func setCallType(_ key: String) { postCallAction("setType", ["key": key]) }
+
+    /// The type chosen while recording (nil: Vocify decides after the call).
+    func pickCallType(_ key: String?) {
+        if let current = state.liveType {
+            state.liveType = MeetingPillState.LiveType(selected: key, options: current.options)
+        }
+        bridge?.emitCallType(key)
+    }
     func keepEmails() { postCallAction("keepEmails") }
     func addMeeting() { postCallAction("addMeeting") }
 
@@ -732,7 +768,7 @@ final class MeetingPillController {
                 autoClose?.cancel()
                 state.countdown = nil
                 fitPostCall()
-            case .ready, .review, .done:
+            case .ready, .review, .done, .internal:
                 rest()
             }
         }
@@ -1261,6 +1297,10 @@ private struct PostCallMenu: View {
             line(symbol: "checkmark", busy: false) {
                 Text(doneText).foregroundStyle(IslandStyle.text)
             }
+        case .internal:
+            line(symbol: "person.2", busy: false) {
+                Text("Internal, nothing goes to the CRM").foregroundStyle(IslandStyle.secondary)
+            }
         case .review:
             line(symbol: "exclamationmark.circle", busy: false) {
                 Text(postCall.note ?? "Needs a look").foregroundStyle(IslandStyle.text)
@@ -1275,7 +1315,7 @@ private struct PostCallMenu: View {
 
     private var doneText: String {
         guard let applied = postCall.applied else { return "Updated in HubSpot" }
-        return applied == 1 ? "Updated in HubSpot · 1 field" : "Updated in HubSpot · \(applied) fields"
+        return applied == 1 ? "1 field updated in HubSpot" : "\(applied) fields updated in HubSpot"
     }
 
     // MARK: Email and meeting
@@ -1412,39 +1452,81 @@ private struct ChangeRow: View {
     }
 }
 
-/// "· Cold call ⌄" beside the contact: what the call was scored as, one click to correct it.
+/// The call's type as a quiet tag beside the contact; one click to correct it.
 private struct TypePicker: View {
     let type: MeetingPillState.PostCall.CallType
     let choose: (String) -> Void
-    @State private var hovering = false
 
     var body: some View {
-        let label = HStack(spacing: 3) {
-            Text("· \(type.label)")
-                .lineLimit(1)
-            if !type.options.isEmpty {
-                Image(systemName: "chevron.down").font(.system(size: 7.5, weight: .bold))
-            }
-        }
-        .font(.system(size: 12))
-        .foregroundStyle(hovering && !type.options.isEmpty ? IslandStyle.text : IslandStyle.secondary)
-
         if type.options.isEmpty {
-            label.help("What this call was scored as")
+            TypeTag(label: type.label, open: false)
+                .help("What this call was scored as")
         } else {
             Menu {
                 ForEach(type.options) { option in
                     Button(option.label) { choose(option.key) }
                 }
             } label: {
-                label
+                TypeTag(label: type.label, open: true)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .onHover { hovering = $0 }
             .help("What this call was scored as. Change it to score it again.")
         }
+    }
+}
+
+/// While recording: the call's type if the rep knows it. Left alone, Vocify reads it from the
+/// conversation after the call, so it never asks for anything.
+private struct LiveTypePicker: View {
+    let type: MeetingPillState.LiveType
+    let choose: (String?) -> Void
+
+    var body: some View {
+        Menu {
+            Button {
+                choose(nil)
+            } label: {
+                if type.selected == nil { Label("Let Vocify decide", systemImage: "checkmark") } else { Text("Let Vocify decide") }
+            }
+            Divider()
+            ForEach(type.options) { option in
+                Button {
+                    choose(option.key)
+                } label: {
+                    if type.selected == option.key { Label(option.label, systemImage: "checkmark") } else { Text(option.label) }
+                }
+            }
+        } label: {
+            TypeTag(label: type.selectedLabel ?? "Call type", open: true, placeholder: type.selected == nil)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(type.selected == nil ? "Vocify picks the call type after the call. Choose it now if you know it." : "The call type you chose")
+    }
+}
+
+private struct TypeTag: View {
+    let label: String
+    let open: Bool
+    var placeholder = false
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label).lineLimit(1)
+            if open {
+                Image(systemName: "chevron.down").font(.system(size: 7.5, weight: .bold))
+            }
+        }
+        .font(.system(size: 11.5))
+        .foregroundStyle(placeholder ? IslandStyle.secondary : IslandStyle.text)
+        .padding(.horizontal, 8)
+        .frame(height: 20)
+        .background(Color.white.opacity(open && hovering ? 0.16 : 0.09), in: Capsule())
+        .onHover { hovering = $0 }
     }
 }
 
@@ -1613,6 +1695,9 @@ private struct OpenIsland: View {
                     action: controller.togglePause
                 )
                 StopButton(action: controller.stop)
+                if let type = state.liveType {
+                    LiveTypePicker(type: type, choose: controller.pickCallType)
+                }
                 Spacer(minLength: 0)
                 IconButton(symbol: "magnifyingglass", help: "Search transcript", action: controller.search)
                 IconButton(symbol: "arrow.up.right", help: "Open Vocify", action: controller.openApp)
@@ -1788,7 +1873,7 @@ private struct VoiceWave: View {
             .frame(height: 16)
             .opacity(level > 0.05 ? 1 : 0.45)
         }
-        .help("Beige: you speaking · White: them")
+        .help("Beige is you speaking, white is them")
         .accessibilityLabel("Voice activity")
     }
 }

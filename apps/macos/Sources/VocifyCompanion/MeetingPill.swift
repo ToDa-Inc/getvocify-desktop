@@ -119,6 +119,9 @@ final class MeetingPillState: ObservableObject {
                 return multiple ? raw.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } : [raw]
             }
 
+            /// What the CRM has, when it differs from what will be written.
+            func before(_ shown: String) -> String? { from == shown ? nil : from }
+
             /// What the rep reads for the current pick.
             func shown(_ edited: String?) -> String {
                 guard let edited, !options.isEmpty else { return to }
@@ -253,9 +256,6 @@ final class MeetingPillState: ObservableObject {
         static let line: CGFloat = 30
         static let groupLabel: CGFloat = 20
         static let rowPadding: CGFloat = 8
-        static let reason: CGFloat = 14
-        static let flaggedLabel: CGFloat = 18
-        static let flaggedPadding: CGFloat = 8
         /// The changes scroll inside the card past this; every one stays reachable.
         static let listMax: CGFloat = 236
         static let actions: CGFloat = 40
@@ -264,24 +264,22 @@ final class MeetingPillState: ObservableObject {
         static let tick: CGFloat = 14
         static let label: CGFloat = 104
         static let chevron: CGFloat = 14
-        static let flaggedInset: CGFloat = 6
+        static let rowInset: CGFloat = 6
         /// Every value column has the same width, so the measured height is the drawn one.
-        static let valueWidth: CGFloat = width - inset * 2 - flaggedInset * 2 - tick - label - chevron - 16
+        static let valueWidth: CGFloat = width - inset * 2 - rowInset * 2 - tick - label - chevron - 16
         static let valueSize: CGFloat = 12
         static let emailLines = 3
         static let noteLines = 5
-        /// A change's options open under it, inside the card.
+        /// A change's options float under its value, over the card.
         static let option: CGFloat = 26
-        static let optionsVisible = 6
-        static let optionsFooter: CGFloat = 30
+        static let optionsVisible = 7
         static let optionsPadding: CGFloat = 4
-        static let optionsGap: CGFloat = 4
-        /// The options line up with the value column.
-        static let optionsIndent: CGFloat = flaggedInset + tick + 8 + label + 8
 
-        static func optionsHeight(_ change: PostCall.Change) -> CGFloat {
-            CGFloat(min(change.options.count, optionsVisible)) * option + optionsPadding * 2
-                + (change.multiple ? optionsFooter : 0) + optionsGap * 2
+        static func optionsSize(_ change: PostCall.Change) -> CGSize {
+            CGSize(
+                width: valueWidth + chevron + optionsPadding * 2,
+                height: CGFloat(min(change.options.count, optionsVisible)) * option + optionsPadding * 2
+            )
         }
 
         static func lineHeight(_ size: CGFloat) -> CGFloat {
@@ -302,12 +300,12 @@ final class MeetingPillState: ObservableObject {
 
         /// The value as a row draws it: the new value, then what it was.
         static func valueText(_ change: PostCall.Change, shown: String) -> String {
-            change.from.map { "\(shown)  was \($0)" } ?? shown
+            change.before(shown).map { "\(shown)  was \($0)" } ?? shown
         }
 
         static func rowHeight(_ change: PostCall.Change, shown: String) -> CGFloat {
             let count = lines(valueText(change, shown: shown), size: valueSize, width: valueWidth, limit: 2)
-            return CGFloat(count) * lineHeight(valueSize) + rowPadding + (change.check ? reason : 0)
+            return CGFloat(count) * lineHeight(valueSize) + rowPadding
         }
 
         static let groups: [(object: String, title: String)] = [
@@ -359,16 +357,15 @@ final class MeetingPillState: ObservableObject {
     var postCallTabs: [PostCallTab] {
         guard let postCall else { return [.crm] }
         var tabs: [PostCallTab] = [.crm]
-        if postCall.email != nil || postCall.offerStopEmails { tabs.append(.email) }
+        if postCall.email != nil { tabs.append(.email) }
         if postCall.notes || postCall.summary != nil { tabs.append(.notes) }
         return tabs
     }
 
     var activeTab: PostCallTab { postCallTabs.contains(postCallTab) ? postCallTab : .crm }
 
-    /// The changes as the card groups them: the flagged ones first, then by record.
-    var flaggedChanges: [PostCall.Change] { postCall?.changes.filter(\.check) ?? [] }
-
+    /// The changes the card lists, by record. One the call wasn't clear on is left to the
+    /// review in Vocify: it isn't shown here, so it isn't written from here either.
     var groupedChanges: [(title: String, changes: [PostCall.Change])] {
         let sure = postCall?.changes.filter { !$0.check } ?? []
         return PostCallLayout.groups.compactMap { group in
@@ -379,31 +376,21 @@ final class MeetingPillState: ObservableObject {
 
     func shown(_ change: PostCall.Change) -> String { change.shown(editedValues[change.key]) }
 
-    /// A change's row with its options when they're open.
     func rowHeight(_ change: PostCall.Change) -> CGFloat {
         PostCallLayout.rowHeight(change, shown: shown(change))
-            + (openOptions == change.key ? PostCallLayout.optionsHeight(change) : 0)
     }
 
     /// The whole list's height; the card shows up to `listMax` of it and scrolls the rest.
     var changesHeight: CGFloat {
-        typealias L = PostCallLayout
-        var height: CGFloat = 0
-        let flagged = flaggedChanges
-        if !flagged.isEmpty {
-            height += L.flaggedPadding + L.flaggedLabel + flagged.reduce(0) { $0 + rowHeight($1) } + L.gap
+        groupedChanges.reduce(0) { height, group in
+            height + PostCallLayout.groupLabel + group.changes.reduce(0) { $0 + rowHeight($1) }
         }
-        for group in groupedChanges {
-            height += L.groupLabel + group.changes.reduce(0) { $0 + rowHeight($1) }
-        }
-        return height
     }
 
-    /// Open options get their own room: the list grows by them instead of hiding them.
-    var listHeight: CGFloat {
-        let open = postCall?.changes.first { $0.key == openOptions }
-        return min(changesHeight, PostCallLayout.listMax + (open.map(PostCallLayout.optionsHeight) ?? 0))
-    }
+    var listHeight: CGFloat { min(changesHeight, PostCallLayout.listMax) }
+
+    /// Ready, but every change needs a look: the card sends the rep to the review instead.
+    var nothingSure: Bool { groupedChanges.isEmpty }
 
     /// The card's height from what it shows, using the same sizes the view draws.
     private var postCallBodyHeight: CGFloat {
@@ -421,7 +408,7 @@ final class MeetingPillState: ObservableObject {
             case .review:
                 height += L.line + L.actions
             case .ready:
-                height += listHeight + L.actions
+                height += nothingSure ? L.line + L.actions : listHeight + L.actions
             }
             if postCall.meeting != nil, postCall.stage != .internal { height += L.meeting }
         case .email:
@@ -449,7 +436,6 @@ final class MeetingPillState: ObservableObject {
                 height += L.line
             }
         }
-        if postCall.offerStopEmails { height += L.line }
         return height
     }
 
@@ -932,25 +918,102 @@ final class MeetingPillController {
         }
         state.editedValues[change.key] = next == change.value ? nil : next
         state.keptChanges.insert(change.key)
-        // A list of one is answered by the pick; a checkbox list stays open until Done.
-        if !change.multiple { state.openOptions = nil }
-        fitPostCall()
-    }
-
-    func toggleOptions(_ key: String) {
-        state.openOptions = state.openOptions == key ? nil : key
+        // A list of one is answered by the pick; a checkbox list stays open for more.
+        if !change.multiple { closeOptions() }
         fitPostCall()
     }
 
     func showTab(_ tab: MeetingPillState.PostCallTab) {
         guard state.postCallTab != tab else { return }
+        closeOptions()
         state.postCallTab = tab
-        state.openOptions = nil
         fitPostCall()
+    }
+
+    // MARK: Options
+
+    private var optionsPanel: NSPanel?
+    private var optionsMonitors: [Any] = []
+
+    /// A change's options float under its value, over the card, like any dropdown.
+    /// `anchor` is the value's frame in the island (top-left origin).
+    func toggleOptions(_ change: MeetingPillState.PostCall.Change, anchor: CGRect) {
+        let reopening = state.openOptions == change.key
+        closeOptions()
+        guard !reopening, let panel, let content = panel.contentView else { return }
+        typealias L = MeetingPillState.PostCallLayout
+        let size = L.optionsSize(change)
+        // The options' text lines up with the value's.
+        let below = panel.convertPoint(toScreen: NSPoint(x: anchor.minX - L.optionsPadding - 8, y: content.bounds.height - anchor.maxY - 4))
+        var frame = NSRect(x: below.x, y: below.y - size.height, width: size.width, height: size.height)
+        if let screen = panel.screen, frame.minY < screen.visibleFrame.minY {
+            frame.origin.y = below.y + anchor.height + 8
+        }
+        let popup = optionsPanel ?? makeOptionsPanel()
+        let host = IslandHostingView(rootView: OptionPopup(state: state, change: change) { [weak self] value in
+            self?.pick(value, for: change)
+        })
+        host.sizingOptions = []
+        popup.contentView = host
+        popup.setFrame(frame, display: true)
+        popup.orderFrontRegardless()
+        state.openOptions = change.key
+        watchOptions()
+    }
+
+    func closeOptions() {
+        optionsMonitors.forEach(NSEvent.removeMonitor)
+        optionsMonitors = []
+        optionsPanel?.orderOut(nil)
+        if state.openOptions != nil { state.openOptions = nil }
+    }
+
+    /// A click anywhere but the options (or a scroll) closes them, as a menu does.
+    private func watchOptions() {
+        if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .scrollWheel], handler: { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, event.window !== self.optionsPanel else { return }
+                if event.type == .scrollWheel {
+                    self.closeOptions()
+                    return
+                }
+                // A click on a value opens or closes its own options; anything else closes them.
+                let open = self.state.openOptions
+                DispatchQueue.main.async {
+                    if open != nil, self.state.openOptions == open { self.closeOptions() }
+                }
+            }
+            return event
+        }) {
+            optionsMonitors.append(local)
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.closeOptions() }
+        }) {
+            optionsMonitors.append(global)
+        }
+    }
+
+    private func makeOptionsPanel() -> NSPanel {
+        let popup = IslandPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        popup.isFloatingPanel = true
+        // Above the island, which sits at the status bar's level.
+        popup.level = .popUpMenu
+        popup.isOpaque = false
+        popup.backgroundColor = .clear
+        popup.hasShadow = true
+        popup.hidesOnDeactivate = false
+        popup.isMovable = false
+        popup.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        popup.appearance = NSAppearance(named: .darkAqua)
+        optionsPanel = popup
+        return popup
     }
 
     /// The dashboard moved the call on (written, ready, email drafted...).
     private func postCallChanged() {
+        // A new call, or this one moved past its changes: its options no longer apply.
+        if state.openOptions == nil || state.postCall?.stage != .ready { closeOptions() }
         switch state.mode {
         case .recording, .starting, .call:
             return  // shown once the island is back at rest
@@ -1077,6 +1140,7 @@ final class MeetingPillController {
     /// The window first covers both the old and new shape, the shape animates inside it,
     /// then the window fits the new shape. The frame and SwiftUI never animate against each other.
     private func transition(to mode: MeetingPillState.Mode, expanded: Bool) {
+        closeOptions()
         autoClose?.cancel()
         state.countdown = nil
         let panel = ensure()
@@ -1472,21 +1536,18 @@ private struct PostCallMenu: View {
         switch postCall.stage {
         case .writing:
             line(symbol: nil, busy: true) { Text("Writing the update…").foregroundStyle(IslandStyle.secondary) }
+        case .ready where state.nothingSure:
+            line(symbol: "exclamationmark.circle", busy: false) {
+                Text("Nothing clear enough to write from here").foregroundStyle(IslandStyle.text)
+            }
+            HStack {
+                PrimaryActionButton(title: "Review in Vocify", symbol: "arrow.up.right", help: "Opens the memo in Vocify", action: controller.reviewPostCall)
+                Spacer(minLength: 0)
+            }
+            .frame(height: L.actions)
         case .ready:
-            ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: state.changesHeight > L.listMax) {
                 VStack(alignment: .leading, spacing: 0) {
-                    let flagged = state.flaggedChanges
-                    if !flagged.isEmpty {
-                        VStack(alignment: .leading, spacing: 0) {
-                            caption("To confirm", color: IslandStyle.warning)
-                                .frame(height: L.flaggedLabel, alignment: .bottomLeading)
-                            ForEach(flagged) { row($0) }
-                        }
-                        .padding(.bottom, L.flaggedPadding)
-                        .background(IslandStyle.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .padding(.bottom, L.gap)
-                    }
                     ForEach(state.groupedChanges, id: \.title) { group in
                         caption(group.title, color: IslandStyle.secondary)
                             .frame(height: L.groupLabel, alignment: .bottomLeading)
@@ -1505,14 +1566,6 @@ private struct PostCallMenu: View {
                     LinearGradient(colors: [.black, .black.opacity(state.changesHeight > state.listHeight ? 0 : 1)], startPoint: .top, endPoint: .bottom)
                         .frame(height: 14)
                 }
-            }
-            // Options opened near the bottom scroll into view once the list has grown for them.
-            .onChange(of: state.openOptions) { _, key in
-                guard let key else { return }
-                DispatchQueue.main.async {
-                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(key, anchor: nil) }
-                }
-            }
             }
             HStack(spacing: 8) {
                 if postCall.canApprove {
@@ -1565,15 +1618,12 @@ private struct PostCallMenu: View {
         return ChangeRow(
             change: change,
             shown: shown,
-            selected: change.values(state.editedValues[change.key]),
             kept: state.keptChanges.contains(change.key),
             height: L.rowHeight(change, shown: shown),
             open: state.openOptions == change.key,
             toggle: { controller.toggleChange(change.key) },
-            toggleOptions: { controller.toggleOptions(change.key) },
-            pick: { controller.pick($0, for: change) }
+            toggleOptions: { controller.toggleOptions(change, anchor: $0) }
         )
-        .id(change.key)
     }
 
     private func caption(_ title: String, color: Color) -> some View {
@@ -1581,7 +1631,7 @@ private struct PostCallMenu: View {
             .font(.system(size: 9.5, weight: .semibold))
             .tracking(0.6)
             .foregroundStyle(color)
-            .padding(.leading, L.flaggedInset)
+            .padding(.leading, L.rowInset)
             .padding(.bottom, 3)
     }
 
@@ -1608,7 +1658,7 @@ private struct PostCallMenu: View {
             case .added: EmptyView()
             }
         }
-        .padding(.horizontal, L.flaggedInset)
+        .padding(.horizontal, L.rowInset)
         .frame(height: L.meeting)
     }
 
@@ -1677,14 +1727,6 @@ private struct PostCallMenu: View {
                 }
             case .sent:
                 line(symbol: "checkmark", busy: false) { Text("Email sent").foregroundStyle(IslandStyle.secondary) }
-            }
-        }
-        if postCall.offerStopEmails {
-            line(symbol: nil, busy: false) {
-                Text("Stop drafting emails after calls?").foregroundStyle(IslandStyle.secondary)
-            } trailing: {
-                SmallAction(title: "Stop", action: controller.stopEmails)
-                SmallAction(title: "Keep", action: controller.keepEmails)
             }
         }
     }
@@ -1807,23 +1849,22 @@ private struct PostCallTabButton: View {
 }
 
 /// One proposed change: tick to keep, its field, and what it becomes (then what it was).
-/// A value with options opens them under it; free text is edited in Vocify.
+/// A value with options opens them over the card; free text is edited in Vocify.
 private struct ChangeRow: View {
     let change: MeetingPillState.PostCall.Change
     let shown: String
-    let selected: [String]
     let kept: Bool
     let height: CGFloat
     let open: Bool
     let toggle: () -> Void
-    let toggleOptions: () -> Void
-    let pick: (String) -> Void
+    /// Opens the options under the value, given its frame in the island.
+    let toggleOptions: (CGRect) -> Void
     @State private var overValue = false
+    @State private var valueFrame: CGRect = .zero
     private typealias L = MeetingPillState.PostCallLayout
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: 8) {
                 Button(action: toggle) {
                     HStack(alignment: .top, spacing: 8) {
                         tick
@@ -1841,17 +1882,8 @@ private struct ChangeRow: View {
                 .accessibilityValue(kept ? "Will be written" : "Not written")
 
                 HStack(alignment: .top, spacing: 0) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        value
-                        if change.check {
-                            Text("The call wasn't clear on this one")
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(IslandStyle.warning)
-                                .lineLimit(1)
-                                .frame(height: L.reason, alignment: .leading)
-                        }
-                    }
-                    .frame(width: L.valueWidth, alignment: .leading)
+                    value
+                        .frame(width: L.valueWidth, alignment: .leading)
                     Image(systemName: "chevron.down")
                         .font(.system(size: 8, weight: .bold))
                         .foregroundStyle(open || overValue ? IslandStyle.text : IslandStyle.secondary)
@@ -1860,23 +1892,15 @@ private struct ChangeRow: View {
                         .frame(width: L.chevron, height: L.lineHeight(L.valueSize))
                 }
                 .contentShape(Rectangle())
-                .onTapGesture { change.options.isEmpty ? toggle() : toggleOptions() }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { valueFrame = $0 }
+                .onTapGesture { change.options.isEmpty ? toggle() : toggleOptions(valueFrame) }
                 .onHover { overValue = $0 }
                 .help(change.options.isEmpty ? "Edit it in Vocify" : change.multiple ? "Pick one or more" : "Pick another value")
                 .accessibilityAddTraits(.isButton)
             }
-            .padding(.horizontal, L.flaggedInset)
+            .padding(.horizontal, L.rowInset)
             .padding(.vertical, L.rowPadding / 2)
             .frame(height: height, alignment: .top)
-
-            if open {
-                OptionList(change: change, selected: selected, pick: pick, done: toggleOptions)
-                    .padding(.leading, L.optionsIndent)
-                    .padding(.trailing, L.flaggedInset)
-                    .padding(.vertical, L.optionsGap)
-                    .transition(.opacity)
-            }
-        }
     }
 
     private var tick: some View {
@@ -1896,7 +1920,7 @@ private struct ChangeRow: View {
 
     private var value: some View {
         (Text(shown).foregroundColor(kept ? IslandStyle.text : IslandStyle.secondary)
-            + Text(change.from.map { "  was \($0)" } ?? "").font(.system(size: 11)).foregroundColor(IslandStyle.secondary))
+            + Text(change.before(shown).map { "  was \($0)" } ?? "").font(.system(size: 11)).foregroundColor(IslandStyle.secondary))
             .font(.system(size: L.valueSize))
             .lineLimit(2)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1904,67 +1928,51 @@ private struct ChangeRow: View {
     }
 }
 
-/// A change's options, in the island's glass, under the value. A checkbox list ticks several.
-private struct OptionList: View {
+/// A change's options in their own small window over the card, in the island's glass.
+/// A checkbox list stays open for more ticks; a list of one closes on the pick.
+private struct OptionPopup: View {
+    @ObservedObject var state: MeetingPillState
     let change: MeetingPillState.PostCall.Change
-    let selected: [String]
     let pick: (String) -> Void
-    let done: () -> Void
     private typealias L = MeetingPillState.PostCallLayout
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView(.vertical, showsIndicators: change.options.count > L.optionsVisible) {
-                VStack(spacing: 0) {
-                    ForEach(change.options) { option in
-                        OptionRow(label: option.label, selected: selected.contains(option.value), multiple: change.multiple) {
-                            pick(option.value)
-                        }
-                    }
+        let selected = change.values(state.editedValues[change.key])
+        ScrollView(.vertical, showsIndicators: change.options.count > L.optionsVisible) {
+            VStack(spacing: 0) {
+                ForEach(change.options) { option in
+                    OptionRow(label: option.label, selected: selected.contains(option.value)) { pick(option.value) }
                 }
-            }
-            .frame(height: CGFloat(min(change.options.count, L.optionsVisible)) * L.option)
-            if change.multiple {
-                HStack {
-                    Spacer(minLength: 0)
-                    TextAction(title: "Done", symbol: nil, action: done)
-                }
-                .frame(height: L.optionsFooter)
             }
         }
         .padding(L.optionsPadding)
-        .background(GlassPanel(radius: 10))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            ZStack {
+                BehindWindowBlur()
+                Color.black.opacity(0.28)
+                GlassPanel(radius: 10)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .environment(\.colorScheme, .dark)
     }
 }
 
 private struct OptionRow: View {
     let label: String
     let selected: Bool
-    let multiple: Bool
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                ZStack {
-                    if multiple {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(selected ? IslandStyle.beige : .clear)
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .strokeBorder(selected ? IslandStyle.beige : IslandStyle.secondary, lineWidth: 1.2)
-                        if selected {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 7.5, weight: .heavy))
-                                .foregroundStyle(Color.black.opacity(0.85))
-                        }
-                    } else if selected {
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(IslandStyle.beige)
-                    }
-                }
-                .frame(width: 14, height: 14)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(IslandStyle.beige)
+                    .opacity(selected ? 1 : 0)
+                    .frame(width: 14)
                 Text(label)
                     .font(.system(size: 12))
                     .foregroundStyle(selected || hovering ? IslandStyle.text : IslandStyle.secondary)

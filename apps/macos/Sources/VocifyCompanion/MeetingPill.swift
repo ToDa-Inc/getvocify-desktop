@@ -521,7 +521,8 @@ final class MeetingPillState: ObservableObject {
                 let drafting = (raw["stage"] as? String) == "draft"
                 let say = raw["sayThis"] as? String ?? ""
                 let bridge = raw["bridge"] as? String ?? ""
-                guard drafting ? !bridge.isEmpty : !say.isEmpty else { return nil }
+                // A draft is the loading state (the label only); an answer needs its line.
+                guard drafting || !say.isEmpty else { return nil }
                 return Assist(
                     label: raw["label"] as? String ?? "",
                     isQuestion: (raw["kind"] as? String) == "question",
@@ -2753,19 +2754,12 @@ private struct HelpSection: View {
             }
             if let help = shown {
                 if help.drafting {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("“\(help.bridge)”")
-                            .font(.system(size: 12.5).italic())
-                            .foregroundStyle(help.sayThis.isEmpty ? IslandStyle.text : IslandStyle.secondary)
-                            .lineLimit(2)
-                        if help.sayThis.isEmpty { TypingDots() }
-                    }
-                    if !help.sayThis.isEmpty {
-                        // The answer appears word by word while it is written.
-                        Text(help.sayThis)
-                            .font(.system(size: 12.5, weight: .medium))
-                            .foregroundStyle(IslandStyle.text)
-                            .fixedSize(horizontal: false, vertical: true)
+                    // An answer is on its way: the label above says what kind, the words come whole.
+                    HStack(spacing: 6) {
+                        Text("Preparing a reply")
+                            .font(.system(size: 12))
+                            .foregroundStyle(IslandStyle.secondary)
+                        TypingDots()
                     }
                 } else {
                     Text(help.sayThis)

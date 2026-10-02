@@ -472,8 +472,22 @@ final class MicCapture: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private var converter: AVAudioConverter?
     private let target = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
+    private var configObserver: NSObjectProtocol?
 
     func start() throws {
+        try attach()
+        // Headphones in or out switch the Mac's microphone mid-call: the engine stops by itself
+        // and the rep's side would go silent for the rest of the recording. Attach again to
+        // whatever input is the default now.
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { [weak self] _ in
+            try? self?.attach()
+        }
+    }
+
+    private func attach() throws {
+        engine.stop()
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, let converter = AVAudioConverter(from: format, to: target) else {
@@ -491,6 +505,8 @@ final class MicCapture: @unchecked Sendable {
     }
 
     func stop() {
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+        configObserver = nil
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
     }

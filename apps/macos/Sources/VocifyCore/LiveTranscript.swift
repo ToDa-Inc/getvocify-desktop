@@ -58,6 +58,8 @@ public struct LiveTranscript: Equatable {
     private static let freezeAfter = 60.0
     private var interims: [String: String] = [:]
     private var interimStarts: [String: Double] = [:]
+    /// Where each tail's audio reaches: a final ending before it leaves words still to come.
+    private var interimEnds: [String: Double] = [:]
     private var interimSeen: [String: Int] = [:]
     private var interimNames: [String: String] = [:]
     private var nextSeen = 0
@@ -106,6 +108,7 @@ public struct LiveTranscript: Equatable {
             guard interims[key] != text else { return false }
             interims[key] = text
             if let start { interimStarts[key] = start }
+            interimEnds[key] = end
             interimNames[key] = name
             if interimSeen[key] == nil {
                 interimSeen[key] = nextSeen
@@ -124,10 +127,13 @@ public struct LiveTranscript: Equatable {
         tokens.append(Self.words(text))
         echo.append(false)
         // The tail's words this final doesn't cover stay on screen, in the same bubble, until
-        // the next partial replaces them: dropping them would blank the end for a moment.
-        if let tail = interims[key], let rest = Self.remainder(of: tail, after: text) {
+        // the next partial replaces them: dropping them would blank the end for a moment. Only
+        // when the tail's audio goes past the final's (Speechmatics settles part of a sentence):
+        // a final for the whole tail (Deepgram) that dropped a word must not leave it on screen.
+        if let tail = interims[key], let tailEnd = interimEnds[key], let end, end < tailEnd - 0.05,
+           let rest = Self.remainder(of: tail, after: text) {
             interims[key] = rest
-            if let end { interimStarts[key] = end }
+            interimStarts[key] = end
         } else {
             // Its own live tail is done: it must not count as something else being said now.
             dropTail(key)
@@ -163,6 +169,7 @@ public struct LiveTranscript: Equatable {
     private mutating func dropTail(_ key: String) {
         interims[key] = nil
         interimStarts[key] = nil
+        interimEnds[key] = nil
         interimSeen[key] = nil
         interimNames[key] = nil
     }

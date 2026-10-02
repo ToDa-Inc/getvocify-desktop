@@ -170,12 +170,17 @@ check(overlap.rows().map(\.speaker) == [.prospect, .rep], "the earlier speaker s
 
 // The words a final doesn't cover stay on screen in the same bubble.
 var partial = LiveTranscript()
-partial.apply(text: "hola qué tal estás", isFinal: false, channel: "rep", start: 1, end: nil)
+partial.apply(text: "hola qué tal estás", isFinal: false, channel: "rep", start: 1, end: 2.4)
 partial.apply(text: "Hola, qué tal", isFinal: true, channel: "rep", start: 1, end: 2)
 check(partial.rows().map { [$0.key, $0.text, $0.pending] } == [["u0", "Hola, qué tal", "estás"]], "the rest of the tail stays")
 partial.apply(text: "estás?", isFinal: true, channel: "rep", start: 2, end: 2.5)
 check(partial.rows().map { [$0.key, $0.text, $0.pending] } == [["u0", "Hola, qué tal estás?", ""]], "and settles in the same bubble")
 check(LiveTranscript.remainder(of: "a b c", after: "a b c.") == nil, "nothing left, no tail")
+// A final for the whole tail that drops a word (Deepgram) leaves nothing behind.
+var revised = LiveTranscript()
+revised.apply(text: "vale vale perfecto", isFinal: false, channel: "rep", start: 1, end: 2)
+revised.apply(text: "Vale, perfecto.", isFinal: true, channel: "rep", start: 1, end: 2)
+check(revised.rows().map { [$0.text, $0.pending] } == [["Vale, perfecto.", ""]], "no stale words")
 
 // Who spoke: the name the call app showed for most of the sentence.
 var shown = SpeakerTimeline()

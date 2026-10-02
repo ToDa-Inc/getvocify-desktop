@@ -1814,12 +1814,31 @@ private struct TurnBubble: View, Equatable {
         .transaction { $0.animation = nil }
     }
 
-    private var words: Text {
-        let settled = Text(turn.text).foregroundColor(IslandStyle.text)
-        guard !turn.pending.isEmpty else { return settled }
-        let joined = turn.text.isEmpty || turn.pending.first.map { ",.;:!?…)".contains($0) } == true
-        let tail = Text((joined ? "" : " ") + turn.pending).foregroundColor(IslandStyle.secondary)
-        return turn.text.isEmpty ? tail : settled + tail
+    /// Settled words, then the ones still arriving (dimmed), then three dots while the
+    /// speaker is still going, so the paragraph visibly keeps growing instead of splitting.
+    @ViewBuilder private var words: some View {
+        if turn.pending.isEmpty {
+            text(dots: nil)
+        } else {
+            TimelineView(.periodic(from: .now, by: 0.35)) { context in
+                text(dots: Int(context.date.timeIntervalSinceReferenceDate / 0.35) % 3)
+            }
+        }
+    }
+
+    private func text(dots phase: Int?) -> Text {
+        var out = Text(turn.text).foregroundColor(IslandStyle.text)
+        // One or two words are often a false start; the dots alone say someone is speaking.
+        let tail = turn.pending.split(separator: " ").count > 2 || !turn.text.isEmpty ? turn.pending : ""
+        if !tail.isEmpty {
+            let joined = turn.text.isEmpty || tail.first.map { ",.;:!?…)".contains($0) } == true
+            out = out + Text((joined ? "" : " ") + tail).foregroundColor(IslandStyle.secondary)
+        }
+        guard let phase else { return out }
+        let lead = turn.text.isEmpty && tail.isEmpty ? "" : " "
+        return (0..<3).reduce(out + Text(lead)) { line, dot in
+            line + Text("•").foregroundColor(IslandStyle.secondary.opacity(dot == phase ? 1 : 0.35))
+        }
     }
 }
 

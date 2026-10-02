@@ -23,6 +23,9 @@ public struct LiveTranscript: Equatable {
         public let speaker: Speaker?
         public var text: String
         public var pending: String
+        /// When the paragraph's first and latest words were said (seconds into the call).
+        public var start: Double? = nil
+        public var end: Double? = nil
 
         public var you: Bool { speaker == .rep }
         public var label: String? { speaker.map { $0 == .rep ? "You" : "Them" } }
@@ -43,6 +46,19 @@ public struct LiveTranscript: Equatable {
     private static let echoWindow = 1.5
     /// Share of a mic segment's words that must also be in the meeting audio to count as echo.
     private static let echoOverlap = 0.6
+    /// "Vale", "sí, sí": this short, said while the other person was still talking, it is a
+    /// reaction, not a turn. It keeps its own small bubble but doesn't cut their paragraph.
+    private static let interjectionWords = 2
+    private static let overlapSlack = 0.5
+
+    private struct Item {
+        let seen: Int
+        let speaker: Speaker?
+        let text: String
+        let pending: String
+        let start: Double?
+        let end: Double?
+    }
 
     public init() {}
 
@@ -108,50 +124,69 @@ public struct LiveTranscript: Equatable {
 
     private mutating func settle() {
         let meeting = segments.indices.filter { segments[$0].speaker == .prospect }
-        let items: [(seen: Int, speaker: Speaker?, text: String, pending: String)] = segments.indices
+        let items: [Item] = segments.indices
             .filter { !isEcho($0, meeting: meeting) }
             .map { segments[$0] }
             .sorted { $0.seen < $1.seen }
-            .map { ($0.seen, $0.speaker, $0.text, "") }
+            .map { Item(seen: $0.seen, speaker: $0.speaker, text: $0.text, pending: "", start: $0.start, end: $0.end) }
         settled = Self.merge(items, into: [])
     }
 
     public func rows() -> [Row] {
-        let items: [(seen: Int, speaker: Speaker?, text: String, pending: String)] = Self.order.compactMap { key in
+        let items: [Item] = Self.order.compactMap { key in
             guard let pending = interims[key], !pending.isEmpty else { return nil }
             // The mic hearing the call while it's still being written: never shown as the rep.
             if key == Speaker.rep.rawValue, let start = interimStarts[key],
                Self.echoes(Self.words(pending), heard: heard(from: start, to: nil)) {
                 return nil
             }
-            return (interimSeen[key] ?? nextSeen, Speaker(rawValue: key), "", pending)
+            let start = interimStarts[key]
+            return Item(seen: interimSeen[key] ?? nextSeen, speaker: Speaker(rawValue: key), text: "", pending: pending, start: start, end: start)
         }
         .sorted { $0.seen < $1.seen }
         // A tail older than the last settled bubble still goes last: settled bubbles never move.
         return Self.merge(items, into: settled)
     }
 
-    private static func merge(
-        _ items: [(seen: Int, speaker: Speaker?, text: String, pending: String)],
-        into start: [Row]
-    ) -> [Row] {
+    private static func merge(_ items: [Item], into start: [Row]) -> [Row] {
         var rows = start
         for item in items {
-            if var last = rows.last, last.pending.isEmpty,
-               last.speaker == item.speaker || item.speaker == nil || last.speaker == nil {
+            if let index = paragraph(for: item, in: rows) {
+                var row = rows[index]
                 // A fragment without a channel continues whoever was talking.
-                let speaker = last.speaker ?? item.speaker
+                let speaker = row.speaker ?? item.speaker
                 if item.pending.isEmpty {
-                    last.text = joinChunks(last.text, item.text)
+                    row.text = joinChunks(row.text, item.text)
                 } else {
-                    last.pending = item.pending
+                    row.pending = item.pending
                 }
-                rows[rows.count - 1] = Row(key: last.key, speaker: speaker, text: last.text, pending: last.pending)
+                rows[index] = Row(
+                    key: row.key, speaker: speaker, text: row.text, pending: row.pending,
+                    start: row.start ?? item.start, end: [row.end, item.end].compactMap { $0 }.max()
+                )
                 continue
             }
-            rows.append(Row(key: "u\(item.seen)", speaker: item.speaker, text: item.text, pending: item.pending))
+            rows.append(Row(key: "u\(item.seen)", speaker: item.speaker, text: item.text, pending: item.pending, start: item.start, end: item.end))
         }
         return rows
+    }
+
+    /// The paragraph an item continues: the last one when it's the same speaker, or the one
+    /// before a short interjection the other side made while this speaker was still talking.
+    private static func paragraph(for item: Item, in rows: [Row]) -> Int? {
+        guard let last = rows.last else { return nil }
+        if last.pending.isEmpty, last.speaker == item.speaker || item.speaker == nil || last.speaker == nil {
+            return rows.count - 1
+        }
+        guard rows.count >= 2, let speaker = item.speaker else { return nil }
+        let before = rows[rows.count - 2]
+        guard before.speaker == speaker, before.pending.isEmpty,
+              last.speaker != speaker, last.pending.isEmpty,
+              words(last.text).count <= interjectionWords,
+              // Said during their paragraph: after it began and before it ended.
+              let said = last.start, let began = before.start, let talking = before.end,
+              said >= began - overlapSlack, said <= talking + overlapSlack else { return nil }
+        return rows.count - 2
     }
 
     /// Joins streamed chunks so "hola" + ", qué tal" reads "hola, qué tal".

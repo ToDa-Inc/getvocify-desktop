@@ -142,4 +142,18 @@ check(hearing.rows().map(\.speaker) == [.prospect], "an echo tail is not shown a
 hearing.apply(text: "te paso la propuesta", isFinal: false, channel: "rep", start: 41, end: nil)
 check(hearing.rows().map(\.speaker) == [.prospect, .rep], "the rep's own words still show")
 
+
+// A short reaction said over someone keeps its bubble but doesn't cut their paragraph.
+var talk = LiveTranscript()
+talk.apply(text: "Lo que hacemos es escuchar la llamada", isFinal: true, channel: "rep", start: 10, end: 12)
+talk.apply(text: "Vale.", isFinal: true, channel: "prospect", start: 11.5, end: 11.8)
+talk.apply(text: "y proponer los cambios en el CRM.", isFinal: true, channel: "rep", start: 12.2, end: 14)
+check(talk.rows().map(\.text) == ["Lo que hacemos es escuchar la llamada y proponer los cambios en el CRM.", "Vale."], "interjection keeps the paragraph whole")
+// An answer after the speaker stopped is a turn.
+var answer = LiveTranscript()
+answer.apply(text: "¿Quedamos el martes?", isFinal: true, channel: "rep", start: 10, end: 11)
+answer.apply(text: "Sí.", isFinal: true, channel: "prospect", start: 12.5, end: 12.8)
+answer.apply(text: "Perfecto, te mando la invitación.", isFinal: true, channel: "rep", start: 13.5, end: 15)
+check(answer.rows().count == 3, "an answer stays in order")
+
 print("ok")

@@ -1,12 +1,15 @@
 import AppKit
 import AVFoundation
 import Foundation
+import os
 import ScreenCaptureKit
 import VocifyCore
 import WebKit
 
 @MainActor
 final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
+    /// The dashboard's uncaught errors: `log show --predicate 'subsystem == "com.vocify.app"'`.
+    nonisolated static let webLog = Logger(subsystem: "com.vocify.app", category: "dashboard")
     weak var mainWebView: WKWebView?
 
     private let capture = MeetingCapture()
@@ -37,6 +40,12 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
 
     func handle(op: String, args: [String: Any]) async -> Any? {
         switch op {
+        case "log:error":
+            let kind = args["kind"] as? String ?? "error"
+            let path = args["path"] as? String ?? ""
+            let text = args["text"] as? String ?? ""
+            Self.webLog.error("dashboard \(kind, privacy: .public) at \(path, privacy: .public): \(text, privacy: .public)")
+            return nil
         case "saas:request":
             let payload = args["payload"] as? [String: Any] ?? [:]
             return await SaasProxy.request(payload)

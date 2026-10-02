@@ -55,8 +55,9 @@ Workflow: `.github/workflows/release-mac.yml`
 | Push to `main` (mac app paths) | Build artifact |
 | Tag `v*` | Build + GitHub Release with DMG attached |
 | Manual dispatch | Same as push to main |
+| Daily (05:17 UTC) | Build artifact, only if the dashboard's `staging` or this repo's `main` changed since the last build |
 
-The dashboard is bundled from `ToDa-Inc/getvocify` at ref **`feat/desktop-meeting-recorder`** until that branch merges to `main`.
+The dashboard is bundled from `ToDa-Inc/getvocify` at ref **`staging`**. To get the latest app: **Actions → Release Mac → Run workflow**, then download the **Vocify-macos** artifact from the run.
 
 ### Optional: notarized public distribution
 

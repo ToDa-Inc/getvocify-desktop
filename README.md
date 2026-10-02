@@ -26,7 +26,7 @@ bash scripts/create-dev-signing-cert.sh          # once per machine
 CODESIGN_IDENTITY="Vocify Dev" ./scripts/dev-desktop.sh
 ```
 
-`build-app.sh` bundles the dashboard from `GETVOCIFY_REF` (default `feat/desktop-meeting-recorder` on `ToDa-Inc/getvocify`).
+`build-app.sh` bundles the dashboard from `GETVOCIFY_REF` (default `staging` on `ToDa-Inc/getvocify`).
 
 ```bash
 bash apps/macos/scripts/package-dmg.sh         # → dist/Vocify-macos.dmg

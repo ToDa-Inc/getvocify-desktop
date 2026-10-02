@@ -4,7 +4,8 @@ import Foundation
 /// waits on the dashboard. Same rules and JSON shape as the dashboard's `meeting-transcript.ts`
 /// (which still builds the uploaded text from `json()`):
 /// - each side keeps one in-progress tail; a final replaces it exactly once;
-/// - bubbles keep the order and key their first words appeared with, so nothing on screen moves;
+/// - bubbles keep the order and key their first words appeared with, words still being written
+///   included, so nothing on screen ever swaps places;
 /// - the mic hearing the call through the speakers (echo) is not shown as the rep;
 /// - a side restarted in another language (ChannelReset) drops its words from that point.
 public struct LiveTranscript: Equatable {
@@ -38,6 +39,9 @@ public struct LiveTranscript: Equatable {
     public private(set) var segments: [Segment] = []
     /// Settled bubbles, rebuilt only when a final lands (tails change ~10×/s, finals ~1×/s).
     private var settled: [Row] = []
+    /// The settled sentences behind the paragraphs that aren't frozen, for placing a tail
+    /// among them when something settled after it began.
+    private var live: [Item] = []
     /// Each segment's words, for the echo check.
     private var tokens: [[String]] = []
     /// Whether each segment is the mic hearing the call. Kept up to date as finals arrive, so a
@@ -54,6 +58,8 @@ public struct LiveTranscript: Equatable {
     private static let freezeAfter = 60.0
     private var interims: [String: String] = [:]
     private var interimStarts: [String: Double] = [:]
+    /// Where each tail's audio reaches: a final ending before it leaves words still to come.
+    private var interimEnds: [String: Double] = [:]
     private var interimSeen: [String: Int] = [:]
     private var interimNames: [String: String] = [:]
     private var nextSeen = 0
@@ -68,7 +74,7 @@ public struct LiveTranscript: Equatable {
     private static let interjectionWords = 2
     private static let overlapSlack = 0.5
 
-    private struct Item {
+    private struct Item: Equatable {
         let seen: Int
         let speaker: Speaker?
         let text: String
@@ -102,6 +108,7 @@ public struct LiveTranscript: Equatable {
             guard interims[key] != text else { return false }
             interims[key] = text
             if let start { interimStarts[key] = start }
+            interimEnds[key] = end
             interimNames[key] = name
             if interimSeen[key] == nil {
                 interimSeen[key] = nextSeen
@@ -119,8 +126,18 @@ public struct LiveTranscript: Equatable {
         segments.append(Segment(speaker: speaker, text: text, start: start, end: end ?? start, seen: seen, name: name))
         tokens.append(Self.words(text))
         echo.append(false)
-        // Its own live tail is done: it must not count as something else being said now.
-        dropTail(key)
+        // The tail's words this final doesn't cover stay on screen, in the same bubble, until
+        // the next partial replaces them: dropping them would blank the end for a moment. Only
+        // when the tail's audio goes past the final's (Speechmatics settles part of a sentence):
+        // a final for the whole tail (Deepgram) that dropped a word must not leave it on screen.
+        if let tail = interims[key], let tailEnd = interimEnds[key], let end, end < tailEnd - 0.05,
+           let rest = Self.remainder(of: tail, after: text) {
+            interims[key] = rest
+            interimStarts[key] = end
+        } else {
+            // Its own live tail is done: it must not count as something else being said now.
+            dropTail(key)
+        }
         let index = segments.count - 1
         var slot = seenOrder.count
         while slot > 0, segments[seenOrder[slot - 1]].seen > seen { slot -= 1 }
@@ -152,6 +169,7 @@ public struct LiveTranscript: Equatable {
     private mutating func dropTail(_ key: String) {
         interims[key] = nil
         interimStarts[key] = nil
+        interimEnds[key] = nil
         interimSeen[key] = nil
         interimNames[key] = nil
     }
@@ -185,6 +203,7 @@ public struct LiveTranscript: Equatable {
             )
         }
         let drafts = Self.mergeDrafts(items, into: [])
+        defer { live = items.filter { $0.position >= frozenPositions } }
         // Keep finished paragraphs out of every later rebuild: well in the past, not among the
         // last two (a reaction can still join those), and with nothing later mixed into them.
         var cut = 0
@@ -212,11 +231,22 @@ public struct LiveTranscript: Equatable {
             )
         }
         .sorted { $0.seen < $1.seen }
-        // A tail older than the last settled bubble still goes last: settled bubbles never move.
-        // A tail can only join one of the last two paragraphs; the rest is reused as is.
         guard !items.isEmpty else { return settled }
-        let kept = settled.count > 2 ? Array(settled[..<(settled.count - 2)]) : []
-        return kept + Self.merge(items, into: Array(settled.suffix(2)))
+        let lastSettled = seenOrder.last.map { segments[$0].seen } ?? -1
+        if items.allSatisfy({ $0.seen >= lastSettled }) {
+            // Usual case: the tails began after everything settled, so they go last. A tail can
+            // only join one of the last two paragraphs; the rest is reused as is.
+            let kept = settled.count > 2 ? Array(settled[..<(settled.count - 2)]) : []
+            return kept + Self.merge(items, into: Array(settled.suffix(2)))
+        }
+        // Something settled while a tail was still being written: the tail keeps the place it
+        // appeared in, above what came after it, exactly where it will settle.
+        var ordered = live
+        for tail in items {
+            let slot = ordered.firstIndex { $0.seen > tail.seen } ?? ordered.count
+            ordered.insert(tail, at: slot)
+        }
+        return frozen + Self.mergeDrafts(ordered, into: []).map(\.row)
     }
 
     /// A paragraph while it's being put together: its pieces are joined once at the end, so a
@@ -327,6 +357,19 @@ public struct LiveTranscript: Equatable {
               let said = last.start, let began = before.start, let talking = before.end,
               said >= began - overlapSlack, said <= talking + overlapSlack else { return nil }
         return rows.count - 2
+    }
+
+    /// The words of a live tail its final doesn't cover yet: "a b c d" after the final "a b c"
+    /// is "d". Counted in words, as a final may punctuate or correct the same words.
+    public static func remainder(of tail: String, after final: String) -> String? {
+        let covered = words(final).count
+        let pieces = tail.split(whereSeparator: \.isWhitespace)
+        var counted = 0
+        for (index, piece) in pieces.enumerated() {
+            if counted >= covered { return pieces[index...].joined(separator: " ") }
+            counted += words(String(piece)).count
+        }
+        return nil
     }
 
     /// Joins streamed chunks so "hola" + ", qué tal" reads "hola, qué tal".

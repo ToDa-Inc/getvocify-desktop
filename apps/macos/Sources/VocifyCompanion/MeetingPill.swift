@@ -90,20 +90,53 @@ final class MeetingPillState: ObservableObject {
         }
 
         struct Change: Equatable, Identifiable {
+            struct Option: Equatable, Identifiable {
+                let value: String
+                let label: String
+                var id: String { value }
+            }
+
             /// `object_type:field_name`, the key Vocify's review omits fields by.
             let key: String
             let label: String
+            /// The record it lands on: contact, company, deal or other.
+            let object: String
+            /// As the rep reads them (option labels).
             let from: String?
             let to: String
+            /// What gets written: the option value(s), ";"-joined for a checkbox list.
+            let value: String
+            /// Picked from in place; empty for free text, which is edited in Vocify.
+            let options: [Option]
+            let multiple: Bool
             /// Scored under "needs review": shown, unticked.
             let check: Bool
             var id: String { key }
+
+            /// Option values, as the rep picked them or as extracted.
+            func values(_ edited: String?) -> [String] {
+                let raw = edited ?? value
+                return multiple ? raw.split(separator: ";").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } : [raw]
+            }
+
+            /// What the CRM has, when it differs from what will be written.
+            func before(_ shown: String) -> String? { from == shown ? nil : from }
+
+            /// What the rep reads for the current pick.
+            func shown(_ edited: String?) -> String {
+                guard let edited, !options.isEmpty else { return to }
+                let labels = values(edited).map { value in options.first { $0.value == value }?.label ?? value }
+                return labels.isEmpty ? "—" : labels.joined(separator: ", ")
+            }
         }
 
         struct Email: Equatable {
             enum State: String { case ready, skipped, sent }
             let state: State
             let to: String?
+            let subject: String?
+            /// The draft's opening.
+            let preview: String?
         }
 
         struct Meeting: Equatable {
@@ -136,8 +169,14 @@ final class MeetingPillState: ObservableObject {
         let email: Email?
         let meeting: Meeting?
         let notes: Bool
+        /// The note's first lines, plain text.
+        let summary: String?
+        /// The connected CRM's name; the card says "the CRM" when it isn't known.
+        let crm: String?
         let offerStopEmails: Bool
         let type: CallType?
+
+        var crmName: String { crm ?? "the CRM" }
 
         init?(_ raw: [String: Any]) {
             guard let stage = (raw["stage"] as? String).flatMap(Stage.init(rawValue:)),
@@ -147,11 +186,19 @@ final class MeetingPillState: ObservableObject {
             contactName = (raw["contactName"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             changes = (raw["changes"] as? [[String: Any]] ?? []).compactMap { item in
                 guard let key = item["key"] as? String, let to = item["to"] as? String else { return nil }
+                let options = (item["options"] as? [[String: Any]] ?? []).compactMap { option -> Change.Option? in
+                    guard let value = option["value"] as? String, !value.isEmpty else { return nil }
+                    return Change.Option(value: value, label: option["label"] as? String ?? value)
+                }
                 return Change(
                     key: key,
                     label: item["label"] as? String ?? key,
+                    object: item["object"] as? String ?? "other",
                     from: (item["from"] as? String).flatMap { $0.isEmpty ? nil : $0 },
                     to: to,
+                    value: item["value"] as? String ?? to,
+                    options: options,
+                    multiple: !options.isEmpty && (item["multiple"] as? Bool ?? false),
                     check: item["check"] as? Bool ?? false
                 )
             }
@@ -159,9 +206,12 @@ final class MeetingPillState: ObservableObject {
             applied = raw["applied"] as? Int
             undoUntil = (raw["undoUntil"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
             note = (raw["note"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            func text(_ value: Any?) -> String? {
+                (value as? String).flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+            }
             email = (raw["email"] as? [String: Any]).flatMap { item in
                 (item["state"] as? String).flatMap(Email.State.init(rawValue:)).map {
-                    Email(state: $0, to: (item["to"] as? String).flatMap { $0.isEmpty ? nil : $0 })
+                    Email(state: $0, to: text(item["to"]), subject: text(item["subject"]), preview: text(item["preview"]))
                 }
             }
             meeting = (raw["meeting"] as? [String: Any]).flatMap { item in
@@ -170,6 +220,8 @@ final class MeetingPillState: ObservableObject {
                 }
             }
             notes = raw["notes"] as? Bool ?? false
+            summary = text(raw["summary"])
+            crm = text(raw["crm"])
             offerStopEmails = raw["offerStopEmails"] as? Bool ?? false
             type = (raw["type"] as? [String: Any]).flatMap { item in
                 guard let key = item["key"] as? String, let label = item["label"] as? String else { return nil }
@@ -189,18 +241,76 @@ final class MeetingPillState: ObservableObject {
         }
     }
 
-    /// Fixed row heights, so the island's size is exact and nothing jumps when a row arrives.
+    /// What the open card shows: the CRM changes, the email draft or the call's note.
+    enum PostCallTab: Hashable { case crm, email, notes }
+
+    /// Fixed sizes, so the island's height is exact and nothing jumps when a row arrives.
+    /// A change's value wraps to two lines at most; its row height is measured from the text.
     enum PostCallLayout {
+        static let width: CGFloat = 420
+        static let inset: CGFloat = 16
         static let top: CGFloat = 6
         static let header: CGFloat = 26
+        static let tabs: CGFloat = 26
+        static let gap: CGFloat = 8
         static let line: CGFloat = 30
-        static let change: CGFloat = 24
-        static let more: CGFloat = 20
-        static let actions: CGFloat = 38
-        static let footer: CGFloat = 34
-        static let bottom: CGFloat = 8
-        static let collapsedChanges = 4
-        static let allChanges = 8
+        static let groupLabel: CGFloat = 20
+        static let rowPadding: CGFloat = 8
+        /// The changes scroll inside the card past this; every one stays reachable.
+        static let listMax: CGFloat = 236
+        static let actions: CGFloat = 40
+        static let meeting: CGFloat = 26
+        static let bottom: CGFloat = 10
+        static let tick: CGFloat = 14
+        static let label: CGFloat = 104
+        static let chevron: CGFloat = 14
+        static let rowInset: CGFloat = 6
+        /// Every value column has the same width, so the measured height is the drawn one.
+        static let valueWidth: CGFloat = width - inset * 2 - rowInset * 2 - tick - label - chevron - 16
+        static let valueSize: CGFloat = 12
+        static let emailLines = 3
+        static let noteLines = 5
+        /// A change's options float under its value, over the card.
+        static let option: CGFloat = 26
+        static let optionsVisible = 7
+        static let optionsPadding: CGFloat = 4
+
+        static func optionsSize(_ change: PostCall.Change) -> CGSize {
+            CGSize(
+                width: valueWidth + chevron + optionsPadding * 2,
+                height: CGFloat(min(change.options.count, optionsVisible)) * option + optionsPadding * 2
+            )
+        }
+
+        static func lineHeight(_ size: CGFloat) -> CGFloat {
+            let font = NSFont.systemFont(ofSize: size)
+            return ceil(font.ascender - font.descender + font.leading)
+        }
+
+        /// Lines `text` takes at `width`, up to `limit`.
+        static func lines(_ text: String, size: CGFloat, width: CGFloat, limit: Int) -> Int {
+            guard !text.isEmpty else { return 1 }
+            let rect = (text as NSString).boundingRect(
+                with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                options: [.usesLineFragmentOrigin, .usesFontLeading],
+                attributes: [.font: NSFont.systemFont(ofSize: size)]
+            )
+            return min(limit, max(1, Int((rect.height / lineHeight(size)).rounded(.up))))
+        }
+
+        /// The value as a row draws it: the new value, then what it was.
+        static func valueText(_ change: PostCall.Change, shown: String) -> String {
+            change.before(shown).map { "\(shown)  was \($0)" } ?? shown
+        }
+
+        static func rowHeight(_ change: PostCall.Change, shown: String) -> CGFloat {
+            let count = lines(valueText(change, shown: shown), size: valueSize, width: valueWidth, limit: 2)
+            return CGFloat(count) * lineHeight(valueSize) + rowPadding
+        }
+
+        static let groups: [(object: String, title: String)] = [
+            ("contact", "Contact"), ("company", "Company"), ("deal", "Deal"), ("other", "Other"),
+        ]
     }
 
     @Published var mode: Mode = .idle
@@ -211,7 +321,11 @@ final class MeetingPillState: ObservableObject {
     @Published var postCall: PostCall?
     /// The changes the rep keeps ticked; starts as everything not flagged "check".
     @Published var keptChanges: Set<String> = []
-    @Published var showAllChanges = false
+    /// Options the rep picked in the card, by change key.
+    @Published var editedValues: [String: String] = [:]
+    @Published var postCallTab: PostCallTab = .crm
+    /// The change whose options are open under it.
+    @Published var openOptions: String?
     /// Lets the controller move the island when the memo's state changes.
     var onPostCallChange: (() -> Void)?
     /// Who the detected call is with, when the tab on screen is a CRM contact.
@@ -239,33 +353,100 @@ final class MeetingPillState: ObservableObject {
         geometry.size(mode, open: open, postCallBody: postCallBodyHeight)
     }
 
-    var visibleChanges: Int {
-        guard let postCall else { return 0 }
-        let cap = showAllChanges ? PostCallLayout.allChanges : PostCallLayout.collapsedChanges
-        return min(postCall.changes.count, cap)
+    /// The tabs the card has for this call; one tab draws no tab bar.
+    var postCallTabs: [PostCallTab] {
+        guard let postCall else { return [.crm] }
+        var tabs: [PostCallTab] = [.crm]
+        if postCall.email != nil { tabs.append(.email) }
+        if postCall.notes || postCall.summary != nil { tabs.append(.notes) }
+        return tabs
     }
 
-    /// The card's height from what it shows, using the same fixed rows the view draws.
+    var activeTab: PostCallTab { postCallTabs.contains(postCallTab) ? postCallTab : .crm }
+
+    /// The changes the card lists, by record. One the call wasn't clear on is left to the
+    /// review in Vocify: it isn't shown here, so it isn't written from here either.
+    var groupedChanges: [(title: String, changes: [PostCall.Change])] {
+        let sure = postCall?.changes.filter { !$0.check } ?? []
+        return PostCallLayout.groups.compactMap { group in
+            let changes = sure.filter { $0.object == group.object || (group.object == "other" && !["contact", "company", "deal"].contains($0.object)) }
+            return changes.isEmpty ? nil : (group.title, changes)
+        }
+    }
+
+    func shown(_ change: PostCall.Change) -> String { change.shown(editedValues[change.key]) }
+
+    func rowHeight(_ change: PostCall.Change) -> CGFloat {
+        PostCallLayout.rowHeight(change, shown: shown(change))
+    }
+
+    /// The whole list's height; the card shows up to `listMax` of it and scrolls the rest.
+    var changesHeight: CGFloat {
+        groupedChanges.reduce(0) { height, group in
+            height + PostCallLayout.groupLabel + group.changes.reduce(0) { $0 + rowHeight($1) }
+        }
+    }
+
+    var listHeight: CGFloat { min(changesHeight, PostCallLayout.listMax) }
+
+    /// Ready, but every change needs a look: the card sends the rep to the review instead.
+    var nothingSure: Bool { groupedChanges.isEmpty }
+
+    /// The card's height from what it shows, using the same sizes the view draws.
     private var postCallBodyHeight: CGFloat {
         typealias L = PostCallLayout
         guard let postCall else { return L.top + L.header + L.line + L.bottom }
         var height = L.top + L.header
-        switch postCall.stage {
-        case .writing, .done, .internal:
-            height += L.line
-        case .applying:
-            height += L.line + 6
-        case .review:
-            height += L.line + L.actions
-        case .ready:
-            height += CGFloat(visibleChanges) * L.change
-            if postCall.changes.count > PostCallLayout.collapsedChanges { height += L.more }
-            height += L.actions
+        if postCallTabs.count > 1 { height += L.gap + L.tabs + L.gap }
+        switch activeTab {
+        case .crm:
+            switch postCall.stage {
+            case .writing, .done, .internal:
+                height += L.line
+            case .applying:
+                height += L.line + 6
+            case .review:
+                height += L.line + L.actions
+            case .ready:
+                height += nothingSure ? L.line + L.actions : listHeight + L.actions
+            }
+            if postCall.meeting != nil, postCall.stage != .internal { height += L.meeting }
+        case .email:
+            height += emailHeight(postCall)
+        case .notes:
+            height += notesHeight(postCall)
         }
-        if postCall.email != nil { height += L.line }
-        if postCall.offerStopEmails { height += L.line }
-        if postCall.meeting != nil { height += L.line }
-        return height + L.footer + L.bottom
+        return height + L.bottom
+    }
+
+    /// The draft's box: who it's for, the subject and its first lines.
+    func emailBoxHeight(_ email: PostCall.Email) -> CGFloat {
+        typealias L = PostCallLayout
+        let body = email.preview.map { CGFloat(L.lines($0, size: 12, width: L.width - L.inset * 2 - 24, limit: L.emailLines)) * L.lineHeight(12) } ?? 0
+        return 20 + (email.to != nil ? L.lineHeight(11) : 0) + L.lineHeight(12.5) + (email.preview != nil ? 4 + body : 0)
+    }
+
+    private func emailHeight(_ postCall: PostCall) -> CGFloat {
+        typealias L = PostCallLayout
+        var height: CGFloat = 0
+        if let email = postCall.email {
+            if email.state == .ready, email.subject != nil || email.preview != nil {
+                height += L.gap + emailBoxHeight(email) + L.actions
+            } else {
+                height += L.line
+            }
+        }
+        return height
+    }
+
+    func summaryHeight(_ summary: String) -> CGFloat {
+        typealias L = PostCallLayout
+        return CGFloat(L.lines(summary, size: 12, width: L.width - L.inset * 2, limit: L.noteLines)) * L.lineHeight(12)
+    }
+
+    private func notesHeight(_ postCall: PostCall) -> CGFloat {
+        typealias L = PostCallLayout
+        return (postCall.summary.map { L.gap + summaryHeight($0) } ?? 0) + L.actions
     }
 
     /// Applies one `shell:state` update; keys that are absent keep their value.
@@ -277,7 +458,9 @@ final class MeetingPillState: ObservableObject {
             let next = (state["postCall"] as? [String: Any]).flatMap(PostCall.init)
             if let next, next.memoId != postCall?.memoId || (postCall?.changes.isEmpty == true && !next.changes.isEmpty) {
                 keptChanges = Set(next.changes.filter { !$0.check }.map(\.key))
-                showAllChanges = false
+                editedValues = [:]
+                openOptions = nil
+                if next.memoId != postCall?.memoId { postCallTab = .crm }
             }
             if next != postCall {
                 postCall = next
@@ -401,7 +584,7 @@ struct IslandGeometry: Equatable {
         case .call:
             return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
         case .postCall:
-            return open ? CGSize(width: max(gap + Self.ear * 2, 400), height: barHeight + postCallBody) : closed
+            return open ? CGSize(width: max(gap + Self.ear * 2, MeetingPillState.PostCallLayout.width), height: barHeight + postCallBody) : closed
         case .starting:
             return closed
         }
@@ -674,7 +857,10 @@ final class MeetingPillController {
         guard let postCall = state.postCall else { return }
         let omit = postCall.changes.map(\.key).filter { !state.keptChanges.contains($0) }
         guard omit.count < postCall.changes.count else { return }
-        postCallAction("approve", ["omit": omit])
+        let edits = state.editedValues.filter { key, value in
+            postCall.changes.contains { $0.key == key && $0.value != value }
+        }
+        postCallAction("approve", ["omit": omit, "edits": edits])
     }
 
     func undoPostCall() { postCallAction("undo") }
@@ -721,13 +907,113 @@ final class MeetingPillController {
         }
     }
 
-    func toggleAllChanges() {
-        state.showAllChanges.toggle()
+    /// An option picked in a change's menu: a checkbox list adds or removes it, a list of one
+    /// replaces the value. Picking keeps the change ticked.
+    func pick(_ option: String, for change: MeetingPillState.PostCall.Change) {
+        var next = option
+        if change.multiple {
+            var values = change.values(state.editedValues[change.key])
+            if let index = values.firstIndex(of: option) { values.remove(at: index) } else { values.append(option) }
+            next = values.joined(separator: ";")
+        }
+        state.editedValues[change.key] = next == change.value ? nil : next
+        state.keptChanges.insert(change.key)
+        // A list of one is answered by the pick; a checkbox list stays open for more.
+        if !change.multiple { closeOptions() }
         fitPostCall()
+    }
+
+    func showTab(_ tab: MeetingPillState.PostCallTab) {
+        guard state.postCallTab != tab else { return }
+        closeOptions()
+        state.postCallTab = tab
+        fitPostCall()
+    }
+
+    // MARK: Options
+
+    private var optionsPanel: NSPanel?
+    private var optionsMonitors: [Any] = []
+
+    /// A change's options float under its value, over the card, like any dropdown.
+    /// `anchor` is the value's frame in the island (top-left origin).
+    func toggleOptions(_ change: MeetingPillState.PostCall.Change, anchor: CGRect) {
+        let reopening = state.openOptions == change.key
+        closeOptions()
+        guard !reopening, let panel, let content = panel.contentView else { return }
+        typealias L = MeetingPillState.PostCallLayout
+        let size = L.optionsSize(change)
+        // The options' text lines up with the value's.
+        let below = panel.convertPoint(toScreen: NSPoint(x: anchor.minX - L.optionsPadding - 8, y: content.bounds.height - anchor.maxY - 4))
+        var frame = NSRect(x: below.x, y: below.y - size.height, width: size.width, height: size.height)
+        if let screen = panel.screen, frame.minY < screen.visibleFrame.minY {
+            frame.origin.y = below.y + anchor.height + 8
+        }
+        let popup = optionsPanel ?? makeOptionsPanel()
+        let host = IslandHostingView(rootView: OptionPopup(state: state, change: change) { [weak self] value in
+            self?.pick(value, for: change)
+        })
+        host.sizingOptions = []
+        popup.contentView = host
+        popup.setFrame(frame, display: true)
+        popup.orderFrontRegardless()
+        state.openOptions = change.key
+        watchOptions()
+    }
+
+    func closeOptions() {
+        optionsMonitors.forEach(NSEvent.removeMonitor)
+        optionsMonitors = []
+        optionsPanel?.orderOut(nil)
+        if state.openOptions != nil { state.openOptions = nil }
+    }
+
+    /// A click anywhere but the options (or a scroll) closes them, as a menu does.
+    private func watchOptions() {
+        if let local = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .scrollWheel], handler: { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, event.window !== self.optionsPanel else { return }
+                if event.type == .scrollWheel {
+                    self.closeOptions()
+                    return
+                }
+                // A click on a value opens or closes its own options; anything else closes them.
+                let open = self.state.openOptions
+                DispatchQueue.main.async {
+                    if open != nil, self.state.openOptions == open { self.closeOptions() }
+                }
+            }
+            return event
+        }) {
+            optionsMonitors.append(local)
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.closeOptions() }
+        }) {
+            optionsMonitors.append(global)
+        }
+    }
+
+    private func makeOptionsPanel() -> NSPanel {
+        let popup = IslandPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        popup.isFloatingPanel = true
+        // Above the island, which sits at the status bar's level.
+        popup.level = .popUpMenu
+        popup.isOpaque = false
+        popup.backgroundColor = .clear
+        popup.hasShadow = true
+        popup.hidesOnDeactivate = false
+        popup.isMovable = false
+        popup.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        popup.appearance = NSAppearance(named: .darkAqua)
+        optionsPanel = popup
+        return popup
     }
 
     /// The dashboard moved the call on (written, ready, email drafted...).
     private func postCallChanged() {
+        // A new call, or this one moved past its changes: its options no longer apply.
+        if state.openOptions == nil || state.postCall?.stage != .ready { closeOptions() }
         switch state.mode {
         case .recording, .starting, .call:
             return  // shown once the island is back at rest
@@ -854,6 +1140,7 @@ final class MeetingPillController {
     /// The window first covers both the old and new shape, the shape animates inside it,
     /// then the window fits the new shape. The frame and SwiftUI never animate against each other.
     private func transition(to mode: MeetingPillState.Mode, expanded: Bool) {
+        closeOptions()
         autoClose?.cancel()
         state.countdown = nil
         let panel = ensure()
@@ -873,7 +1160,8 @@ final class MeetingPillController {
             state.expanded = expanded
         } completion: { [weak self] in
             guard let self, self.state.mode == mode, self.state.expanded == expanded else { return }
-            panel.setFrame(self.frame(for: target), display: true)
+            // The size now, not at the start: rows can arrive or open while the shape animates.
+            panel.setFrame(self.frame(for: self.state.size(for: mode, open: expanded)), display: true)
             panel.invalidateShadow()
         }
     }
@@ -1004,7 +1292,7 @@ struct IslandView: View {
         case .postCall:
             switch state.postCall?.stage {
             case .writing: return "Writing the update"
-            case .applying: return "Updating HubSpot"
+            case .applying: return "Updating \(state.postCall?.crmName ?? "the CRM")"
             default:
                 guard !open else { return "Close" }
                 let pending = state.postCall?.pending ?? 0
@@ -1185,13 +1473,14 @@ private struct RecordDot: View {
     }
 }
 
-/// After the call, one row per thing that exists for it and needs the rep: the CRM changes,
-/// the email draft, the agreed meeting. Notes are a link, never pushed.
+/// After the call: what goes to the CRM, the email draft and the call's note, one tab each.
+/// The CRM tab has one main action; a change the call wasn't clear on is flagged, never hidden.
 private struct PostCallMenu: View {
     @ObservedObject var state: MeetingPillState
     let postCall: MeetingPillState.PostCall
     let controller: MeetingPillController
     private typealias L = MeetingPillState.PostCallLayout
+    private typealias Change = MeetingPillState.PostCall.Change
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1208,24 +1497,37 @@ private struct PostCallMenu: View {
             }
             .frame(height: L.header)
 
-            crm
-            if let email = postCall.email { emailRow(email) }
-            if postCall.offerStopEmails { stopEmailsRow }
-            if let meeting = postCall.meeting { meetingRow(meeting) }
-
-            HStack(spacing: 4) {
-                if postCall.notes {
-                    TextAction(title: "Notes", symbol: "doc.text", action: controller.openNotes)
-                }
-                Spacer(minLength: 0)
-                TextAction(title: "Later", symbol: nil, action: controller.collapse)
+            if state.postCallTabs.count > 1 {
+                PostCallTabBar(tabs: state.postCallTabs, active: state.activeTab, count: count, choose: controller.showTab)
+                    .frame(height: L.tabs)
+                    .padding(.vertical, L.gap)
             }
-            .frame(height: L.footer)
+
+            switch state.activeTab {
+            case .crm:
+                crm
+                if let meeting = postCall.meeting, postCall.stage != .internal { meetingRow(meeting) }
+            case .email:
+                email
+            case .notes:
+                notes
+            }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, L.inset)
         .padding(.top, L.top)
         .frame(maxHeight: .infinity, alignment: .top)
         .animation(.easeOut(duration: 0.2), value: postCall)
+    }
+
+    private var kept: Int { postCall.changes.filter { state.keptChanges.contains($0.key) }.count }
+
+    /// What each tab still needs from the rep.
+    private func count(_ tab: MeetingPillState.PostCallTab) -> Int {
+        switch tab {
+        case .crm: return postCall.stage == .ready ? kept : postCall.stage == .review ? 1 : 0
+        case .email: return postCall.email?.state == .ready ? 1 : 0
+        case .notes: return 0
+        }
     }
 
     // MARK: CRM
@@ -1234,43 +1536,58 @@ private struct PostCallMenu: View {
         switch postCall.stage {
         case .writing:
             line(symbol: nil, busy: true) { Text("Writing the update…").foregroundStyle(IslandStyle.secondary) }
-        case .ready:
-            ForEach(postCall.changes.prefix(state.visibleChanges)) { change in
-                ChangeRow(change: change, kept: state.keptChanges.contains(change.key)) {
-                    controller.toggleChange(change.key)
-                }
-                .frame(height: L.change)
+        case .ready where state.nothingSure:
+            line(symbol: "exclamationmark.circle", busy: false) {
+                Text("Nothing clear enough to write from here").foregroundStyle(IslandStyle.text)
             }
-            if postCall.changes.count > L.collapsedChanges {
-                Button(action: controller.toggleAllChanges) {
-                    Text(state.showAllChanges ? "Show fewer" : "+\(postCall.changes.count - L.collapsedChanges) more")
-                        .font(.system(size: 11))
-                        .foregroundStyle(IslandStyle.secondary)
+            HStack {
+                PrimaryActionButton(title: "Review in Vocify", symbol: "arrow.up.right", help: "Opens the memo in Vocify", action: controller.reviewPostCall)
+                Spacer(minLength: 0)
+            }
+            .frame(height: L.actions)
+        case .ready:
+            ScrollView(.vertical, showsIndicators: state.changesHeight > L.listMax) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(state.groupedChanges, id: \.title) { group in
+                        caption(group.title, color: IslandStyle.secondary)
+                            .frame(height: L.groupLabel, alignment: .bottomLeading)
+                        ForEach(group.changes) { row($0) }
+                    }
                 }
-                .buttonStyle(.plain)
-                .padding(.leading, 22)
-                .frame(height: L.more)
+            }
+            // The window grows into its size while the list is already laid out: start at the top.
+            .defaultScrollAnchor(.top)
+            .id(postCall.memoId)
+            .frame(height: state.listHeight)
+            // A list that scrolls fades out at its bottom edge instead of cutting a row.
+            .mask {
+                VStack(spacing: 0) {
+                    Color.black
+                    LinearGradient(colors: [.black, .black.opacity(state.changesHeight > state.listHeight ? 0 : 1)], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 14)
+                }
             }
             HStack(spacing: 8) {
                 if postCall.canApprove {
-                    let kept = postCall.changes.filter { state.keptChanges.contains($0.key) }.count
-                    QuietActionButton(
-                        title: kept == 0 ? "Nothing selected" : "Approve \(kept)",
+                    PrimaryActionButton(
+                        title: kept == 0 ? "Nothing ticked" : "Save \(kept) to \(postCall.crm ?? "the CRM")",
                         symbol: "checkmark",
-                        busy: false,
-                        help: "Writes the ticked changes to the contact in HubSpot",
+                        disabled: kept == 0,
+                        help: "Writes the ticked changes to \(postCall.crmName)",
                         action: controller.approvePostCall
                     )
-                    .opacity(kept == 0 ? 0.5 : 1)
+                    Spacer(minLength: 0)
+                    TextAction(title: "Review in Vocify", symbol: "arrow.up.right", action: controller.reviewPostCall)
+                } else {
+                    PrimaryActionButton(title: "Review in Vocify", symbol: "arrow.up.right", help: "Opens the memo in Vocify", action: controller.reviewPostCall)
+                    Spacer(minLength: 0)
                 }
-                QuietActionButton(title: "Review", symbol: "arrow.up.right", busy: false, help: "Opens the memo in Vocify", action: controller.reviewPostCall)
-                Spacer(minLength: 0)
             }
             .frame(height: L.actions)
         case .applying:
             VStack(spacing: 4) {
                 line(symbol: nil, busy: true) {
-                    Text("Updating \(postCall.contactName ?? "the contact") in HubSpot…").foregroundStyle(IslandStyle.text)
+                    Text("Updating \(postCall.contactName ?? "the contact") in \(postCall.crmName)…").foregroundStyle(IslandStyle.text)
                 } trailing: {
                     SmallAction(title: "Undo", action: controller.undoPostCall)
                 }
@@ -1289,69 +1606,149 @@ private struct PostCallMenu: View {
                 Text(postCall.note ?? "Needs a look").foregroundStyle(IslandStyle.text)
             }
             HStack {
-                QuietActionButton(title: "Review", symbol: "arrow.up.right", busy: false, help: "Opens the memo in Vocify", action: controller.reviewPostCall)
+                PrimaryActionButton(title: "Review in Vocify", symbol: "arrow.up.right", help: "Opens the memo in Vocify", action: controller.reviewPostCall)
                 Spacer(minLength: 0)
             }
             .frame(height: L.actions)
         }
     }
 
+    private func row(_ change: Change) -> some View {
+        let shown = state.shown(change)
+        return ChangeRow(
+            change: change,
+            shown: shown,
+            kept: state.keptChanges.contains(change.key),
+            height: L.rowHeight(change, shown: shown),
+            open: state.openOptions == change.key,
+            toggle: { controller.toggleChange(change.key) },
+            toggleOptions: { controller.toggleOptions(change, anchor: $0) }
+        )
+    }
+
+    private func caption(_ title: String, color: Color) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 9.5, weight: .semibold))
+            .tracking(0.6)
+            .foregroundStyle(color)
+            .padding(.leading, L.rowInset)
+            .padding(.bottom, 3)
+    }
+
     private var doneText: String {
-        guard let applied = postCall.applied else { return "Updated in HubSpot" }
-        return applied == 1 ? "1 field updated in HubSpot" : "\(applied) fields updated in HubSpot"
+        guard let applied = postCall.applied else { return "Updated in \(postCall.crmName)" }
+        return applied == 1 ? "1 field updated in \(postCall.crmName)" : "\(applied) fields updated in \(postCall.crmName)"
     }
 
-    // MARK: Email and meeting
-
-    @ViewBuilder private func emailRow(_ email: MeetingPillState.PostCall.Email) -> some View {
-        switch email.state {
-        case .ready:
-            line(symbol: "envelope", busy: false) {
-                Text(email.to.map { "Email to \($0) ready" } ?? "Email ready").foregroundStyle(IslandStyle.text)
-            } trailing: {
-                SmallAction(title: "Open", action: controller.openEmail)
-                SmallAction(title: "Skip", action: controller.skipEmail)
-            }
-        case .skipped:
-            line(symbol: "envelope", busy: false) {
-                Text("Email skipped").foregroundStyle(IslandStyle.secondary)
-            } trailing: {
-                SmallAction(title: "Undo", action: controller.unskipEmail)
-            }
-        case .sent:
-            line(symbol: "checkmark", busy: false) { Text("Email sent").foregroundStyle(IslandStyle.secondary) }
-        }
-    }
-
-    private var stopEmailsRow: some View {
-        line(symbol: nil, busy: false) {
-            Text("Stop drafting emails after calls?").foregroundStyle(IslandStyle.secondary)
-        } trailing: {
-            SmallAction(title: "Stop", action: controller.stopEmails)
-            SmallAction(title: "Keep", action: controller.keepEmails)
-        }
-    }
-
+    /// The agreed meeting: a quiet line under the changes, added with one click.
     @ViewBuilder private func meetingRow(_ meeting: MeetingPillState.PostCall.Meeting) -> some View {
-        switch meeting.state {
-        case .pending:
-            line(symbol: "calendar", busy: false) {
-                Text(meeting.when.map { "Meeting \($0)" } ?? "Meeting agreed").foregroundStyle(IslandStyle.text)
-            } trailing: {
-                SmallAction(title: "Add to HubSpot", action: controller.addMeeting)
-            }
-        case .check:
-            line(symbol: "calendar", busy: false) {
-                Text("Meeting to confirm").foregroundStyle(IslandStyle.text)
-            } trailing: {
-                SmallAction(title: "Review", action: controller.reviewPostCall)
-            }
-        case .added:
-            line(symbol: "checkmark", busy: false) {
-                Text(meeting.when.map { "Meeting \($0) added to HubSpot" } ?? "Meeting added to HubSpot")
-                    .foregroundStyle(IslandStyle.secondary)
+        HStack(spacing: 6) {
+            Image(systemName: meeting.state == .added ? "checkmark" : "calendar")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(IslandStyle.secondary)
+                .frame(width: L.tick)
+            Text(meetingText(meeting))
+                .font(.system(size: 11.5))
+                .foregroundStyle(IslandStyle.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            switch meeting.state {
+            case .pending: TextAction(title: "Add", symbol: nil, action: controller.addMeeting)
+            case .check: TextAction(title: "Review", symbol: nil, action: controller.reviewPostCall)
+            case .added: EmptyView()
             }
         }
+        .padding(.horizontal, L.rowInset)
+        .frame(height: L.meeting)
+    }
+
+    private func meetingText(_ meeting: MeetingPillState.PostCall.Meeting) -> String {
+        switch meeting.state {
+        case .pending: return meeting.when.map { "Meeting \($0)" } ?? "Meeting agreed"
+        case .check: return "Meeting to confirm"
+        case .added: return meeting.when.map { "Meeting \($0) added" } ?? "Meeting added"
+        }
+    }
+
+    // MARK: Email
+
+    @ViewBuilder private var email: some View {
+        if let email = postCall.email {
+            switch email.state {
+            case .ready:
+                if email.subject != nil || email.preview != nil {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if let to = email.to {
+                            Text("To \(to)")
+                                .font(.system(size: 11))
+                                .foregroundStyle(IslandStyle.secondary)
+                                .lineLimit(1)
+                                .frame(height: L.lineHeight(11), alignment: .leading)
+                        }
+                        Text(email.subject ?? "Follow-up")
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(IslandStyle.text)
+                            .lineLimit(1)
+                            .frame(height: L.lineHeight(12.5), alignment: .leading)
+                        if let preview = email.preview {
+                            Text(preview)
+                                .font(.system(size: 12))
+                                .foregroundStyle(IslandStyle.secondary)
+                                .lineLimit(L.emailLines)
+                                .frame(maxWidth: .infinity, alignment: .topLeading)
+                                .padding(.top, 4)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .frame(height: state.emailBoxHeight(email), alignment: .top)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.top, L.gap)
+                    HStack(spacing: 8) {
+                        PrimaryActionButton(title: "Open draft", symbol: "arrow.up.right", help: "Opens the email in Vocify to send it", action: controller.openEmail)
+                        TextAction(title: "Skip", symbol: nil, action: controller.skipEmail)
+                        Spacer(minLength: 0)
+                    }
+                    .frame(height: L.actions)
+                } else {
+                    line(symbol: "envelope", busy: false) {
+                        Text(email.to.map { "Email to \($0) ready" } ?? "Email ready").foregroundStyle(IslandStyle.text)
+                    } trailing: {
+                        SmallAction(title: "Open", action: controller.openEmail)
+                        SmallAction(title: "Skip", action: controller.skipEmail)
+                    }
+                }
+            case .skipped:
+                line(symbol: "envelope", busy: false) {
+                    Text("Email skipped").foregroundStyle(IslandStyle.secondary)
+                } trailing: {
+                    SmallAction(title: "Undo", action: controller.unskipEmail)
+                }
+            case .sent:
+                line(symbol: "checkmark", busy: false) { Text("Email sent").foregroundStyle(IslandStyle.secondary) }
+            }
+        }
+    }
+
+    // MARK: Notes
+
+    @ViewBuilder private var notes: some View {
+        if let summary = postCall.summary {
+            Text(summary)
+                .font(.system(size: 12))
+                .foregroundStyle(IslandStyle.text)
+                .lineLimit(L.noteLines)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(height: state.summaryHeight(summary), alignment: .top)
+                .padding(.top, L.gap)
+                .textSelection(.enabled)
+        }
+        HStack {
+            TextAction(title: "Open in Vocify", symbol: "arrow.up.right", action: controller.openNotes)
+            Spacer(minLength: 0)
+        }
+        .frame(height: L.actions)
     }
 
     /// One row of the card: an icon (or progress), the text, and its actions on the right.
@@ -1383,57 +1780,272 @@ private struct PostCallMenu: View {
     }
 }
 
-/// One proposed change: tick to keep, label, and what it becomes (what it was, crossed out).
-private struct ChangeRow: View {
-    let change: MeetingPillState.PostCall.Change
-    let kept: Bool
-    let toggle: () -> Void
+/// CRM / Email / Notes, each with what it still needs from the rep.
+private struct PostCallTabBar: View {
+    let tabs: [MeetingPillState.PostCallTab]
+    let active: MeetingPillState.PostCallTab
+    let count: (MeetingPillState.PostCallTab) -> Int
+    let choose: (MeetingPillState.PostCallTab) -> Void
 
     var body: some View {
-        Button(action: toggle) {
-            HStack(spacing: 8) {
-                Image(systemName: kept ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 12))
-                    .foregroundStyle(kept ? IslandStyle.beige : IslandStyle.secondary)
-                    .frame(width: 14)
-                HStack(spacing: 5) {
-                    Text(change.label)
-                        .foregroundStyle(IslandStyle.secondary)
-                        .lineLimit(1)
-                    if change.check {
-                        Text("check")
-                            .font(.system(size: 9.5, weight: .semibold))
-                            .foregroundStyle(IslandStyle.warning)
-                    }
+        HStack(spacing: 2) {
+            ForEach(tabs, id: \.self) { tab in
+                PostCallTabButton(tab: tab, active: tab == active, count: count(tab)) { choose(tab) }
+            }
+        }
+        .padding(2)
+        .background(Color.white.opacity(0.06), in: Capsule())
+    }
+}
+
+private struct PostCallTabButton: View {
+    let tab: MeetingPillState.PostCallTab
+    let active: Bool
+    let count: Int
+    let action: () -> Void
+    @State private var hovering = false
+
+    private var title: String {
+        switch tab {
+        case .crm: return "CRM"
+        case .email: return "Email"
+        case .notes: return "Notes"
+        }
+    }
+
+    private var symbol: String {
+        switch tab {
+        case .crm: return "person.text.rectangle"
+        case .email: return "envelope"
+        case .notes: return "doc.text"
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 10.5, weight: .medium))
+                Text(title).font(.system(size: 11.5, weight: .medium))
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(active ? Color.black.opacity(0.85) : IslandStyle.text)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .padding(.horizontal, count > 9 ? 3 : 0)
+                        .background(active ? IslandStyle.beige : Color.white.opacity(0.14), in: Capsule())
                 }
-                .frame(width: 128, alignment: .leading)
-                HStack(spacing: 5) {
-                    if let from = change.from {
-                        Text(from)
-                            .strikethrough()
-                            .foregroundStyle(IslandStyle.secondary.opacity(0.75))
-                            .lineLimit(1)
-                            .layoutPriority(0)
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 8, weight: .semibold))
+            }
+            .foregroundStyle(active || hovering ? IslandStyle.text : IslandStyle.secondary)
+            .frame(maxWidth: .infinity)
+            .frame(height: 22)
+            .background(Color.white.opacity(active ? 0.14 : hovering ? 0.06 : 0), in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(count > 0 ? "\(title), \(count)" : title)
+        .accessibilityAddTraits(active ? .isSelected : [])
+    }
+}
+
+/// One proposed change: tick to keep, its field, and what it becomes (then what it was).
+/// A value with options opens them over the card; free text is edited in Vocify.
+private struct ChangeRow: View {
+    let change: MeetingPillState.PostCall.Change
+    let shown: String
+    let kept: Bool
+    let height: CGFloat
+    let open: Bool
+    let toggle: () -> Void
+    /// Opens the options under the value, given its frame in the island.
+    let toggleOptions: (CGRect) -> Void
+    @State private var overValue = false
+    @State private var valueFrame: CGRect = .zero
+    private typealias L = MeetingPillState.PostCallLayout
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+                Button(action: toggle) {
+                    HStack(alignment: .top, spacing: 8) {
+                        tick
+                        Text(change.label)
+                            .font(.system(size: 11.5))
                             .foregroundStyle(IslandStyle.secondary)
+                            .lineLimit(1)
+                            .frame(width: L.label, height: L.lineHeight(L.valueSize), alignment: .leading)
                     }
-                    Text(change.to)
-                        .foregroundStyle(kept ? IslandStyle.text : IslandStyle.secondary)
-                        .lineLimit(1)
-                        .layoutPriority(1)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .help(kept ? "Untick to leave it out" : "Tick to write it")
+                .accessibilityLabel(change.label)
+                .accessibilityValue(kept ? "Will be written" : "Not written")
+
+                HStack(alignment: .top, spacing: 0) {
+                    value
+                        .frame(width: L.valueWidth, alignment: .leading)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(open || overValue ? IslandStyle.text : IslandStyle.secondary)
+                        .rotationEffect(.degrees(open ? 180 : 0))
+                        .opacity(change.options.isEmpty ? 0 : 1)
+                        .frame(width: L.chevron, height: L.lineHeight(L.valueSize))
+                }
+                .contentShape(Rectangle())
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { valueFrame = $0 }
+                .onTapGesture { change.options.isEmpty ? toggle() : toggleOptions(valueFrame) }
+                .onHover { overValue = $0 }
+                .help(change.options.isEmpty ? "Edit it in Vocify" : change.multiple ? "Pick one or more" : "Pick another value")
+                .accessibilityAddTraits(.isButton)
+            }
+            .padding(.horizontal, L.rowInset)
+            .padding(.vertical, L.rowPadding / 2)
+            .frame(height: height, alignment: .top)
+    }
+
+    private var tick: some View {
+        ZStack {
+            if kept {
+                Circle().fill(IslandStyle.beige)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 7.5, weight: .heavy))
+                    .foregroundStyle(Color.black.opacity(0.85))
+            } else {
+                Circle().strokeBorder(change.check ? IslandStyle.warning : IslandStyle.secondary, lineWidth: 1.2)
+            }
+        }
+        .frame(width: L.tick, height: L.tick)
+        .padding(.top, (L.lineHeight(L.valueSize) - L.tick) / 2)
+    }
+
+    private var value: some View {
+        (Text(shown).foregroundColor(kept ? IslandStyle.text : IslandStyle.secondary)
+            + Text(change.before(shown).map { "  was \($0)" } ?? "").font(.system(size: 11)).foregroundColor(IslandStyle.secondary))
+            .font(.system(size: L.valueSize))
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// A change's options in their own small window over the card, in the island's glass.
+/// A checkbox list stays open for more ticks; a list of one closes on the pick.
+private struct OptionPopup: View {
+    @ObservedObject var state: MeetingPillState
+    let change: MeetingPillState.PostCall.Change
+    let pick: (String) -> Void
+    private typealias L = MeetingPillState.PostCallLayout
+
+    var body: some View {
+        let selected = change.values(state.editedValues[change.key])
+        ScrollView(.vertical, showsIndicators: change.options.count > L.optionsVisible) {
+            VStack(spacing: 0) {
+                ForEach(change.options) { option in
+                    OptionRow(label: option.label, selected: selected.contains(option.value)) { pick(option.value) }
+                }
+            }
+        }
+        .padding(L.optionsPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            ZStack {
+                BehindWindowBlur()
+                Color.black.opacity(0.28)
+                GlassPanel(radius: 10)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .environment(\.colorScheme, .dark)
+    }
+}
+
+private struct OptionRow: View {
+    let label: String
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(IslandStyle.beige)
+                    .opacity(selected ? 1 : 0)
+                    .frame(width: 14)
+                Text(label)
+                    .font(.system(size: 12))
+                    .foregroundStyle(selected || hovering ? IslandStyle.text : IslandStyle.secondary)
+                    .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .font(.system(size: 11.5))
+            .padding(.horizontal, 8)
+            .frame(height: MeetingPillState.PostCallLayout.option)
+            .background(Color.white.opacity(hovering ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(change.check ? "The call wasn't clear on this one: check it before writing" : (kept ? "Won't be written if unticked" : "Tick to write it"))
-        .accessibilityLabel("\(change.label): \(change.to)")
-        .accessibilityValue(kept ? "Will be written" : "Not written")
+        .onHover { hovering = $0 }
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
+
+/// The island's glass at a smaller scale: a faint fill with a light sheen and the same rim.
+private struct GlassPanel: View {
+    let radius: CGFloat
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        shape
+            .fill(Color.white.opacity(0.07))
+            .overlay(shape.fill(LinearGradient(colors: [Color.white.opacity(0.06), .clear], startPoint: .top, endPoint: .center)))
+            .overlay(shape.strokeBorder(
+                LinearGradient(
+                    colors: [Color.white.opacity(0.30), Color.white.opacity(0.08), Color.white.opacity(0.20)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 1
+            ))
+    }
+}
+
+/// The card's one main action: the island's glass, tinted with its beige.
+private struct PrimaryActionButton: View {
+    let title: String
+    let symbol: String?
+    var disabled = false
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if let symbol { Image(systemName: symbol).font(.system(size: 10, weight: .semibold)) }
+                Text(title).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+            }
+            .foregroundStyle(IslandStyle.beige)
+            .padding(.horizontal, 14)
+            .frame(height: 30)
+            .background {
+                Capsule()
+                    .fill(IslandStyle.beige.opacity(hovering && !disabled ? 0.26 : 0.18))
+                    .overlay(Capsule().fill(LinearGradient(colors: [Color.white.opacity(0.10), .clear], startPoint: .top, endPoint: .center)))
+                    .overlay(Capsule().strokeBorder(
+                        LinearGradient(colors: [IslandStyle.beige.opacity(0.65), IslandStyle.beige.opacity(0.2)], startPoint: .top, endPoint: .bottom),
+                        lineWidth: 1
+                    ))
+            }
+        }
+        .buttonStyle(PressScale())
+        .disabled(disabled)
+        .opacity(disabled ? 0.5 : 1)
+        .onHover { hovering = $0 }
+        .help(help)
+    }
+}
+
 
 /// The call's type as a quiet tag beside the contact; one click to correct it.
 private struct TypePicker: View {
@@ -1584,37 +2196,6 @@ private struct TextAction: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-    }
-}
-
-/// Glass button with an icon; the island's quiet secondary action.
-private struct QuietActionButton: View {
-    let title: String
-    let symbol: String
-    let busy: Bool
-    let help: String
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                if busy {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
-                }
-                Text(title).font(.system(size: 12.5, weight: .medium))
-            }
-            .foregroundStyle(IslandStyle.text)
-            .padding(.horizontal, 12)
-            .frame(height: 30)
-            .background(Color.white.opacity(hovering ? 0.17 : 0.10), in: Capsule())
-        }
-        .buttonStyle(PressScale())
-        .disabled(busy)
-        .onHover { hovering = $0 }
-        .help(help)
     }
 }
 

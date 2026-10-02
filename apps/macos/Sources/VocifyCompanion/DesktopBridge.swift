@@ -146,7 +146,7 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
             self.emit(channel, payload, in: webView)
         }
         let recorder = NativeRecorder(
-            url: url,
+            url: Self.liveServer(url),
             ticket: ticket,
             callApp: MeetingPillController.shared.callAppBundleID,
             capture: capture,
@@ -170,6 +170,19 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         }
         self.recorder = recorder
         return ["ok": true]
+    }
+
+    /// `defaults write com.vocify.app vocify.liveServer api` sends calls to the API instead
+    /// of the live service, to compare the two; each call's report says which one served it.
+    private static func liveServer(_ url: URL) -> URL {
+        guard UserDefaults.standard.string(forKey: "vocify.liveServer") == "api",
+              let raw = Bundle.main.object(forInfoDictionaryKey: "VocifyAPIURL") as? String,
+              let api = URL(string: raw),
+              var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        parts.scheme = api.scheme == "https" ? "wss" : "ws"
+        parts.host = api.host
+        parts.port = api.port
+        return parts.url ?? url
     }
 
     private func startSystemAudio() async -> [String: Any] {

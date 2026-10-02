@@ -200,4 +200,39 @@ check(Set(hour.rows().map(\.key)).count == 300, "keys stay unique")
 hour.apply(text: "y una más", isFinal: true, channel: "prospect", start: 2995, end: 2996)
 check(hour.rows().last?.text == "frase número 299 del cliente 5 y una más", "the newest paragraph still grows")
 
+// After a call, Approve covers only changes the island shows; more than fit go to Vocify's review.
+let six = (1...6).map { "contacts:f\($0)" }
+let allKept = IslandApproval(changes: six, kept: Set(six))
+check(allKept.canApprove, "six changes on screen can be approved")
+check(allKept.count == 6 && allKept.omit.isEmpty, "every ticked change is written")
+let seven = (1...7).map { "contacts:f\($0)" }
+check(!IslandApproval(changes: seven, kept: Set(seven)).canApprove, "a seventh change sends it to Vocify's review")
+let oneKept = IslandApproval(changes: six, kept: ["contacts:f1"])
+check(oneKept.count == 1 && oneKept.omit == Array(six.dropFirst()), "unticked changes are left out")
+check(!IslandApproval(changes: six, kept: []).canApprove, "nothing ticked, nothing to approve")
+
+// Stop pauses first and finishes after a short grace, so a wrong stop is one click to undo.
+let manual = StopGrace(byHangUp: false, wasPaused: false)
+check(manual.onStop == [.pause], "stopping a live recording pauses it first")
+check(manual.onResume == [.resume], "resume carries on recording")
+check(manual.onFinish == [.stop], "a manual stop ends without a hang-up")
+check(manual.title == "Recording stopped", "a manual stop says so")
+let alreadyPaused = StopGrace(byHangUp: false, wasPaused: true)
+check(alreadyPaused.onStop.isEmpty && alreadyPaused.onResume.isEmpty, "a paused recording stays paused on resume")
+let hungUp = StopGrace(byHangUp: true, wasPaused: false)
+check(hungUp.onFinish == [.callEnded, .stop], "a hang-up reports the call ended only once it finishes")
+check(hungUp.title == "Call ended", "a hang-up says the call ended")
+
+// The island names the connected CRM; before the dashboard says which, it never guesses one.
+check(CrmName(nil).sentence == "the CRM", "unknown CRM reads as the CRM")
+check(CrmName("  ").sentence == "the CRM", "a blank name is unknown")
+check(CrmName(" Pipedrive ").sentence == "Pipedrive", "a known CRM by name")
+check(CrmName(nil).short == "CRM" && CrmName("HubSpot").short == "HubSpot", "button text")
+
+// Losing the call's audio opens the closed island once, the moment it happens.
+check(LostAudio.opensIsland(was: false, now: true, recording: true, open: false), "lost while recording opens the island")
+check(!LostAudio.opensIsland(was: true, now: true, recording: true, open: false), "only when it changes")
+check(!LostAudio.opensIsland(was: false, now: true, recording: false, open: false), "only while recording")
+check(!LostAudio.opensIsland(was: false, now: true, recording: true, open: true), "already open stays as is")
+
 print("ok")

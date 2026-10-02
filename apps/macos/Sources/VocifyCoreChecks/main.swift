@@ -158,6 +158,25 @@ answer.apply(text: "Sí.", isFinal: true, channel: "prospect", start: 12.5, end:
 answer.apply(text: "Perfecto, te mando la invitación.", isFinal: true, channel: "rep", start: 13.5, end: 15)
 check(answer.rows().count == 3, "an answer stays in order")
 
+// Bubbles never swap: a tail settling after the other side's final keeps its place.
+var overlap = LiveTranscript()
+overlap.apply(text: "lo que te decía es que", isFinal: false, channel: "prospect", start: 20, end: nil)
+overlap.apply(text: "Ajá, vale", isFinal: false, channel: "rep", start: 21, end: nil)
+overlap.apply(text: "Ajá, vale.", isFinal: true, channel: "rep", start: 21, end: 21.5)
+let before = overlap.rows().map(\.key)
+overlap.apply(text: "lo que te decía es que funciona.", isFinal: true, channel: "prospect", start: 20, end: 23)
+check(before == overlap.rows().map(\.key), "order is the same before and after the tail settles")
+check(overlap.rows().map(\.speaker) == [.prospect, .rep], "the earlier speaker stays above")
+
+// The words a final doesn't cover stay on screen in the same bubble.
+var partial = LiveTranscript()
+partial.apply(text: "hola qué tal estás", isFinal: false, channel: "rep", start: 1, end: nil)
+partial.apply(text: "Hola, qué tal", isFinal: true, channel: "rep", start: 1, end: 2)
+check(partial.rows().map { [$0.key, $0.text, $0.pending] } == [["u0", "Hola, qué tal", "estás"]], "the rest of the tail stays")
+partial.apply(text: "estás?", isFinal: true, channel: "rep", start: 2, end: 2.5)
+check(partial.rows().map { [$0.key, $0.text, $0.pending] } == [["u0", "Hola, qué tal estás?", ""]], "and settles in the same bubble")
+check(LiveTranscript.remainder(of: "a b c", after: "a b c.") == nil, "nothing left, no tail")
+
 // Who spoke: the name the call app showed for most of the sentence.
 var shown = SpeakerTimeline()
 shown.record(at: 0, speaking: ["Marta"])

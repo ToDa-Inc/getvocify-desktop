@@ -63,6 +63,13 @@ final class NativeRecorder: @unchecked Sendable {
     private var startedAt = Date()
     private var taken: [String: Int] = [:]
     private var pinger: DispatchSourceTimer?
+    /// The delay the rep sees, per side: from audio leaving the Mac to its text coming back.
+    /// When each second of a side went out on this socket, and the lags measured from it.
+    private var sentAt: [String: [(seconds: Double, at: Date)]] = [:]
+    private var lags: [String: [String: [Double]]] = [:]
+    /// A restarted side resends text for audio already sent: only audio after this is timed.
+    private var timedFrom: [String: Double] = [:]
+    private var totalReconnects = 0
     /// Pauses in a call can be long: nothing must time out while nobody speaks.
     private lazy var session: URLSession = {
         let config = URLSessionConfiguration.default
@@ -152,6 +159,7 @@ final class NativeRecorder: @unchecked Sendable {
                     done.resume()
                 }
                 self.drained = finish
+                if let report = self.lagReport() { socket.send(.string(report)) { _ in } }
                 socket.send(.string(#"{"type":"CloseStream"}"#)) { _ in }
                 self.queue.asyncAfter(deadline: .now() + Self.drainTimeout, execute: finish)
             }
@@ -251,7 +259,43 @@ final class NativeRecorder: @unchecked Sendable {
             return
         }
         sentOnSocket[channel, default: 0] += pcm.count
+        noteSent(channel)
         socket.send(.string(frame)) { _ in }
+    }
+
+    private func noteSent(_ channel: String) {
+        var times = sentAt[channel] ?? []
+        if times.count > 6000 { times.removeFirst(3000) }
+        times.append((Double(sentOnSocket[channel] ?? 0) / Self.bytesPerSecond, Date()))
+        sentAt[channel] = times
+    }
+
+    /// Seconds since the audio up to `end` (this socket's clock) left the Mac.
+    private func lag(_ channel: String, end: Double) -> Double? {
+        guard end > (timedFrom[channel] ?? 0), let times = sentAt[channel], !times.isEmpty else { return nil }
+        var low = 0, high = times.count
+        while low < high {
+            let mid = (low + high) / 2
+            if times[mid].seconds < end - 0.01 { low = mid + 1 } else { high = mid }
+        }
+        return low < times.count ? Date().timeIntervalSince(times[low].at) : nil
+    }
+
+    /// Sent before CloseStream, so the call's report on the server has what the rep saw.
+    private func lagReport() -> String? {
+        func summary(_ values: [Double]) -> [String: Double]? {
+            guard !values.isEmpty else { return nil }
+            let sorted = values.sorted()
+            let at = { (q: Double) in (sorted[min(sorted.count - 1, Int(q * Double(sorted.count)))] * 100).rounded() / 100 }
+            return ["p50": at(0.5), "p90": at(0.9), "max": at(1), "n": Double(sorted.count)]
+        }
+        var sides: [String: Any] = [:]
+        for (channel, kinds) in lags {
+            sides[channel] = kinds.compactMapValues { summary($0) }
+        }
+        guard !sides.isEmpty else { return nil }
+        let report: [String: Any] = ["type": "ClientReport", "lag_s": sides, "reconnects": totalReconnects]
+        return (try? JSONSerialization.data(withJSONObject: report)).flatMap { String(data: $0, encoding: .utf8) }
     }
 
     private func startPinging() {
@@ -308,11 +352,14 @@ final class NativeRecorder: @unchecked Sendable {
             open = true
             reconnects = 0
             sentOnSocket = [:]
+            sentAt = [:]
+            timedFrom = [:]
             let waiting = backlog
             backlog = []
             backlogBytes = 0
             for item in waiting {
                 sentOnSocket[item.channel, default: 0] += item.bytes
+                noteSent(item.channel)
                 socket?.send(.string(item.frame)) { _ in }
             }
             DispatchQueue.main.async { self.events.warning(nil) }
@@ -321,6 +368,9 @@ final class NativeRecorder: @unchecked Sendable {
             let shift = channel.flatMap { offset[$0] } ?? 0
             let text = ((event["channel"] as? [String: Any])?["alternatives"] as? [[String: Any]])?.first?["transcript"] as? String ?? ""
             let isFinal = event["is_final"] as? Bool ?? false
+            if let channel, !text.isEmpty, let raw = event["end"] as? Double, let seconds = lag(channel, end: raw) {
+                lags[channel, default: [:]][isFinal ? "final" : "partial", default: []].append(seconds)
+            }
             let start = (event["start"] as? Double).map { $0 + shift }
             let end = (event["end"] as? Double).map { $0 + shift }
             DispatchQueue.main.async {
@@ -332,6 +382,7 @@ final class NativeRecorder: @unchecked Sendable {
             }
         case "ChannelReset":
             let channel = event["audio_channel"] as? String
+            if let channel { timedFrom[channel] = Double(sentOnSocket[channel] ?? 0) / Self.bytesPerSecond }
             let shift = channel.flatMap { offset[$0] } ?? 0
             let from = (event["from"] as? Double).map { $0 + shift }
             DispatchQueue.main.async {
@@ -364,6 +415,7 @@ final class NativeRecorder: @unchecked Sendable {
             return
         }
         reconnects += 1
+        totalReconnects += 1
         DispatchQueue.main.async { self.events.warning("Reconnecting…") }
         queue.asyncAfter(deadline: .now() + Double(reconnects)) {
             guard !self.stopping, self.socket === socket else { return }
@@ -420,8 +472,22 @@ final class MicCapture: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private var converter: AVAudioConverter?
     private let target = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
+    private var configObserver: NSObjectProtocol?
 
     func start() throws {
+        try attach()
+        // Headphones in or out switch the Mac's microphone mid-call: the engine stops by itself
+        // and the rep's side would go silent for the rest of the recording. Attach again to
+        // whatever input is the default now.
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { [weak self] _ in
+            try? self?.attach()
+        }
+    }
+
+    private func attach() throws {
+        engine.stop()
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, let converter = AVAudioConverter(from: format, to: target) else {
@@ -439,6 +505,8 @@ final class MicCapture: @unchecked Sendable {
     }
 
     func stop() {
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+        configObserver = nil
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
     }

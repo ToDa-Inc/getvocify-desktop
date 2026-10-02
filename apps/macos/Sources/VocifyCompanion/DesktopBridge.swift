@@ -1,12 +1,21 @@
 import AppKit
 import AVFoundation
 import Foundation
+import os
 import ScreenCaptureKit
 import VocifyCore
 import WebKit
 
 @MainActor
 final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
+    /// The dashboard's uncaught errors: `log show --predicate 'subsystem == "com.vocify.app"'`.
+    nonisolated static let webLog = Logger(subsystem: "com.vocify.app", category: "dashboard")
+    /// Live help as it happens (each ask, draft, answer, card shown or dropped), for tests only:
+    /// it carries the conversation's words, so it is off unless
+    /// `defaults write com.vocify.app vocify.liveHelpLog -bool true`.
+    /// Read: `log stream --predicate 'subsystem == "com.vocify.app" AND category == "live-help"'`.
+    nonisolated static let helpLog = Logger(subsystem: "com.vocify.app", category: "live-help")
+    static var helpLogOn: Bool { UserDefaults.standard.bool(forKey: "vocify.liveHelpLog") }
     weak var mainWebView: WKWebView?
 
     private let capture = MeetingCapture()
@@ -37,6 +46,19 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
 
     func handle(op: String, args: [String: Any]) async -> Any? {
         switch op {
+        case "log:event":
+            guard Self.helpLogOn else { return nil }
+            let name = args["name"] as? String ?? "event"
+            let details = (args["details"] as? [String: Any]).flatMap { try? JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+            Self.helpLog.info("\(name, privacy: .public) \(details, privacy: .public)")
+            return nil
+        case "log:error":
+            let kind = args["kind"] as? String ?? "error"
+            let path = args["path"] as? String ?? ""
+            let text = args["text"] as? String ?? ""
+            Self.webLog.error("dashboard \(kind, privacy: .public) at \(path, privacy: .public): \(text, privacy: .public)")
+            return nil
         case "saas:request":
             let payload = args["payload"] as? [String: Any] ?? [:]
             return await SaasProxy.request(payload)
@@ -146,7 +168,7 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
             self.emit(channel, payload, in: webView)
         }
         let recorder = NativeRecorder(
-            url: url,
+            url: Self.liveServer(url),
             ticket: ticket,
             callApp: MeetingPillController.shared.callAppBundleID,
             capture: capture,
@@ -170,6 +192,19 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         }
         self.recorder = recorder
         return ["ok": true]
+    }
+
+    /// `defaults write com.vocify.app vocify.liveServer api` sends calls to the API instead
+    /// of the live service, to compare the two; each call's report says which one served it.
+    private static func liveServer(_ url: URL) -> URL {
+        guard UserDefaults.standard.string(forKey: "vocify.liveServer") == "api",
+              let raw = Bundle.main.object(forInfoDictionaryKey: "VocifyAPIURL") as? String,
+              let api = URL(string: raw),
+              var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        parts.scheme = api.scheme == "https" ? "wss" : "ws"
+        parts.host = api.host
+        parts.port = api.port
+        return parts.url ?? url
     }
 
     private func startSystemAudio() async -> [String: Any] {

@@ -21,6 +21,13 @@
     listeners[channel].add(cb);
     return () => listeners[channel].delete(cb);
   };
+  // Uncaught errors reach the Mac's log, the only place they can be read from in the app.
+  const report = (kind, error) => {
+    const text = error && (error.stack || error.message) ? `${error.message}\n${error.stack || ''}` : String(error);
+    call('log:error', { kind, text: text.slice(0, 4000), path: location.pathname }).catch(() => {});
+  };
+  window.addEventListener('error', (event) => report('error', event.error || event.message));
+  window.addEventListener('unhandledrejection', (event) => report('rejection', event.reason));
   window.__vocifyEmit = (channel, payload) => {
     const set = listeners[channel];
     if (!set) return;
@@ -77,6 +84,10 @@
     shell: {
       setState: (state) => {
         call('shell:state', { state });
+      },
+      /** Live help events for the Mac's log; written only while the test switch is on. */
+      log: (name, details) => {
+        call('log:event', { name, details: details || {} }).catch(() => {});
       },
       resize: (size) => call('shell:resize', { size }),
       showOverlay: () => call('overlay:show'),

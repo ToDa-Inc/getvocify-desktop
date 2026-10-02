@@ -158,6 +158,30 @@ answer.apply(text: "Sí.", isFinal: true, channel: "prospect", start: 12.5, end:
 answer.apply(text: "Perfecto, te mando la invitación.", isFinal: true, channel: "rep", start: 13.5, end: 15)
 check(answer.rows().count == 3, "an answer stays in order")
 
+// Bubbles never swap: a tail settling after the other side's final keeps its place.
+var overlap = LiveTranscript()
+overlap.apply(text: "lo que te decía es que", isFinal: false, channel: "prospect", start: 20, end: nil)
+overlap.apply(text: "Ajá, vale", isFinal: false, channel: "rep", start: 21, end: nil)
+overlap.apply(text: "Ajá, vale.", isFinal: true, channel: "rep", start: 21, end: 21.5)
+let before = overlap.rows().map(\.key)
+overlap.apply(text: "lo que te decía es que funciona.", isFinal: true, channel: "prospect", start: 20, end: 23)
+check(before == overlap.rows().map(\.key), "order is the same before and after the tail settles")
+check(overlap.rows().map(\.speaker) == [.prospect, .rep], "the earlier speaker stays above")
+
+// The words a final doesn't cover stay on screen in the same bubble.
+var partial = LiveTranscript()
+partial.apply(text: "hola qué tal estás", isFinal: false, channel: "rep", start: 1, end: 2.4)
+partial.apply(text: "Hola, qué tal", isFinal: true, channel: "rep", start: 1, end: 2)
+check(partial.rows().map { [$0.key, $0.text, $0.pending] } == [["u0", "Hola, qué tal", "estás"]], "the rest of the tail stays")
+partial.apply(text: "estás?", isFinal: true, channel: "rep", start: 2, end: 2.5)
+check(partial.rows().map { [$0.key, $0.text, $0.pending] } == [["u0", "Hola, qué tal estás?", ""]], "and settles in the same bubble")
+check(LiveTranscript.remainder(of: "a b c", after: "a b c.") == nil, "nothing left, no tail")
+// A final for the whole tail that drops a word (Deepgram) leaves nothing behind.
+var revised = LiveTranscript()
+revised.apply(text: "vale vale perfecto", isFinal: false, channel: "rep", start: 1, end: 2)
+revised.apply(text: "Vale, perfecto.", isFinal: true, channel: "rep", start: 1, end: 2)
+check(revised.rows().map { [$0.text, $0.pending] } == [["Vale, perfecto.", ""]], "no stale words")
+
 // Who spoke: the name the call app showed for most of the sentence.
 var shown = SpeakerTimeline()
 shown.record(at: 0, speaking: ["Marta"])
@@ -199,5 +223,46 @@ check(got == expected, "frozen paragraphs keep their text and order")
 check(Set(hour.rows().map(\.key)).count == 300, "keys stay unique")
 hour.apply(text: "y una más", isFinal: true, channel: "prospect", start: 2995, end: 2996)
 check(hour.rows().last?.text == "frase número 299 del cliente 5 y una más", "the newest paragraph still grows")
+
+// Stop pauses first and finishes after a short grace, so a wrong stop is one click to undo.
+let manual = StopGrace(byHangUp: false, wasPaused: false)
+check(manual.onStop == [.pause], "stopping a live recording pauses it first")
+check(manual.onResume == [.resume], "resume carries on recording")
+check(manual.onFinish == [.stop], "a manual stop ends without a hang-up")
+check(manual.title == "Recording stopped", "a manual stop says so")
+let alreadyPaused = StopGrace(byHangUp: false, wasPaused: true)
+check(alreadyPaused.onStop.isEmpty && alreadyPaused.onResume.isEmpty, "a paused recording stays paused on resume")
+let hungUp = StopGrace(byHangUp: true, wasPaused: false)
+check(hungUp.onFinish == [.callEnded, .stop], "a hang-up reports the call ended only once it finishes")
+check(hungUp.title == "Call ended", "a hang-up says the call ended")
+check(hungUp.immediate && !manual.immediate, "a hang-up starts the analysis at once; only a manual stop waits for Resume")
+
+// Losing the call's audio opens the closed island once, the moment it happens.
+check(LostAudio.opensIsland(was: false, now: true, recording: true, open: false), "lost while recording opens the island")
+check(!LostAudio.opensIsland(was: true, now: true, recording: true, open: false), "only when it changes")
+check(!LostAudio.opensIsland(was: false, now: true, recording: false, open: false), "only while recording")
+check(!LostAudio.opensIsland(was: false, now: true, recording: true, open: true), "already open stays as is")
+
+// The call-type chip and its list: Vocify's proposal is marked, the rep's pick is final.
+let typeOptions = [TypeMenu.Option(key: "discovery", label: "Discovery"), TypeMenu.Option(key: "closing", label: "Demo y cierre")]
+let proposedMenu = TypeMenu(options: typeOptions, selected: "discovery", proposed: true)
+check(proposedMenu.title == "Discovery" && proposedMenu.sparkle, "a proposal shows its type with the sparkle")
+check(proposedMenu.rows.first?.key == nil && proposedMenu.rows.first?.checked == true, "while Vocify proposes, 'Let Vocify decide' is ticked")
+check(proposedMenu.rows.first(where: { $0.key == "discovery" })?.suggested == true, "the proposed type is marked in the list")
+check(proposedMenu.rows.first(where: { $0.key == "discovery" })?.checked == false, "a proposal is not the rep's pick")
+let pickedMenu = TypeMenu(options: typeOptions, selected: "closing", proposed: false)
+check(pickedMenu.title == "Demo y cierre" && !pickedMenu.sparkle, "the rep's pick shows without the sparkle")
+check(pickedMenu.rows.first(where: { $0.key == "closing" })?.checked == true && pickedMenu.rows.first?.checked == false, "the pick is ticked")
+let emptyMenu = TypeMenu(options: typeOptions, selected: nil, proposed: false)
+check(emptyMenu.title == "Call type" && emptyMenu.placeholder && !emptyMenu.sparkle, "nothing known yet reads Call type")
+
+// The island's live help switch is for this call only.
+check(LiveHelpSwitch.command(turningOn: false) == "assist-off" && LiveHelpSwitch.command(turningOn: true) == "assist-on", "switch commands")
+
+// The voice wave's colour says who is talking; it never flickers between sides in silence or near ties.
+check(WaveSide.next(you: 0.01, them: 0.02, previous: .you) == .you, "silence keeps the colour")
+check(WaveSide.next(you: 0.5, them: 0.1, previous: .them) == .you, "the rep clearly louder turns it beige")
+check(WaveSide.next(you: 0.1, them: 0.6, previous: .you) == .them, "them clearly louder turns it white")
+check(WaveSide.next(you: 0.32, them: 0.30, previous: .them) == .them, "a near tie keeps the colour")
 
 print("ok")

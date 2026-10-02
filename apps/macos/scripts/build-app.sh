@@ -97,7 +97,10 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$root/.build/release/VocifyCompanion" "$app/Contents/MacOS/Vocify"
 cp "$root/Info.plist" "$app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Delete :VocifyDashboardCommit" "$app/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :VocifyDashboardCommit string $dashboard_commit" "$app/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Delete :VocifyAPIURL" "$app/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :VocifyAPIURL string $api_url" "$app/Contents/Info.plist"
 cp "$root/build/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 cp "$sources/Resources/icon.png" "$app/Contents/Resources/icon.png"
 cp "$sources/bridge.js" "$app/Contents/Resources/bridge.js"

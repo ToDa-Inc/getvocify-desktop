@@ -21,11 +21,13 @@ enum CrmPageReader {
         string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"
     )!
 
-    /// `{ urls: [String], browsers: [{ name, bundleId, access }] }`
-    static func read(ask: Bool) async -> [String: Any] {
+    /// `{ urls: [String], browsers: [{ name, bundleId, access }] }`, and the call or meeting page
+    /// on screen. Only CRM URLs leave the Mac; any other page is reduced to the call app it is.
+    static func read(ask: Bool) async -> (result: [String: Any], source: CallSource?) {
         let running = NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
         let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
         var urls: [String] = []
+        var pages: [String] = []
         var browsers: [[String: String]] = []
         for browser in CrmPages.browsersToRead(running: running, frontmost: frontmost) {
             let bundleID = browser.bundleID
@@ -33,9 +35,10 @@ enum CrmPageReader {
             browsers.append(["name": browser.name, "bundleId": bundleID, "access": access.rawValue])
             if access == .granted, let output = run(browser.script) {
                 urls.append(contentsOf: CrmPages.crmURLs(fromScriptOutput: output))
+                pages.append(contentsOf: output.split(whereSeparator: \.isNewline).map(String.init))
             }
         }
-        return ["urls": urls, "browsers": browsers]
+        return (["urls": urls, "browsers": browsers], CallSource.page(in: pages))
     }
 
     /// Blocks while macOS shows the consent prompt, so never call it on the main thread.

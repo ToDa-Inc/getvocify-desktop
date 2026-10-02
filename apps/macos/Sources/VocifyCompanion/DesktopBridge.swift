@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Foundation
 import ScreenCaptureKit
+import VocifyCore
 import WebKit
 
 @MainActor
@@ -116,7 +117,7 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
             MeetingPillController.shared.hide()
             return ["ok": true]
         case "crm:pages":
-            return await CrmPageReader.read(ask: args["ask"] as? Bool ?? true)
+            return await CrmPageReader.read(ask: args["ask"] as? Bool ?? true).result
         case "crm:open-automation-settings":
             NSWorkspace.shared.open(CrmPageReader.automationSettingsURL)
             return ["ok": true]
@@ -268,6 +269,12 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
     func emitCallPages(_ urls: [String]) {
         guard let mainWebView else { return }
         emit("call:pages", ["urls": urls], in: mainWebView)
+    }
+
+    /// Where the call happens (app or page) and whether that makes it a call or a meeting.
+    func emitCallSource(_ source: CallSource?) {
+        guard let mainWebView else { return }
+        emit("call:source", source?.json ?? NSNull(), in: mainWebView)
     }
 
     /// A choice made in the island's post-call card, e.g. ["type": "approve", "omit": [...]].

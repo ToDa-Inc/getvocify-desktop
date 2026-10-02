@@ -121,4 +121,17 @@ check((json["segments"] as? [[String: Any]])?.first?["seen"] as? Int == 0, "json
 check(json["nextSeen"] as? Int == 3, "json carries the counter")
 check(LiveTranscript.joinChunks("hola", ", qué tal") == "hola, qué tal", "chunks join")
 
+// Where a call happens decides call vs meeting; unclear apps claim nothing.
+check(CallSource.app(bundleID: "us.zoom.xos")?.kind == .meeting, "zoom is a meeting")
+check(CallSource.app(bundleID: "com.microsoft.teams2")?.name == "Microsoft Teams", "new teams")
+check(CallSource.app(bundleID: "net.whatsapp.WhatsApp")?.kind == .call, "whatsapp is a call")
+check(CallSource.app(bundleID: "com.apple.FaceTime")?.kind == nil, "facetime claims nothing")
+check(CallSource.app(bundleID: "com.google.Chrome") == nil, "browsers go by their page")
+check(CallSource.page(in: ["https://mail.google.com/mail/u/0", "https://meet.google.com/abc-defg-hij"])?.name == "Google Meet", "meet tab")
+check(CallSource.page("https://app-eu1.hubspot.com/calling-integration-popup-ui/147506535")?.kind == .call, "hubspot calling window")
+check(CallSource.page("https://app-eu1.hubspot.com/contacts/147506535/record/0-1/1") == nil, "a contact page is not a call")
+check(CallSource.page("https://us02web.zoom.us/wc/123/join")?.kind == .meeting, "zoom web client")
+check(CallSource.page("https://zoom.us/pricing") == nil, "zoom marketing site is not a meeting")
+check(CallSource.page("http://meet.google.com/x") == nil, "https only")
+
 print("ok")

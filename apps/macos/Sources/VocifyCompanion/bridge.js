@@ -10,6 +10,7 @@
     'permissions:changed': new Set(),
     'call:pages': new Set(),
     'call:ended': new Set(),
+    'call:source': new Set(),
     'postcall:action': new Set(),
     'recorder:transcript': new Set(),
     'recorder:levels': new Set(),
@@ -61,6 +62,8 @@
       onCallPages: on('call:pages'),
       // That call ended (the call app let go of the mic).
       onCallEnded: on('call:ended'),
+      // Where the call happens: { name, kind: 'call' | 'meeting' | null }, or null.
+      onCallSource: on('call:source'),
     },
     permissions: {
       status: () => call('permissions:status'),

@@ -90,6 +90,19 @@ final class MeetingPillState: ObservableObject {
             let when: String?
         }
 
+        /// What kind of call it was (its playbook), and what it can be changed to.
+        struct CallType: Equatable {
+            struct Option: Equatable, Identifiable {
+                let key: String
+                let label: String
+                var id: String { key }
+            }
+
+            let key: String
+            let label: String
+            let options: [Option]
+        }
+
         let stage: Stage
         let memoId: String
         let contactName: String?
@@ -102,6 +115,7 @@ final class MeetingPillState: ObservableObject {
         let meeting: Meeting?
         let notes: Bool
         let offerStopEmails: Bool
+        let type: CallType?
 
         init?(_ raw: [String: Any]) {
             guard let stage = (raw["stage"] as? String).flatMap(Stage.init(rawValue:)),
@@ -135,6 +149,14 @@ final class MeetingPillState: ObservableObject {
             }
             notes = raw["notes"] as? Bool ?? false
             offerStopEmails = raw["offerStopEmails"] as? Bool ?? false
+            type = (raw["type"] as? [String: Any]).flatMap { item in
+                guard let key = item["key"] as? String, let label = item["label"] as? String else { return nil }
+                let options = (item["options"] as? [[String: Any]] ?? []).compactMap { option -> CallType.Option? in
+                    guard let key = option["key"] as? String, let label = option["label"] as? String else { return nil }
+                    return CallType.Option(key: key, label: label)
+                }
+                return CallType(key: key, label: label, options: options)
+            }
         }
 
         /// What still needs the rep; the count on the closed island.
@@ -606,7 +628,11 @@ final class MeetingPillController {
             openApp()
             return
         }
-        if case .call(let caller) = previous { recordingCaller = caller }
+        if case .call(let caller) = previous {
+            recordingCaller = caller
+        } else {
+            lookUpCallSource()
+        }
         calls.ignoresWebKit = true
         transition(to: .starting, expanded: false)
         bridge?.emitCommand("listen")
@@ -654,6 +680,7 @@ final class MeetingPillController {
     func skipEmail() { postCallAction("skipEmail") }
     func unskipEmail() { postCallAction("unskipEmail") }
     func stopEmails() { postCallAction("stopEmails") }
+    func setCallType(_ key: String) { postCallAction("setType", ["key": key]) }
     func keepEmails() { postCallAction("keepEmails") }
     func addMeeting() { postCallAction("addMeeting") }
 
@@ -761,11 +788,29 @@ final class MeetingPillController {
 
     /// Reads the CRM page on screen; the dashboard turns it into the contact's name.
     private func lookUpCallContact() {
+        let caller = currentCaller
         Task { @MainActor [weak self] in
             let read = await CrmPageReader.read(ask: true)
-            guard let self, case .call = self.state.mode,
-                  let urls = read["urls"] as? [String], !urls.isEmpty else { return }
-            self.bridge?.emitCallPages(urls)
+            guard let self, case .call = self.state.mode else { return }
+            self.bridge?.emitCallSource(CallSource.app(bundleID: caller?.bundleID) ?? read.source)
+            if let urls = read.result["urls"] as? [String], !urls.isEmpty {
+                self.bridge?.emitCallPages(urls)
+            }
+        }
+    }
+
+    /// Recording without a detected call (the shortcut, the idle island): name the app
+    /// holding the mic, if any, without asking for browser access.
+    private func lookUpCallSource() {
+        let caller = currentCaller
+        if let native = CallSource.app(bundleID: caller?.bundleID) {
+            bridge?.emitCallSource(native)
+            return
+        }
+        guard caller != nil else { return }
+        Task { @MainActor [weak self] in
+            let read = await CrmPageReader.read(ask: false)
+            self?.bridge?.emitCallSource(read.source)
         }
     }
 
@@ -1131,11 +1176,14 @@ private struct PostCallMenu: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Text(postCall.contactName ?? "Your call")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(IslandStyle.text)
                     .lineLimit(1)
+                if let type = postCall.type {
+                    TypePicker(type: type, choose: controller.setCallType)
+                }
                 Spacer(minLength: 0)
                 IconButton(symbol: "xmark", help: "Done with this call", action: controller.dismissPostCall)
             }
@@ -1361,6 +1409,42 @@ private struct ChangeRow: View {
         .help(change.check ? "The call wasn't clear on this one: check it before writing" : (kept ? "Won't be written if unticked" : "Tick to write it"))
         .accessibilityLabel("\(change.label): \(change.to)")
         .accessibilityValue(kept ? "Will be written" : "Not written")
+    }
+}
+
+/// "· Cold call ⌄" beside the contact: what the call was scored as, one click to correct it.
+private struct TypePicker: View {
+    let type: MeetingPillState.PostCall.CallType
+    let choose: (String) -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let label = HStack(spacing: 3) {
+            Text("· \(type.label)")
+                .lineLimit(1)
+            if !type.options.isEmpty {
+                Image(systemName: "chevron.down").font(.system(size: 7.5, weight: .bold))
+            }
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(hovering && !type.options.isEmpty ? IslandStyle.text : IslandStyle.secondary)
+
+        if type.options.isEmpty {
+            label.help("What this call was scored as")
+        } else {
+            Menu {
+                ForEach(type.options) { option in
+                    Button(option.label) { choose(option.key) }
+                }
+            } label: {
+                label
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .onHover { hovering = $0 }
+            .help("What this call was scored as. Change it to score it again.")
+        }
     }
 }
 

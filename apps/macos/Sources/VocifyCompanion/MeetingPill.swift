@@ -575,6 +575,14 @@ final class LevelStore {
         let level = side ? you : them
         return level.value * max(0, 1 - now.timeIntervalSince(level.at) / Self.fade)
     }
+
+    /// Whose voice the wave shows now; it holds its colour through silence and near ties.
+    private var shownSide: WaveSide = .them
+
+    func side(at now: Date) -> WaveSide {
+        shownSide = WaveSide.next(you: value(you: true, at: now), them: value(you: false, at: now), previous: shownSide)
+        return shownSide
+    }
 }
 
 /// Where the island sits: around the camera housing, or under the menu bar on screens without one.
@@ -817,6 +825,10 @@ final class MeetingPillController {
         guard state.mode == .recording else { return }
         hangUp?.cancel()
         let grace = StopGrace(byHangUp: byHangUp, wasPaused: state.paused)
+        if grace.immediate {
+            run(grace.onFinish)
+            return
+        }
         run(grace.onStop)
         transition(to: .stopped(grace), expanded: true)
         startCountdown(StopGrace.seconds)
@@ -2641,18 +2653,20 @@ private struct VoiceWave: View {
         TimelineView(.animation(minimumInterval: 1 / 24, paused: reduceMotion)) { context in
             let you = levels.value(you: true, at: context.date)
             let them = levels.value(you: false, at: context.date)
+            let side = levels.side(at: context.date)
             let level = min(1, max(you, them) * 1.4)
             let t = context.date.timeIntervalSinceReferenceDate
             HStack(spacing: 2) {
                 ForEach(0..<5, id: \.self) { index in
                     let wave = reduceMotion ? 1 : 0.55 + 0.45 * sin(t * 9 + Double(index) * 1.2)
                     Capsule()
-                        .fill(you >= them ? IslandStyle.beige : Color.white.opacity(0.85))
+                        .fill(side == .you ? IslandStyle.beige : Color.white.opacity(0.85))
                         .frame(width: 2.5, height: Self.rest[index] + 10 * level * CGFloat(wave))
                 }
             }
             .frame(height: 16)
-            .opacity(level > 0.05 ? 1 : 0.45)
+            // Brightens with the voice instead of switching at a threshold, so it never blinks.
+            .opacity(0.45 + 0.55 * min(1, level / 0.15))
         }
         .help("Beige is you speaking, white is them")
         .accessibilityLabel("Voice activity")

@@ -21,4 +21,7 @@ public struct StopGrace: Equatable {
     public var onResume: [Step] { wasPaused ? [] : [.resume] }
     public var onFinish: [Step] { byHangUp ? [.callEnded, .stop] : [.stop] }
     public var title: String { byHangUp ? "Call ended" : "Recording stopped" }
+    /// The call app hung up: the call is over, so the analysis starts at once. Only a manual
+    /// Stop (which can be a misclick) waits for Resume.
+    public var immediate: Bool { byHangUp }
 }

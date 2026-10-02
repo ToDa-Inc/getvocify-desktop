@@ -235,6 +235,7 @@ check(alreadyPaused.onStop.isEmpty && alreadyPaused.onResume.isEmpty, "a paused 
 let hungUp = StopGrace(byHangUp: true, wasPaused: false)
 check(hungUp.onFinish == [.callEnded, .stop], "a hang-up reports the call ended only once it finishes")
 check(hungUp.title == "Call ended", "a hang-up says the call ended")
+check(hungUp.immediate && !manual.immediate, "a hang-up starts the analysis at once; only a manual stop waits for Resume")
 
 // Losing the call's audio opens the closed island once, the moment it happens.
 check(LostAudio.opensIsland(was: false, now: true, recording: true, open: false), "lost while recording opens the island")
@@ -257,5 +258,11 @@ check(emptyMenu.title == "Call type" && emptyMenu.placeholder && !emptyMenu.spar
 
 // The island's live help switch is for this call only.
 check(LiveHelpSwitch.command(turningOn: false) == "assist-off" && LiveHelpSwitch.command(turningOn: true) == "assist-on", "switch commands")
+
+// The voice wave's colour says who is talking; it never flickers between sides in silence or near ties.
+check(WaveSide.next(you: 0.01, them: 0.02, previous: .you) == .you, "silence keeps the colour")
+check(WaveSide.next(you: 0.5, them: 0.1, previous: .them) == .you, "the rep clearly louder turns it beige")
+check(WaveSide.next(you: 0.1, them: 0.6, previous: .you) == .them, "them clearly louder turns it white")
+check(WaveSide.next(you: 0.32, them: 0.30, previous: .them) == .them, "a near tie keeps the colour")
 
 print("ok")

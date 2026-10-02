@@ -1740,7 +1740,7 @@ private struct TranscriptScroll: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.top, 28)
                         }
-                        LazyVStack(spacing: 8) {
+                        LazyVStack(spacing: 5) {
                             ForEach(turns) { turn in
                                 TurnBubble(turn: turn).equatable()
                             }

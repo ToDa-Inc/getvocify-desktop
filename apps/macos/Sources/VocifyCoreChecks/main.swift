@@ -134,4 +134,12 @@ check(CallSource.page("https://us02web.zoom.us/wc/123/join")?.kind == .meeting, 
 check(CallSource.page("https://zoom.us/pricing") == nil, "zoom marketing site is not a meeting")
 check(CallSource.page("http://meet.google.com/x") == nil, "https only")
 
+// The mic hearing the call is hidden while still being written, not only once final.
+var hearing = LiveTranscript()
+hearing.apply(text: "departamentos de captación", isFinal: false, channel: "prospect", start: 40, end: nil)
+hearing.apply(text: "departamentos de", isFinal: false, channel: "rep", start: 40.2, end: nil)
+check(hearing.rows().map(\.speaker) == [.prospect], "an echo tail is not shown as the rep")
+hearing.apply(text: "te paso la propuesta", isFinal: false, channel: "rep", start: 41, end: nil)
+check(hearing.rows().map(\.speaker) == [.prospect, .rep], "the rep's own words still show")
+
 print("ok")

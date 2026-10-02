@@ -25,6 +25,12 @@ final class NativeRecorder: @unchecked Sendable {
     /// Audio kept while the socket reconnects, then sent at once (the server takes it faster than real time).
     private static let maxBacklogBytes = 30 * 32000
     private static let snapshotEvery: TimeInterval = 0.25
+    /// A side further behind the wall clock than this gets silence: the call's audio starts
+    /// later than the mic and macOS sends nothing while the call is quiet, and both sides must
+    /// stay on one clock or the mic's echo of the call can't be told apart from the rep.
+    private static let maxClockSlip: TimeInterval = 0.3
+    /// Keeps a quiet call's socket alive and notices a dead one.
+    private static let pingEvery: TimeInterval = 10
 
     private let url: URL
     private let capture: MeetingCapture
@@ -45,6 +51,19 @@ final class NativeRecorder: @unchecked Sendable {
     private var offset: [String: Double] = [:]
     private var sentOnSocket: [String: Int] = [:]
     private var level: [String: Double] = ["rep": 0, "prospect": 0]
+    /// When recording began, and how much audio each side has had since, in bytes.
+    private var startedAt = Date()
+    private var taken: [String: Int] = [:]
+    private var pinger: DispatchSourceTimer?
+    /// Pauses in a call can be long: nothing must time out while nobody speaks.
+    private lazy var session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 24 * 3600
+        config.timeoutIntervalForResource = 24 * 3600
+        return URLSession(configuration: config)
+    }()
+    /// Keeps macOS from throttling Vocify (App Nap) or sleeping while the call is recorded.
+    @MainActor private var activity: NSObjectProtocol?
     private var levelsSentAt = Date.distantPast
     private var drained: (() -> Void)?
 
@@ -62,6 +81,12 @@ final class NativeRecorder: @unchecked Sendable {
     @MainActor
     func start() async throws {
         MeetingPillController.shared.state.turns = []
+        activity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .idleSystemSleepDisabled, .latencyCritical],
+            reason: "Recording a call"
+        )
+        let begun = Date()
+        queue.sync { startedAt = begun }
         mic.onPCM = { [weak self] pcm in self?.queue.async { self?.take("rep", pcm) } }
         try mic.start()
         capture.onPCM = { [weak self] channel, pcm in
@@ -75,9 +100,13 @@ final class NativeRecorder: @unchecked Sendable {
         guard capture.hasSystemStream else {
             mic.stop()
             capture.stopSystemAudioOnly()
+            endActivity()
             throw RecorderError.noSystemAudio
         }
-        queue.async { self.connect() }
+        queue.async {
+            self.connect()
+            self.startPinging()
+        }
     }
 
     func setPaused(_ value: Bool) {
@@ -111,11 +140,20 @@ final class NativeRecorder: @unchecked Sendable {
             }
         }
         queue.sync {
+            pinger?.cancel()
+            pinger = nil
             socket?.cancel(with: .normalClosure, reason: nil)
             socket = nil
             open = false
         }
+        endActivity()
         return transcript.json()
+    }
+
+    @MainActor
+    private func endActivity() {
+        if let activity { ProcessInfo.processInfo.endActivity(activity) }
+        activity = nil
     }
 
     // MARK: Audio → socket (queue)
@@ -135,6 +173,15 @@ final class NativeRecorder: @unchecked Sendable {
             }
         }
         var buffer = pending[channel] ?? Data()
+        // Behind the wall clock (late start, quiet call): fill the gap with silence first.
+        let behind = now.timeIntervalSince(startedAt) - Double(pcm.count) / Self.bytesPerSecond
+            - Double(taken[channel] ?? 0) / Self.bytesPerSecond
+        if behind > Self.maxClockSlip {
+            let gap = Int(behind * Self.bytesPerSecond) & ~1
+            buffer.append(Data(count: gap))
+            taken[channel, default: 0] += gap
+        }
+        taken[channel, default: 0] += audio.count
         buffer.append(audio)
         while buffer.count >= Self.chunkBytes {
             send(channel, buffer.prefix(Self.chunkBytes))
@@ -165,8 +212,24 @@ final class NativeRecorder: @unchecked Sendable {
         socket.send(.string(frame)) { _ in }
     }
 
+    private func startPinging() {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + Self.pingEvery, repeating: Self.pingEvery)
+        timer.setEventHandler { [weak self] in
+            guard let self, self.open, let socket = self.socket else { return }
+            socket.sendPing { error in
+                guard error != nil else { return }
+                self.queue.async {
+                    if socket === self.socket, self.open { self.dropped(socket) }
+                }
+            }
+        }
+        timer.resume()
+        pinger = timer
+    }
+
     private func connect() {
-        let socket = URLSession.shared.webSocketTask(with: url)
+        let socket = session.webSocketTask(with: url)
         self.socket = socket
         open = false
         socket.resume()
@@ -236,6 +299,8 @@ final class NativeRecorder: @unchecked Sendable {
 
     private func dropped(_ socket: URLSessionWebSocketTask) {
         open = false
+        // Close it for good, so the server ends that session instead of transcribing nothing.
+        socket.cancel(with: .goingAway, reason: nil)
         if stopping {
             drained?()
             return

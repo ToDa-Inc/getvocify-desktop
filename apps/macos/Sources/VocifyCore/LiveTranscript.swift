@@ -119,6 +119,11 @@ public struct LiveTranscript: Equatable {
     public func rows() -> [Row] {
         let items: [(seen: Int, speaker: Speaker?, text: String, pending: String)] = Self.order.compactMap { key in
             guard let pending = interims[key], !pending.isEmpty else { return nil }
+            // The mic hearing the call while it's still being written: never shown as the rep.
+            if key == Speaker.rep.rawValue, let start = interimStarts[key],
+               Self.echoes(Self.words(pending), heard: heard(from: start, to: nil)) {
+                return nil
+            }
             return (interimSeen[key] ?? nextSeen, Speaker(rawValue: key), "", pending)
         }
         .sorted { $0.seen < $1.seen }
@@ -168,20 +173,29 @@ public struct LiveTranscript: Equatable {
     private func isEcho(_ index: Int, meeting: [Int]) -> Bool {
         let segment = segments[index]
         guard segment.speaker == .rep, let start = segment.start else { return false }
-        let own = tokens[index]
-        guard !own.isEmpty else { return false }
-        let end = segment.end ?? start
+        return Self.echoes(tokens[index], heard: heard(from: start, to: segment.end ?? start, meeting: meeting))
+    }
+
+    /// The call's words around [start, end] (end nil: still being said), its live tail included.
+    private func heard(from start: Double, to end: Double?, meeting: [Int]? = nil) -> Set<String> {
         var heard = Set<String>()
-        for other in meeting {
+        for other in meeting ?? segments.indices.filter({ segments[$0].speaker == .prospect }) {
             guard let otherStart = segments[other].start else { continue }
             let otherEnd = segments[other].end ?? otherStart
-            if otherStart <= end + Self.echoWindow, otherEnd >= start - Self.echoWindow {
+            if end.map({ otherStart <= $0 + Self.echoWindow }) ?? true, otherEnd >= start - Self.echoWindow {
                 tokens[other].forEach { heard.insert($0) }
             }
         }
-        guard !heard.isEmpty else { return false }
+        if let tail = interims[Speaker.prospect.rawValue] {
+            Self.words(tail).forEach { heard.insert($0) }
+        }
+        return heard
+    }
+
+    private static func echoes(_ own: [String], heard: Set<String>) -> Bool {
+        guard !own.isEmpty, !heard.isEmpty else { return false }
         let shared = own.filter { heard.contains($0) }.count
-        return own.count <= 2 ? shared == own.count : Double(shared) / Double(own.count) >= Self.echoOverlap
+        return own.count <= 2 ? shared == own.count : Double(shared) / Double(own.count) >= echoOverlap
     }
 
     // MARK: The dashboard's MeetingTranscript

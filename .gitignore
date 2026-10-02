@@ -16,3 +16,4 @@ native/macos-tap/vocify-tap
 
 # Legacy Electron tree (kept for reference; native Mac app is apps/macos)
 # Do not nest a second clone of this repo here.
+.reticle/

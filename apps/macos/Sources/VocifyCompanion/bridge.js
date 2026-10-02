@@ -85,6 +85,10 @@
       setState: (state) => {
         call('shell:state', { state });
       },
+      /** Live help events for the Mac's log; written only while the test switch is on. */
+      log: (name, details) => {
+        call('log:event', { name, details: details || {} }).catch(() => {});
+      },
       resize: (size) => call('shell:resize', { size }),
       showOverlay: () => call('overlay:show'),
       hideOverlay: () => call('overlay:hide'),

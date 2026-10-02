@@ -10,6 +10,12 @@ import WebKit
 final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
     /// The dashboard's uncaught errors: `log show --predicate 'subsystem == "com.vocify.app"'`.
     nonisolated static let webLog = Logger(subsystem: "com.vocify.app", category: "dashboard")
+    /// Live help as it happens (each ask, draft, answer, card shown or dropped), for tests only:
+    /// it carries the conversation's words, so it is off unless
+    /// `defaults write com.vocify.app vocify.liveHelpLog -bool true`.
+    /// Read: `log stream --predicate 'subsystem == "com.vocify.app" AND category == "live-help"'`.
+    nonisolated static let helpLog = Logger(subsystem: "com.vocify.app", category: "live-help")
+    static var helpLogOn: Bool { UserDefaults.standard.bool(forKey: "vocify.liveHelpLog") }
     weak var mainWebView: WKWebView?
 
     private let capture = MeetingCapture()
@@ -40,6 +46,13 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
 
     func handle(op: String, args: [String: Any]) async -> Any? {
         switch op {
+        case "log:event":
+            guard Self.helpLogOn else { return nil }
+            let name = args["name"] as? String ?? "event"
+            let details = (args["details"] as? [String: Any]).flatMap { try? JSONSerialization.data(withJSONObject: $0, options: [.sortedKeys]) }
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+            Self.helpLog.info("\(name, privacy: .public) \(details, privacy: .public)")
+            return nil
         case "log:error":
             let kind = args["kind"] as? String ?? "error"
             let path = args["path"] as? String ?? ""

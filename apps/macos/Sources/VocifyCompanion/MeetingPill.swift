@@ -532,6 +532,10 @@ final class MeetingPillState: ObservableObject {
                 )
             }
             if next != assist {
+                if DesktopBridge.helpLogOn {
+                    let what = next.map { "\($0.drafting ? "draft" : "answer") \($0.label): \($0.drafting ? $0.bridge : $0.sayThis)" } ?? "cleared"
+                    DesktopBridge.helpLog.info("island \(what, privacy: .public)")
+                }
                 if let current = assist, !current.drafting, next == nil { lastHelp = current }
                 assist = next
             }

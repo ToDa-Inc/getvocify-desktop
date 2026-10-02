@@ -33,6 +33,8 @@ final class NativeRecorder: @unchecked Sendable {
     private static let pingEvery: TimeInterval = 10
 
     private let url: URL
+    /// The call app being recorded, for reading who speaks on its screen.
+    private let callApp: String?
     private let capture: MeetingCapture
     private let mic = MicCapture()
     private let events: Events
@@ -64,6 +66,11 @@ final class NativeRecorder: @unchecked Sendable {
     }()
     /// Keeps macOS from throttling Vocify (App Nap) or sleeping while the call is recorded.
     @MainActor private var activity: NSObjectProtocol?
+    /// Who the call app showed speaking, on the recording's clock.
+    @MainActor private var speakers = SpeakerTimeline()
+    private var speakerTimer: DispatchSourceTimer?
+    private let speakerQueue = DispatchQueue(label: "vocify.recorder.speakers", qos: .utility)
+    private static let speakerEvery: TimeInterval = 0.4
     private var levelsSentAt = Date.distantPast
     private var drained: (() -> Void)?
 
@@ -71,8 +78,9 @@ final class NativeRecorder: @unchecked Sendable {
     @MainActor private var transcript = LiveTranscript()
     @MainActor private var snapshotScheduled = false
 
-    init(url: URL, capture: MeetingCapture, events: Events) {
+    init(url: URL, callApp: String?, capture: MeetingCapture, events: Events) {
         self.url = url
+        self.callApp = callApp
         self.capture = capture
         self.events = events
     }
@@ -107,6 +115,7 @@ final class NativeRecorder: @unchecked Sendable {
             self.connect()
             self.startPinging()
         }
+        watchSpeakers()
     }
 
     func setPaused(_ value: Bool) {
@@ -147,7 +156,30 @@ final class NativeRecorder: @unchecked Sendable {
             open = false
         }
         endActivity()
+        speakerTimer?.cancel()
+        speakerTimer = nil
         return transcript.json()
+    }
+
+    /// Reads who the call app shows speaking a few times a second, when it's an app we can read.
+    @MainActor
+    private func watchSpeakers() {
+        guard ActiveSpeakers.supports(callApp) else { return }
+        let asked = "vocify.askedAccessibility"
+        let trusted = ActiveSpeakers.ensureTrusted(prompt: !UserDefaults.standard.bool(forKey: asked))
+        UserDefaults.standard.set(true, forKey: asked)
+        guard trusted else { return }
+        let app = callApp
+        let begun = queue.sync { startedAt }
+        let timer = DispatchSource.makeTimerSource(queue: speakerQueue)
+        timer.schedule(deadline: .now(), repeating: Self.speakerEvery)
+        timer.setEventHandler { [weak self] in
+            guard let names = ActiveSpeakers.read(bundleID: app) else { return }
+            let at = Date().timeIntervalSince(begun)
+            DispatchQueue.main.async { self?.speakers.record(at: at, speaking: names) }
+        }
+        timer.resume()
+        speakerTimer = timer
     }
 
     @MainActor
@@ -278,7 +310,11 @@ final class NativeRecorder: @unchecked Sendable {
             let start = (event["start"] as? Double).map { $0 + shift }
             let end = (event["end"] as? Double).map { $0 + shift }
             DispatchQueue.main.async {
-                self.update { $0.apply(text: text, isFinal: isFinal, channel: channel, start: start, end: end) }
+                // The other side's words go to whoever the call app showed speaking then.
+                let name = channel == "prospect" && !self.speakers.isEmpty
+                    ? start.map { self.speakers.name(from: $0, to: end ?? $0) } ?? nil
+                    : nil
+                self.update { $0.apply(text: text, isFinal: isFinal, channel: channel, start: start, end: end, name: name) }
             }
         case "ChannelReset":
             let channel = event["audio_channel"] as? String

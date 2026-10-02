@@ -457,6 +457,8 @@ final class MeetingPillController {
     private var recordingCaller: MicActivityMonitor.Caller?
     /// The call app holding the mic right now, as last reported.
     private var currentCaller: MicActivityMonitor.Caller?
+    /// The app the call being recorded happens in (what the rep pressed Record on, else what holds the mic).
+    var callAppBundleID: String? { recordingCaller?.bundleID ?? currentCaller?.bundleID }
     /// Dialers grab the mic again for a moment after a call (tones, readiness); that is not a
     /// new call. The app just recorded is not offered again until this passes.
     private var quiet: (bundleID: String, until: Date)?

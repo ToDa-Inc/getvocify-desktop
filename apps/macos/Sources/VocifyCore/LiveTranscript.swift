@@ -16,6 +16,8 @@ public struct LiveTranscript: Equatable {
         public let start: Double?
         public let end: Double?
         public let seen: Int
+        /// Who on the other side said it, when the meeting app showed it.
+        public var name: String? = nil
     }
 
     public struct Row: Equatable {
@@ -26,9 +28,11 @@ public struct LiveTranscript: Equatable {
         /// When the paragraph's first and latest words were said (seconds into the call).
         public var start: Double? = nil
         public var end: Double? = nil
+        /// The person on the other side, when the meeting app showed who was speaking.
+        public var name: String? = nil
 
         public var you: Bool { speaker == .rep }
-        public var label: String? { speaker.map { $0 == .rep ? "You" : "Them" } }
+        public var label: String? { speaker.map { $0 == .rep ? "You" : name ?? "Them" } }
     }
 
     public private(set) var segments: [Segment] = []
@@ -39,6 +43,7 @@ public struct LiveTranscript: Equatable {
     private var interims: [String: String] = [:]
     private var interimStarts: [String: Double] = [:]
     private var interimSeen: [String: Int] = [:]
+    private var interimNames: [String: String] = [:]
     private var nextSeen = 0
 
     private static let order = ["rep", "prospect", "unknown"]
@@ -58,6 +63,7 @@ public struct LiveTranscript: Equatable {
         let pending: String
         let start: Double?
         let end: Double?
+        var name: String? = nil
     }
 
     public init() {}
@@ -66,7 +72,9 @@ public struct LiveTranscript: Equatable {
 
     /// Applies one result; false when nothing changed.
     @discardableResult
-    public mutating func apply(text raw: String, isFinal: Bool, channel: String?, start: Double?, end: Double?) -> Bool {
+    public mutating func apply(
+        text raw: String, isFinal: Bool, channel: String?, start: Double?, end: Double?, name: String? = nil
+    ) -> Bool {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let speaker = channel.flatMap(Speaker.init(rawValue:))
         let key = speaker?.rawValue ?? "unknown"
@@ -80,6 +88,7 @@ public struct LiveTranscript: Equatable {
             guard interims[key] != text else { return false }
             interims[key] = text
             if let start { interimStarts[key] = start }
+            interimNames[key] = name
             if interimSeen[key] == nil {
                 interimSeen[key] = nextSeen
                 nextSeen += 1
@@ -93,7 +102,7 @@ public struct LiveTranscript: Equatable {
             seen = nextSeen
             nextSeen += 1
         }
-        segments.append(Segment(speaker: speaker, text: text, start: start, end: end ?? start, seen: seen))
+        segments.append(Segment(speaker: speaker, text: text, start: start, end: end ?? start, seen: seen, name: name))
         tokens.append(Self.words(text))
         dropTail(key)
         settle()
@@ -118,6 +127,7 @@ public struct LiveTranscript: Equatable {
         interims[key] = nil
         interimStarts[key] = nil
         interimSeen[key] = nil
+        interimNames[key] = nil
     }
 
     // MARK: What the island shows
@@ -128,7 +138,7 @@ public struct LiveTranscript: Equatable {
             .filter { !isEcho($0, meeting: meeting) }
             .map { segments[$0] }
             .sorted { $0.seen < $1.seen }
-            .map { Item(seen: $0.seen, speaker: $0.speaker, text: $0.text, pending: "", start: $0.start, end: $0.end) }
+            .map { Item(seen: $0.seen, speaker: $0.speaker, text: $0.text, pending: "", start: $0.start, end: $0.end, name: $0.name) }
         settled = Self.merge(items, into: [])
     }
 
@@ -141,7 +151,10 @@ public struct LiveTranscript: Equatable {
                 return nil
             }
             let start = interimStarts[key]
-            return Item(seen: interimSeen[key] ?? nextSeen, speaker: Speaker(rawValue: key), text: "", pending: pending, start: start, end: start)
+            return Item(
+                seen: interimSeen[key] ?? nextSeen, speaker: Speaker(rawValue: key), text: "", pending: pending,
+                start: start, end: start, name: interimNames[key]
+            )
         }
         .sorted { $0.seen < $1.seen }
         // A tail older than the last settled bubble still goes last: settled bubbles never move.
@@ -162,11 +175,15 @@ public struct LiveTranscript: Equatable {
                 }
                 rows[index] = Row(
                     key: row.key, speaker: speaker, text: row.text, pending: row.pending,
-                    start: row.start ?? item.start, end: [row.end, item.end].compactMap { $0 }.max()
+                    start: row.start ?? item.start, end: [row.end, item.end].compactMap { $0 }.max(),
+                    name: row.name ?? item.name
                 )
                 continue
             }
-            rows.append(Row(key: "u\(item.seen)", speaker: item.speaker, text: item.text, pending: item.pending, start: item.start, end: item.end))
+            rows.append(Row(
+                key: "u\(item.seen)", speaker: item.speaker, text: item.text, pending: item.pending,
+                start: item.start, end: item.end, name: item.name
+            ))
         }
         return rows
     }
@@ -175,12 +192,15 @@ public struct LiveTranscript: Equatable {
     /// before a short interjection the other side made while this speaker was still talking.
     private static func paragraph(for item: Item, in rows: [Row]) -> Int? {
         guard let last = rows.last else { return nil }
-        if last.pending.isEmpty, last.speaker == item.speaker || item.speaker == nil || last.speaker == nil {
+        // Another person on the same side (two guests) starts their own paragraph.
+        let samePerson = last.name == nil || item.name == nil || last.name == item.name
+        if last.pending.isEmpty, samePerson, last.speaker == item.speaker || item.speaker == nil || last.speaker == nil {
             return rows.count - 1
         }
         guard rows.count >= 2, let speaker = item.speaker else { return nil }
         let before = rows[rows.count - 2]
         guard before.speaker == speaker, before.pending.isEmpty,
+              before.name == nil || item.name == nil || before.name == item.name,
               last.speaker != speaker, last.pending.isEmpty,
               words(last.text).count <= interjectionWords,
               // Said during their paragraph: after it began and before it ended.
@@ -244,6 +264,7 @@ public struct LiveTranscript: Equatable {
                     "start": segment.start ?? NSNull(),
                     "end": segment.end ?? NSNull(),
                     "seen": segment.seen,
+                    "name": segment.name ?? NSNull(),
                 ]
             },
             "interims": interims,

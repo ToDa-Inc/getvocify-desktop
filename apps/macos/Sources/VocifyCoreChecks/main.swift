@@ -156,4 +156,25 @@ answer.apply(text: "Sí.", isFinal: true, channel: "prospect", start: 12.5, end:
 answer.apply(text: "Perfecto, te mando la invitación.", isFinal: true, channel: "rep", start: 13.5, end: 15)
 check(answer.rows().count == 3, "an answer stays in order")
 
+// Who spoke: the name the call app showed for most of the sentence.
+var shown = SpeakerTimeline()
+shown.record(at: 0, speaking: ["Marta"])
+shown.record(at: 4, speaking: ["Juan"])
+shown.record(at: 6, speaking: [])
+check(shown.name(from: 0.5, to: 3.5) == "Marta", "named by who was shown")
+check(shown.name(from: 3.5, to: 5.8) == "Juan", "the one shown longest wins")
+check(shown.name(from: 8, to: 9) == nil, "nobody shown, no name")
+
+// Two people on the other side get their own paragraphs, under their names.
+var guests = LiveTranscript()
+guests.apply(text: "Hola, soy Marta.", isFinal: true, channel: "prospect", start: 1, end: 2, name: "Marta")
+guests.apply(text: "Y yo Juan.", isFinal: true, channel: "prospect", start: 3, end: 4, name: "Juan")
+guests.apply(text: "Encantado.", isFinal: true, channel: "rep", start: 5, end: 6)
+check(guests.rows().map { $0.label ?? "" } == ["Marta", "Juan", "You"], "names on the other side")
+check(guests.rows().count == 3, "a new person starts a paragraph")
+
+check(ZoomTile.speakingName("Marta García, Computer audio, Active speaker") == "Marta García", "zoom tile name")
+check(ZoomTile.speakingName("Juan, Computer audio") == nil, "not speaking, no name")
+check(ZoomTile.speakingName("Ana Pérez, Active speaker") == "Ana Pérez", "no audio marker")
+
 print("ok")

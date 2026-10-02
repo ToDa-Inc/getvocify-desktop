@@ -147,6 +147,7 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         }
         let recorder = NativeRecorder(
             url: url,
+            callApp: MeetingPillController.shared.callAppBundleID,
             capture: capture,
             events: .init(
                 transcript: { json in MainActor.assumeIsolated { emitTo("recorder:transcript", json) } },

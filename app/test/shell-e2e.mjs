@@ -110,6 +110,15 @@ app.whenReady().then(async () => {
     handle.detectCall(null);
     check(mode() === "idle", "the call app letting go returns it to idle");
 
+    // --- the app's own icon, as the Swift island shows it (the same Electron call reads an .exe on Windows)
+    const iconPath = process.platform === "darwin" ? "/System/Applications/Calculator.app" : process.platform === "win32" ? process.env.ComSpec : null;
+    if (iconPath) {
+      const icon = await handle.iconFor(iconPath);
+      check(typeof icon === "string" && icon.startsWith("data:image/png;base64,") && icon.length > 500, `an app's real icon is read as a small image (${icon ? icon.length : 0} chars)`);
+      check((await handle.iconFor(iconPath)) === icon, "and kept, not read again");
+    }
+    check((await handle.iconFor(join(tmpdir(), "no-such-app.exe"))) === null, "an app with no icon gives none, never an error");
+
     // --- the dashboard may be opened and closed on its own
     dashboard.show();
     check(await until(() => dashboard.visible, 5000, "dashboard visible"), "Open Vocify shows the dashboard");

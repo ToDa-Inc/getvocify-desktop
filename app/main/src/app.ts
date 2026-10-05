@@ -1,5 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, screen, shell, systemPreferences, Tray } from "electron";
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { CallSource } from "../../core/callSource.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { islandSize } from "../../island/src/geometry.ts";
@@ -13,6 +15,9 @@ import { createLogger } from "./logger.ts";
 import { JsonSettings } from "./settings.ts";
 import { ShortcutManager } from "./shortcut.ts";
 import { trayItems } from "./tray-menu.ts";
+import { callSourceForExe } from "./windows/call-sources.ts";
+import { crmUrlsOf, createPageReader, encodePowerShell, type BrowserPage } from "./windows/browser-pages.ts";
+import { MIC_CONSENT_KEY, MicWatcher, type DetectedCaller } from "./windows/mic-use.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -38,6 +43,8 @@ export type AppHandle = {
   islandBounds(): { x: number; y: number; width: number; height: number };
   /** The platform helper's job, by hand: the app now holding the microphone. */
   detectCall(caller: Caller | null): void;
+  /** Test hook: the icon of an app, as the island shows it (a small PNG data URL), or null. */
+  iconFor(path: string): Promise<string | null>;
   quit(): void;
 };
 
@@ -90,6 +97,40 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const dashboardHolder: { host: DashboardHost | null } = { host: null };
   const loopback = createLoopback();
 
+  /* ---------- who is on the call ---------- */
+
+  const run = (file: string, args: string[], timeout: number) =>
+    new Promise<string>((resolve, reject) => {
+      execFile(file, args, { timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+        // A non-zero exit (`reg query` on a key that does not exist yet) is an empty answer; a program that is missing or
+        // that timed out is a failure to report.
+        if (error && typeof (error as { code?: unknown }).code !== "number") reject(error);
+        else resolve(error ? "" : stdout);
+      });
+    });
+  const pageReader = createPageReader((script) => run("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(script)], 10_000), () => Date.now());
+
+  // The app's own icon, as the Swift island shows it: asked of the system once per app, kept as a small image.
+  const icons = new Map<string, string | null>();
+  const iconFor = async (path: string | null): Promise<string | null> => {
+    if (!path) return null;
+    if (icons.has(path)) return icons.get(path) ?? null;
+    let dataUrl: string | null = null;
+    // The system answers a missing file with a generic document icon, which would be the wrong picture.
+    if (!existsSync(path)) return null;
+    try {
+      // "normal" is 32 px on both systems; "large" is unsupported on macOS and crashes Electron there.
+      const image = await app.getFileIcon(path, { size: "normal" });
+      if (!image.isEmpty()) dataUrl = image.resize({ width: 36, height: 36 }).toDataURL();
+    } catch {
+      // No icon for this app (a Store app has no executable path): the island draws its generic mark.
+    }
+    icons.set(path, dataUrl);
+    return dataUrl;
+  };
+
+  const sourceOf = (caller: Caller | null, pages: BrowserPage[]): CallSource | null => callSourceForExe(caller?.appId) ?? CallSource.page(pages.map((p) => p.url));
+
   /* ---------- the island's brain ---------- */
 
   let reportedSize: { width: number; height: number } | null = null;
@@ -105,10 +146,24 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       onState: (state) => pushState(state),
       onLevels: (levels) => island.webContents.send("island:levels", levels),
       saveRecorderReady: (ready) => settings.set("recorderReady", ready),
-      // The platform helper will read the CRM page on screen and name the call's app; until it exists the dashboard
-      // learns about neither, which leaves the island showing the app name only.
-      lookUpCallContact: () => {},
-      lookUpCallSource: () => {},
+      // A call was detected: name where it happens and send the CRM pages on screen, so the dashboard can name the contact.
+      lookUpCallContact: (caller) => {
+        if (platform !== "win32") return;
+        void pageReader.read().then((pages) => {
+          if (controller.state.mode.kind !== "call") return;
+          dashboard.emit("call:source", (sourceOf(caller, pages) ?? null)?.json ?? null);
+          const urls = crmUrlsOf(pages);
+          if (urls.length > 0) dashboard.emit("call:pages", { urls });
+        });
+      },
+      // Recording without a detected call: name the app holding the mic, if any, without reading browsers needlessly.
+      lookUpCallSource: (caller) => {
+        if (platform !== "win32") return;
+        const native = callSourceForExe(caller?.appId);
+        if (native) return dashboard.emit("call:source", native.json);
+        if (!caller) return;
+        void pageReader.read().then((pages) => dashboard.emit("call:source", (CallSource.page(pages.map((p) => p.url)) ?? null)?.json ?? null));
+      },
     },
     placement.geometry,
     { recorderReady: settings.get("recorderReady") === true, material: "opaque", reduceMotion: false },
@@ -261,6 +316,31 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   shortcut.activate();
 
+  // Call detection: the microphone-use record Windows keeps (see windows/mic-use.ts). Polled once a second.
+  let detection = Promise.resolve();
+  const report = (detected: DetectedCaller | null) => {
+    // In order, and with the app's icon ready before the island hears of the call.
+    detection = detection.then(async () => {
+      controller.callChanged(detected ? { name: detected.name, appId: detected.appId, icon: await iconFor(detected.path) } : null);
+    });
+  };
+  const micWatcher =
+    platform === "win32"
+      ? new MicWatcher({
+          read: () => run("reg.exe", ["query", MIC_CONSENT_KEY, "/s"], 5000),
+          now: () => Date.now(),
+          every: (ms, fn) => {
+            const timer = setInterval(fn, ms);
+            return () => clearInterval(timer);
+          },
+          ownExePath: process.execPath,
+          onCaller: report,
+          onError: (error) => log(`call detection read failed: ${String(error)}`),
+        })
+      : null;
+  micWatcher?.start();
+  app.on("will-quit", () => micWatcher?.halt());
+
   const reposition = () => {
     const next = platform === "darwin" ? placement : measureElectron();
     placement.geometry = next.geometry;
@@ -318,6 +398,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     island,
     islandBounds: () => island.getBounds(),
     detectCall: (caller) => controller.callChanged(caller),
+    iconFor,
     quit: () => app.quit(),
   };
 

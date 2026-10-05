@@ -249,6 +249,7 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
   const shortcut = new ShortcutManager("win32", { get: (k) => store.get(k), set: (k, v) => void store.set(k, v) }, { register: () => true, unregister: () => {} }, () => {});
   shortcut.activate();
   const deps: BridgeDeps = {
+    readCrmPages: async () => ({ urls: ["https://app.hubspot.com/contacts/1/contact/2"], browsers: [{ name: "chrome", bundleId: "chrome", access: "granted" }] }),
     platform: options.platform ?? "win32",
     controller,
     loopback,
@@ -314,7 +315,7 @@ test("bridge: drafts, saas, shortcut and the CRM stub answer in the dashboard's 
   assert.deepEqual(await t.call("shortcut:get", {}), { label: "Ctrl+Alt+Shift+R", defaultLabel: "Ctrl+Alt+Shift+R" });
   assert.equal(((await t.call("shortcut:set", { code: "KeyR" })) as { reason: string }).reason, "invalid");
   assert.deepEqual(await t.call("shortcut:clear", {}), { label: null, defaultLabel: "Ctrl+Alt+Shift+R" });
-  assert.deepEqual(await t.call("crm:pages", {}), { urls: [], browsers: [] });
+  assert.deepEqual(await t.call("crm:pages", {}), { urls: ["https://app.hubspot.com/contacts/1/contact/2"], browsers: [{ name: "chrome", bundleId: "chrome", access: "granted" }] });
   assert.equal(await t.call("something:else", {}), null);
   await t.call("log:error", { kind: "error", path: "/x", text: "boom" });
   assert.deepEqual(t.logs, ["dashboard error at /x: boom"]);

@@ -26,6 +26,8 @@ export type BridgeDeps = {
   log(line: string): void;
   /** A draft was saved or removed: the dashboard page may now be needed, or no longer. */
   onDraftsChanged?(): void;
+  /** The CRM links open in the rep's browsers (Windows: read from the address bars). Absent where it cannot be read. */
+  readCrmPages?(): Promise<{ urls: string[]; browsers: { name: string; bundleId: string; access: string }[] }>;
 };
 
 type Args = Record<string, unknown>;
@@ -124,8 +126,8 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
         deps.controller.hide();
         return { ok: true };
       case "crm:pages":
-        // Reading the CRM tab needs the browser extension (a later phase): until then no page is known.
-        return { urls: [], browsers: [] };
+        // Only CRM links leave the machine; where the pages cannot be read, none are known.
+        return deps.readCrmPages ? deps.readCrmPages() : { urls: [], browsers: [] };
       case "crm:open-automation-settings":
         return { ok: true };
       default:

@@ -6,7 +6,9 @@
     "island:build": "node island/build.mjs",
     "island:typecheck": "tsc -p island/tsconfig.json --noEmit",
     "test:core": "node --test core/*.test.ts",
-    "test:island": "node island/build.mjs && electron test/island-shots.mjs"
+    "test:island": "node island/build.mjs && electron test/island-shots.mjs",
+    "build": "node island/build.mjs && node main/build.mjs",
+    "start:demo": "npm run build && electron main/dist/main.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'" />
+<title>Vocify island demo</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 18px; background: #16171a; color: #e7e7ea; font: 13px -apple-system, "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 15px; margin: 0 0 4px; }
+  p.hint { margin: 0 0 14px; color: #9a9ca3; line-height: 1.45; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #8a8c93; margin: 16px 0 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  button { background: #26282d; color: #e7e7ea; border: 1px solid #34363c; border-radius: 8px; padding: 7px 11px; font: inherit; cursor: pointer; }
+  button:hover { background: #2f3238; }
+  button.danger { color: #f0a0a0; }
+  #log { margin-top: 16px; padding: 10px; background: #0f1012; border: 1px solid #26282d; border-radius: 8px; height: 150px; overflow: auto; color: #aeb0b7; font: 11.5px ui-monospace, Menlo, monospace; line-height: 1.5; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <h1>Island demo</h1>
+  <p class="hint">The island is at the top of your screen. Click it, hover it, and use these to simulate what the real app will detect. Nothing here records anything.</p>
+
+  <h2>1 · A call starts</h2>
+  <div class="row">
+    <button data-cmd="call:zoom">Zoom call detected</button>
+    <button data-cmd="call:chrome">Meet in Chrome detected</button>
+    <button data-cmd="contact:toggle">Toggle CRM contact</button>
+  </div>
+  <h2>2 · During the call</h2>
+  <div class="row">
+    <button data-cmd="help:show">Show live help</button>
+    <button data-cmd="help:clear">Retire help</button>
+    <button data-cmd="audiolost:toggle">Toggle "not hearing the call"</button>
+  </div>
+  <h2>3 · The call ends</h2>
+  <div class="row">
+    <button data-cmd="hangup">Hang up (call app lets go)</button>
+  </div>
+  <h2>Settings and reset</h2>
+  <div class="row">
+    <button data-cmd="signedout:toggle">Toggle signed out</button>
+    <button data-cmd="material:toggle">Toggle glass / opaque</button>
+    <button data-cmd="reset">Reset to idle</button>
+    <button class="danger" data-cmd="quit">Quit</button>
+  </div>
+  <div id="log"></div>
+<script>
+  const log = document.getElementById("log");
+  const add = (line) => { log.textContent += line + "\n"; log.scrollTop = log.scrollHeight; };
+  document.querySelectorAll("button[data-cmd]").forEach((button) => button.addEventListener("click", () => window.demo.send(button.dataset.cmd)));
+  window.demo.onLog(add);
+  add("Try: click the island, then 'Zoom call detected', then Record.");
+</script>
+</body>
+</html>

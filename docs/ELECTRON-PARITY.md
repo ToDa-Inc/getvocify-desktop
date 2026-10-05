@@ -28,6 +28,7 @@ The dashboard side of the contract (the `shell:state` keys read in `MeetingPillS
 
 - **Focus**: Electron logs `NSWindow does not support nonactivating panel styleMask` for the island. Whether a real click on the island takes focus from the call app is not yet tested. Test: put another app in front, click Pause on the island, check the menu bar still names the other app.
 - **Glass blur** behind the open island: window-level vibrancy cannot follow the rounded shape while the window is larger than the island during animation, so Electron uses the denser opaque glass. Needs a native view or an accepted visual change.
+- **Cost while recording (measured 2026-10-05, 14 minutes, island closed, simulated call):** 5 processes, about 179 MB in total, and about 22% of one CPU core (GPU process 13%, island renderer 9%). The wave redraws React state 24 times a second and the red dot pulses in a transparent always-on-top window. This must come down before shipping; budget to set, with idle target near zero.
 - **App icon** of the call app in the closed call state: the demo shows a generic waveform; the real icon needs the Mac helper.
 
 - **Real window behaviour not covered by the harness**: non-activating, first click acts without taking focus, always on top, DPI. The layout, size, click and scroll checks do pass in real Electron windows (42 of 42, including the transcript staying pinned to the latest line when the type list opens).

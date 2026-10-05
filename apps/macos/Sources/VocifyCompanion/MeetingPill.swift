@@ -143,7 +143,7 @@ final class MeetingPillState: ObservableObject {
         }
 
         struct Email: Equatable {
-            enum State: String { case ready, skipped, sent }
+            enum State: String { case writing, ready, skipped, sent }
             let state: State
             let to: String?
             let subject: String?
@@ -282,7 +282,12 @@ final class MeetingPillState: ObservableObject {
         static let valueWidth: CGFloat = width - inset * 2 - rowInset * 2 - tick - label - chevron - 16
         static let valueSize: CGFloat = 12
         static let emailLines = 3
-        static let noteLines = 5
+        /// The note's box grows with it up to this many lines, then scrolls; never under `noteMinLines`.
+        static let noteLines = 8
+        static let noteMinLines = 3
+        static let notePadding: CGFloat = 8
+        /// The note's text inside its box (the box's padding and the editor's own inset).
+        static let noteTextWidth: CGFloat = width - inset * 2 - 24
         /// A change's options float under its value, over the card.
         static let option: CGFloat = 26
         static let optionsVisible = 7
@@ -338,6 +343,8 @@ final class MeetingPillState: ObservableObject {
     /// Options the rep picked in the card, by change key.
     @Published var editedValues: [String: String] = [:]
     @Published var postCallTab: PostCallTab = .crm
+    /// The note as the rep edited it in the card; nil while untouched. It goes to the CRM with the update.
+    @Published var noteDraft: String?
     /// The change whose options are open under it.
     @Published var openOptions: String?
     /// Lets the controller move the island when the memo's state changes.
@@ -378,11 +385,19 @@ final class MeetingPillState: ObservableObject {
         guard let postCall else { return [.crm] }
         var tabs: [PostCallTab] = [.crm]
         if postCall.email != nil { tabs.append(.email) }
-        if postCall.notes || postCall.summary != nil { tabs.append(.notes) }
+        if postCall.notes || postCall.summary != nil || noteEditable { tabs.append(.notes) }
         return tabs
     }
 
     var activeTab: PostCallTab { postCallTabs.contains(postCallTab) ? postCallTab : .crm }
+
+    /// The note can still change: it's written to the CRM with the update this card saves.
+    var noteEditable: Bool {
+        guard let postCall else { return false }
+        return postCall.stage == .ready && postCall.canApprove && !nothingSure
+    }
+
+    var noteText: String { noteDraft ?? postCall?.summary ?? "" }
 
     /// The changes the card lists, by record. One the call wasn't clear on is left to the
     /// review in Vocify: it isn't shown here, so it isn't written from here either.
@@ -460,14 +475,18 @@ final class MeetingPillState: ObservableObject {
         return height
     }
 
-    func summaryHeight(_ summary: String) -> CGFloat {
+    /// The note's box: its lines up to `noteLines` (the rest scrolls), at least `noteMinLines` to write in.
+    var noteBoxHeight: CGFloat {
         typealias L = PostCallLayout
-        return CGFloat(L.lines(summary, size: 12, width: L.width - L.inset * 2, limit: L.noteLines)) * L.lineHeight(12)
+        // A new line just typed is empty: it still takes a line.
+        let typed = L.lines(noteText, size: 12, width: L.noteTextWidth, limit: L.noteLines) + (noteText.hasSuffix("\n") ? 1 : 0)
+        let lines = max(min(typed, L.noteLines), noteEditable ? L.noteMinLines : 1)
+        return CGFloat(lines) * L.lineHeight(12) + L.notePadding * 2
     }
 
     private func notesHeight(_ postCall: PostCall) -> CGFloat {
         typealias L = PostCallLayout
-        return (postCall.summary.map { L.gap + summaryHeight($0) } ?? 0) + L.actions
+        return (noteEditable || !noteText.isEmpty ? L.gap + noteBoxHeight : 0) + L.actions
     }
 
     /// Applies one `shell:state` update; keys that are absent keep their value.
@@ -484,6 +503,7 @@ final class MeetingPillState: ObservableObject {
             if let next, next.memoId != postCall?.memoId || (postCall?.changes.isEmpty == true && !next.changes.isEmpty) {
                 keptChanges = Set(next.changes.filter { !$0.check }.map(\.key))
                 editedValues = [:]
+                if next.memoId != postCall?.memoId { noteDraft = nil }
                 openOptions = nil
                 if next.memoId != postCall?.memoId { postCallTab = .crm }
                 postTypeMenuOpen = false
@@ -937,7 +957,9 @@ final class MeetingPillController {
         let edits = state.editedValues.filter { key, value in
             postCall.changes.contains { $0.key == key && $0.value != value }
         }
-        postCallAction("approve", ["omit": omit, "edits": edits])
+        var action: [String: Any] = ["omit": omit, "edits": edits]
+        if let note = state.noteDraft { action["note"] = note }
+        postCallAction("approve", action)
     }
 
     func undoPostCall() { postCallAction("undo") }
@@ -1011,6 +1033,15 @@ final class MeetingPillController {
         // A list of one is answered by the pick; a checkbox list stays open for more.
         if !change.multiple { closeOptions() }
         fitPostCall()
+    }
+
+    /// The rep is writing in the note: the card stays open until they close it, and grows with the note.
+    func editNote(_ text: String) {
+        let height = state.noteBoxHeight
+        state.noteDraft = text == (state.postCall?.summary ?? "") ? nil : text
+        autoClose?.cancel()
+        state.countdown = nil
+        if state.noteBoxHeight != height { fitPostCall() }
     }
 
     func showTab(_ tab: MeetingPillState.PostCallTab) {
@@ -1639,7 +1670,7 @@ private struct PostCallMenu: View {
             }
 
             if state.postCallTabs.count > 1 {
-                PostCallTabBar(tabs: state.postCallTabs, active: state.activeTab, count: count, choose: controller.showTab)
+                PostCallTabBar(tabs: state.postCallTabs, active: state.activeTab, count: count, busy: busy, choose: controller.showTab)
                     .frame(height: L.tabs)
                     .padding(.vertical, L.gap)
             }
@@ -1669,6 +1700,11 @@ private struct PostCallMenu: View {
         case .email: return postCall.email?.state == .ready ? 1 : 0
         case .notes: return 0
         }
+    }
+
+    /// A tab whose content is still being written.
+    private func busy(_ tab: MeetingPillState.PostCallTab) -> Bool {
+        tab == .email && postCall.email?.state == .writing
     }
 
     // MARK: CRM
@@ -1810,6 +1846,10 @@ private struct PostCallMenu: View {
     @ViewBuilder private var email: some View {
         if let email = postCall.email {
             switch email.state {
+            case .writing:
+                line(symbol: nil, busy: true) {
+                    Text(email.to.map { "Writing the email to \($0)…" } ?? "Writing the follow-up email…").foregroundStyle(IslandStyle.secondary)
+                }
             case .ready:
                 if email.subject != nil || email.preview != nil {
                     VStack(alignment: .leading, spacing: 0) {
@@ -1869,19 +1909,47 @@ private struct PostCallMenu: View {
     // MARK: Notes
 
     @ViewBuilder private var notes: some View {
-        if let summary = postCall.summary {
-            Text(summary)
-                .font(.system(size: 12))
-                .foregroundStyle(IslandStyle.text)
-                .lineLimit(L.noteLines)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .frame(height: state.summaryHeight(summary), alignment: .top)
-                .padding(.top, L.gap)
-                .textSelection(.enabled)
+        if state.noteEditable || !state.noteText.isEmpty {
+            Group {
+                if state.noteEditable {
+                    TextEditor(text: Binding(get: { state.noteText }, set: controller.editNote))
+                        .scrollContentBackground(.hidden)
+                        .overlay(alignment: .topLeading) {
+                            if state.noteText.isEmpty {
+                                Text("Add a note for \(postCall.crmName)")
+                                    .foregroundStyle(IslandStyle.secondary)
+                                    .padding(.leading, 5)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                } else {
+                    ScrollView {
+                        Text(state.noteText)
+                            .frame(maxWidth: .infinity, alignment: .topLeading)
+                            .padding(.horizontal, 5)
+                            .textSelection(.enabled)
+                    }
+                    .scrollIndicators(.never)
+                }
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(IslandStyle.text)
+            .padding(.horizontal, 7)
+            .padding(.vertical, L.notePadding)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(height: state.noteBoxHeight, alignment: .top)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.top, L.gap)
         }
-        HStack {
+        HStack(spacing: 8) {
             TextAction(title: "Open in Vocify", symbol: "arrow.up.right", action: controller.openNotes)
             Spacer(minLength: 0)
+            if state.noteEditable {
+                Text("Saved to \(postCall.crmName) with the update")
+                    .font(.system(size: 11))
+                    .foregroundStyle(IslandStyle.secondary)
+                    .lineLimit(1)
+            }
         }
         .frame(height: L.actions)
     }
@@ -1920,12 +1988,13 @@ private struct PostCallTabBar: View {
     let tabs: [MeetingPillState.PostCallTab]
     let active: MeetingPillState.PostCallTab
     let count: (MeetingPillState.PostCallTab) -> Int
+    let busy: (MeetingPillState.PostCallTab) -> Bool
     let choose: (MeetingPillState.PostCallTab) -> Void
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(tabs, id: \.self) { tab in
-                PostCallTabButton(tab: tab, active: tab == active, count: count(tab)) { choose(tab) }
+                PostCallTabButton(tab: tab, active: tab == active, count: count(tab), busy: busy(tab)) { choose(tab) }
             }
         }
         .padding(2)
@@ -1937,6 +2006,7 @@ private struct PostCallTabButton: View {
     let tab: MeetingPillState.PostCallTab
     let active: Bool
     let count: Int
+    let busy: Bool
     let action: () -> Void
     @State private var hovering = false
 
@@ -1961,7 +2031,9 @@ private struct PostCallTabButton: View {
             HStack(spacing: 5) {
                 Image(systemName: symbol).font(.system(size: 10.5, weight: .medium))
                 Text(title).font(.system(size: 11.5, weight: .medium))
-                if count > 0 {
+                if busy {
+                    ProgressView().controlSize(.mini).frame(width: 16, height: 16)
+                } else if count > 0 {
                     Text("\(count)")
                         .font(.system(size: 10, weight: .semibold).monospacedDigit())
                         .foregroundStyle(active ? Color.black.opacity(0.85) : IslandStyle.text)

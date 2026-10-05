@@ -52,6 +52,15 @@ export class Drafts {
     return drafts;
   }
 
+  /** Unsent meetings on disk. While any exist, the dashboard page that sends them must stay alive. */
+  count(): number {
+    try {
+      return readdirSync(this.dir).filter((n) => n.endsWith(".json")).length;
+    } catch {
+      return 0;
+    }
+  }
+
   remove(id: unknown): void {
     const file = this.file(id);
     if (file) rmSync(file, { force: true });

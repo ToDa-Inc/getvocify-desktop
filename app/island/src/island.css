@@ -191,10 +191,16 @@ button:focus-visible { outline: 1.5px solid var(--beige); outline-offset: 2px; }
 
 /* post-call card */
 .postcall-card { display: flex; flex-direction: column; padding: 12px; gap: 8px; width: 100%; }
-.postcall-header { display: flex; align-items: center; gap: 8px; height: 34px; }
-.postcall-title { font-size: 13px; font-weight: 600; color: var(--text); line-limit: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
-.type-menu-button { font-size: 11.5px; color: var(--secondary); padding: 0 6px; background: transparent; border: 0; cursor: pointer; white-space: nowrap; }
-.type-menu-button:hover { color: var(--text); }
+.postcall-header { display: flex; align-items: center; gap: 8px; height: 34px; position: relative; }
+.postcall-title { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.type-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; color: var(--secondary); background: transparent; border: 0; cursor: pointer; padding: 0; white-space: nowrap; transition: color 120ms; }
+.type-tag:hover { color: var(--text); }
+.type-tag svg { transition: transform 120ms; }
+.type-list-popup { position: absolute; top: 34px; left: 0; background: rgba(0, 0, 0, 0.6); border-radius: 10px; min-width: 180px; max-height: 200px; overflow-y: auto; z-index: 1000; border: 0.5px solid rgba(255, 255, 255, 0.15); }
+.type-row { display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 8px; font-size: 12px; background: transparent; border: 0; cursor: pointer; text-align: left; transition: background 100ms; }
+.type-row:hover { background: rgba(255, 255, 255, 0.08); }
+.type-check { width: 12px; display: inline-flex; color: var(--beige); opacity: 0; transition: opacity 120ms; }
+.type-row:has(> .type-check[style*="opacity: 1"]) { color: var(--text); }
 
 .postcall-tabs { display: flex; gap: 2px; padding: 2px; background: rgba(255, 255, 255, 0.06); border-radius: 8px; height: 24px; }
 .postcall-tab { display: flex; align-items: center; gap: 5px; flex: 1; padding: 0 12px; background: transparent; border: 0; cursor: pointer; border-radius: 6px; font-size: 11.5px; font-weight: 500; color: var(--secondary); transition: background 100ms, color 100ms; }
@@ -237,7 +243,10 @@ button:focus-visible { outline: 1.5px solid var(--beige); outline-offset: 2px; }
 .small-action { display: inline-flex; align-items: center; gap: 0; height: 24px; padding: 0 9px; font-size: 11.5px; font-weight: 500; color: var(--text); background: rgba(255, 255, 255, 0.09); border-radius: 12px; border: 0; cursor: pointer; transition: background 120ms; white-space: nowrap; }
 .small-action:hover { background: rgba(255, 255, 255, 0.17); }
 
-.undo-line { height: 2px; background: rgba(255, 255, 255, 0.32); border-radius: 1px; width: 100%; }
+.undo-line { height: 2px; background: rgba(255, 255, 255, 0.32); border-radius: 1px; width: 100%; margin: 4px 0 0; }
+
+.meeting-row { display: flex; align-items: center; gap: 8px; height: 26px; font-size: 11.5px; color: var(--secondary); padding: 0 6px; }
+.meeting-row button { margin-left: auto; }
 
 .email-box { padding: 10px 12px; background: rgba(255, 255, 255, 0.06); border-radius: 10px; display: flex; flex-direction: column; gap: 4px; }
 .email-to { font-size: 11px; color: var(--secondary); line-height: 1.4; }
@@ -245,6 +254,8 @@ button:focus-visible { outline: 1.5px solid var(--beige); outline-offset: 2px; }
 .email-preview { font-size: 12px; color: var(--secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
 .notes-summary { font-size: 12px; color: var(--text); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; padding: 8px 0; }
+.note-draft { flex: 1; padding: 8px; background: rgba(255, 255, 255, 0.06); border: 0.5px solid rgba(255, 255, 255, 0.07); border-radius: 8px; color: var(--text); font-size: 12px; font-family: inherit; resize: none; max-height: 100px; }
+.note-draft::placeholder { color: var(--secondary); }
 
 .options-popup { position: fixed; z-index: 1000; background: rgba(0, 0, 0, 0.5); border-radius: 10px; padding: 4px; display: flex; flex-direction: column; gap: 0; min-width: 200px; max-height: 250px; overflow-y: auto; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); border: 0.5px solid rgba(255, 255, 255, 0.15); }
 .option-row { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px; font-size: 12px; color: var(--secondary); background: transparent; border: 0; cursor: pointer; border-radius: 6px; transition: background 100ms, color 100ms; white-space: nowrap; }

@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld("vocifyIsland", {
     ipcRenderer.on("island:levels", handler);
     return () => ipcRenderer.removeListener("island:levels", handler);
   },
+  resize(size: { width: number; height: number }) {
+    ipcRenderer.send("island:resize", size);
+  },
   act(action: IslandAction) {
     ipcRenderer.send("island:act", action);
   },

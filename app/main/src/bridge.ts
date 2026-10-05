@@ -24,6 +24,8 @@ export type BridgeDeps = {
   openExternal(url: string): void;
   fetch(url: string, init: { method: string; headers: Record<string, string>; body?: string }): Promise<{ status: number; text(): Promise<string> }>;
   log(line: string): void;
+  /** A draft was saved or removed: the dashboard page may now be needed, or no longer. */
+  onDraftsChanged?(): void;
 };
 
 type Args = Record<string, unknown>;
@@ -104,12 +106,16 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
         else deps.emit("shell:command", name);
         return null;
       }
-      case "drafts:save":
-        return { ok: deps.drafts.save(args.draft) };
+      case "drafts:save": {
+        const ok = deps.drafts.save(args.draft);
+        deps.onDraftsChanged?.();
+        return { ok };
+      }
       case "drafts:list":
         return deps.drafts.list();
       case "drafts:remove":
         deps.drafts.remove(args.id);
+        deps.onDraftsChanged?.();
         return { ok: true };
       case "overlay:show":
         deps.controller.show();

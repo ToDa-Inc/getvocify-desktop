@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Vocify (demo dashboard)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px; background: #f7f4ee; color: #2a2623; font: 14px -apple-system, "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p { color: #6f6a64; line-height: 1.5; max-width: 560px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+  button { background: #fff; border: 1px solid #d9d2c8; border-radius: 8px; padding: 8px 12px; font: inherit; cursor: pointer; }
+  button:hover { background: #f1ece4; }
+  #log { margin-top: 18px; padding: 12px; background: #fff; border: 1px solid #e4ddd2; border-radius: 8px; height: 260px; overflow: auto; font: 12px ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Demo dashboard</h1>
+<p>This page stands in for the real dashboard. It speaks the same bridge: it tells the island what is happening and reacts to what the island asks for. Nothing is recorded.</p>
+<div class="row">
+  <button id="help">Show live help</button>
+  <button id="lost">Toggle "not hearing the call"</button>
+  <button id="audio">Ask for call audio (Windows only)</button>
+</div>
+<div id="log"></div>
+<script>
+  const bridge = window.vocifyDesktop;
+  const log = (line) => { const el = document.getElementById("log"); el.textContent += line + "\n"; el.scrollTop = el.scrollHeight; };
+  if (!bridge) { log("No bridge: this page must run inside the Vocify shell."); throw new Error("no bridge"); }
+  log("bridge platform: " + bridge.platform);
+
+  const OPTIONS = [{ key: "discovery", label: "Discovery call" }, { key: "demo", label: "Demo" }, { key: "follow_up", label: "Follow-up" }, { key: "internal", label: "Internal" }];
+  const SCRIPT = [
+    [true, null, "Hi Marta, thanks for making time today. How is the quarter going?"],
+    [false, "Marta Ruiz", "Busy, honestly. We are still deciding whether to move the whole team off the old CRM before the summer."],
+    [true, null, "That is exactly what I wanted to dig into. What is the main blocker today?"],
+    [false, "Marta Ruiz", "Mainly price. Pues, también nos preocupa la migración de los datos y quién lo va a hacer."],
+    [true, null, "Understood. We can cover the migration for you, and I can show how other teams recovered the cost."],
+    [false, "Marta Ruiz", "And how long would that take, realistically? We cannot be offline for more than a day."],
+    [true, null, "Most teams are live within a week and never lose a day of work."],
+  ];
+  const ANSWER = { label: "Price objection", bridge: "That is a fair concern, let me put it in context.", sayThis: "Most teams recover the cost in the first quarter because reps stop doing manual CRM updates. Want me to show the numbers for a team your size?" };
+  const CHANGES = [
+    { key: "contact:jobtitle", label: "Title", object: "contact", from: "Manager", to: "Director of Sales", value: "director", options: [{ value: "manager", label: "Manager" }, { value: "director", label: "Director of Sales" }] },
+    { key: "company:industry", label: "Industry", object: "company", from: "Manufacturing", to: "Software", value: "software", options: [] },
+    { key: "deal:dealstage", label: "Stage", object: "deal", from: "Qualification", to: "Needs Analysis", value: "needs", options: [] },
+  ];
+
+  let meeting = null;
+  let timers = [];
+  const later = (ms, fn) => { const id = setTimeout(fn, ms); timers.push(id); return id; };
+  const set = (state) => bridge.shell.setState(state);
+  let liveType = { selected: "discovery", proposed: true, options: OPTIONS };
+  let postCall = null;
+  const setPostCall = (patch) => { postCall = patch === null ? null : { ...postCall, ...patch }; set({ postCall }); };
+
+  bridge.shell.onCommand((name) => {
+    log("command from the island: " + name);
+    if (name === "listen") start();
+    else if (name === "stop") stop();
+    else if (name === "pause") pause(true);
+    else if (name === "resume") pause(false);
+    else if (name === "assist-on") set({ liveHelp: true });
+    else if (name === "assist-off") set({ liveHelp: false });
+  });
+  bridge.shell.onCallType(({ key }) => {
+    log("call type: " + key);
+    liveType = { ...liveType, selected: key ?? "discovery", proposed: key === null };
+    set({ liveType });
+  });
+  bridge.crm.onCallPages(({ urls }) => { log("call pages: " + urls.join(", ")); set({ callContact: { name: "Marta Ruiz · Acme Logistics" } }); });
+  bridge.crm.onCallEnded(() => set({ callContact: null }));
+  bridge.shell.onPostCallAction((action) => {
+    log("post-call action: " + JSON.stringify(action));
+    if (!postCall) return;
+    switch (action.type) {
+      case "approve":
+        setPostCall({ stage: "applying", undoUntil: Date.now() + 5000, canApprove: false });
+        later(5000, () => postCall && postCall.stage === "applying" && setPostCall({ stage: "done", applied: 3, undoUntil: null }));
+        break;
+      case "undo": setPostCall({ stage: "ready", undoUntil: null, canApprove: true }); break;
+      case "dismiss": setPostCall(null); break;
+      case "setType": setPostCall({ type: { ...postCall.type, key: action.key, label: (OPTIONS.find((o) => o.key === action.key) || {}).label || action.key } }); break;
+      case "skipEmail": setPostCall({ email: { ...postCall.email, state: "skipped" } }); break;
+      case "unskipEmail": setPostCall({ email: { ...postCall.email, state: "ready" } }); break;
+      case "addMeeting": setPostCall({ meeting: { ...postCall.meeting, state: "added" } }); break;
+      default: break;
+    }
+  });
+
+  function start() {
+    stop(true);
+    meeting = { startedAt: Date.now(), pausedMs: 0, pausedAt: null, paused: false, index: 0, turns: [] };
+    bridge.drafts.save({ id: "demo-draft", startedAt: meeting.startedAt });
+    bridge.shell.showOverlay().then(() => {
+      liveType = { selected: "discovery", proposed: true, options: OPTIONS };
+      set({ listening: true, paused: false, callAudioLost: false, liveHelp: true, liveType, clock: { startedAt: meeting.startedAt, pausedMs: 0, pausedAt: null }, overlay: { turns: [] }, assist: null });
+      log("recording (simulated)");
+      next();
+      pulse();
+    });
+  }
+
+  function pulse() {
+    if (!meeting) return;
+    if (!meeting.paused) {
+      const level = 0.3 + Math.random() * 0.4;
+      set({ levels: meeting.speaker === "you" ? { you: level, them: 0 } : { you: 0, them: level } });
+    }
+    later(100, pulse);
+  }
+
+  function next() {
+    if (!meeting) return;
+    if (meeting.paused) return void later(500, next);
+    const [you, label, text] = SCRIPT[meeting.index % SCRIPT.length];
+    const key = "turn-" + meeting.index;
+    meeting.index += 1;
+    meeting.speaker = you ? "you" : "them";
+    const words = text.split(" ");
+    let shown = 0;
+    const step = () => {
+      if (!meeting) return;
+      if (meeting.paused) return void later(300, step);
+      shown = Math.min(words.length, shown + 1);
+      const done = shown >= words.length;
+      const settled = done ? words.length : Math.max(0, shown - 3);
+      const turn = { key, you, label, text: words.slice(0, settled).join(" "), pending: done ? "" : words.slice(settled, shown).join(" ") };
+      meeting.turns = meeting.turns.filter((t) => t.key !== key).concat(turn);
+      set({ overlay: { turns: meeting.turns } });
+      if (done) later(1100, next); else later(260, step);
+    };
+    step();
+  }
+
+  function pause(paused) {
+    if (!meeting || meeting.paused === paused) return;
+    const now = Date.now();
+    if (paused) meeting.pausedAt = now; else { meeting.pausedMs += now - meeting.pausedAt; meeting.pausedAt = null; }
+    meeting.paused = paused;
+    set({ paused, clock: { startedAt: meeting.startedAt, pausedMs: meeting.pausedMs, pausedAt: meeting.pausedAt } });
+  }
+
+  function stop(quiet) {
+    timers.forEach(clearTimeout); timers = [];
+    if (!meeting) return;
+    meeting = null;
+    if (quiet) return;
+    bridge.shell.hideOverlay();
+    set({ listening: false, liveType: null, levels: { you: 0, them: 0 } });
+    log("stopped; writing the update");
+    postCall = { stage: "writing", memoId: "demo-" + Date.now(), contactName: "Marta Ruiz", crm: "HubSpot", changes: [], canApprove: false, notes: false, type: { key: "discovery", label: "Discovery call", options: OPTIONS } };
+    set({ postCall });
+    later(1200, () => bridge.drafts.remove("demo-draft"));
+    later(2500, () => setPostCall({
+      stage: "ready", canApprove: true, changes: CHANGES,
+      email: { state: "ready", to: "marta@acme.com", subject: "Next steps", preview: "Hi Marta, thanks for the time today." },
+      meeting: { state: "pending", when: "Thursday 10:00" }, notes: true, summary: "Discussed the CRM migration and price. Marta wants a pilot next quarter.",
+    }));
+  }
+
+  document.getElementById("help").onclick = () => {
+    set({ assist: { stage: "draft", label: ANSWER.label, bridge: ANSWER.bridge } });
+    later(1600, () => set({ assist: { label: ANSWER.label, bridge: ANSWER.bridge, sayThis: ANSWER.sayThis } }));
+  };
+  let lost = false;
+  document.getElementById("lost").onclick = () => { lost = !lost; set({ callAudioLost: lost }); };
+  document.getElementById("audio").onclick = async () => { log("call audio: " + JSON.stringify(await bridge.systemAudio.start())); };
+
+  set({ recorderReady: true });
+  log("signed in (simulated)");
+</script>
+</body>
+</html>

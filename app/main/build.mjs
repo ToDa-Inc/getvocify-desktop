@@ -21,6 +21,7 @@ await build({
   ...common,
   entryPoints: {
     preload: join(here, "src/preload.ts"),
+    "dashboard-preload": join(here, "src/dashboard-preload.ts"),
     "controls-preload": join(here, "src/controls-preload.ts"),
     "loopback-preload": join(here, "src/loopback/loopback-preload.ts"),
   },

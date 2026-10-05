@@ -10,7 +10,9 @@
     "build": "node island/build.mjs && node main/build.mjs",
     "test:logic": "node --test core/*.test.ts main/test/*.test.ts test/*.test.ts",
     "test:loopback": "node test/build-loopback-test.mjs && electron test/loopback-e2e.mjs",
-    "start:demo": "npm run build && electron main/dist/main.mjs"
+    "start": "npm run build && electron main/dist/main.mjs",
+    "start:demo": "npm run build && electron main/dist/main.mjs --demo",
+    "test:shell": "node test/build-shell-test.mjs && electron test/shell-e2e.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",

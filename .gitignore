@@ -20,3 +20,5 @@ native/macos-tap/vocify-tap
 
 # Electron app work
 app/test/out/
+app/main/dist-test/
+app/main/dist-shell-test/

@@ -33,8 +33,8 @@ final class MeetingPillState: ObservableObject {
         /** True while the answer is still being written: only the bridge line is known. */
         let drafting: Bool
         let bridge: String
+        /** The one line to say; empty when no answer came (the filler line stays). */
         let sayThis: String
-        let thenAsk: String
     }
 
     struct Countdown: Equatable {
@@ -521,15 +521,14 @@ final class MeetingPillState: ObservableObject {
                 let drafting = (raw["stage"] as? String) == "draft"
                 let say = raw["sayThis"] as? String ?? ""
                 let bridge = raw["bridge"] as? String ?? ""
-                // A draft is the loading state (the label only); an answer needs its line.
-                guard drafting || !say.isEmpty else { return nil }
+                // A draft is the loading state; a card with no answer keeps its filler line.
+                guard drafting || !say.isEmpty || !bridge.isEmpty else { return nil }
                 return Assist(
                     label: raw["label"] as? String ?? "",
                     isQuestion: (raw["kind"] as? String) == "question",
                     drafting: drafting,
                     bridge: bridge,
-                    sayThis: say,
-                    thenAsk: raw["thenAsk"] as? String ?? ""
+                    sayThis: say
                 )
             }
             if next != assist {
@@ -2771,18 +2770,11 @@ private struct HelpSection: View {
                         TypingDots()
                     }
                     .frame(height: 17, alignment: .leading)
-                } else {
+                } else if !help.sayThis.isEmpty {
                     Text(help.sayThis)
                         .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(IslandStyle.text)
                         .fixedSize(horizontal: false, vertical: true)
-                    if !help.thenAsk.isEmpty {
-                        Text(help.thenAsk)
-                            .font(.system(size: 11.5))
-                            .foregroundStyle(IslandStyle.secondary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
                 }
             } else {
                 Text("Answers show up here when they ask or push back.")

@@ -117,11 +117,12 @@ export function PostCallCard({ postCall, act }: { postCall: PostCallData; act: A
         </div>
 
         {typeListOpen && postCall.type && postCall.type.options.length > 0 && (
-          <div className="type-list-popup" onClick={e => e.stopPropagation()}>
-            {postCall.type.options.map(opt => (
+          // Inline under the header, like the Swift card: the card grows by the list instead of covering anything.
+          <div className="type-list" style={{ marginBottom: 6 }} onClick={(e) => e.stopPropagation()}>
+            {[{ key: postCall.type.key, label: postCall.type.label }, ...postCall.type.options.filter((o) => o.key !== postCall.type?.key)].map((opt) => (
               <button key={opt.key} type="button" className="type-row" onClick={() => { act({ name: "postCall", type: "setType", details: { key: opt.key } }); setTypeListOpen(false); }}>
-                <span className="type-check" style={{ opacity: postCall.type?.key === opt.key ? 1 : 0 }}><Check size={9} /></span>
-                <span>{opt.label}</span>
+                <span className="type-check" style={{ opacity: postCall.type?.key === opt.key ? 1 : 0 }}><Check size={9.5} stroke={3.4} /></span>
+                <span className="type-row-label">{opt.label}</span>
               </button>
             ))}
           </div>

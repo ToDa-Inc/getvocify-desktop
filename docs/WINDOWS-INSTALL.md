@@ -54,6 +54,6 @@ Same layout, sizes, colours, copy and behaviour, ported from the Swift code and 
 
 ## What is and is not proven
 
-Proven on a real Windows runner (see the workflow): the installer builds, installs and starts; the island layout (58 checks); the call-audio pipeline with a synthetic tone; a whole call through the shell; the microphone-use record is read and parsed from the real registry; a real Chrome's address bar is read through UI Automation.
+Proven on a real Windows runner (see the workflow): a real mouse click on the island acts on the first press and leaves the foreground window unchanged; the installer builds, installs and starts; the island layout (58 checks); the call-audio pipeline with a synthetic tone; a whole call through the shell; the microphone-use record is read and parsed from the real registry; a real Chrome's address bar is read through UI Automation.
 
-Not proven: capturing a real call's audio from a real Windows audio device, real microphone use by Zoom/Teams being picked up by the registry record, focus behaviour with a real call window in front, and anything on a company-managed PC. Those need your test.
+Not proven: capturing a real call's audio from a real Windows audio device, real microphone use by Zoom/Teams being picked up by the registry record, the island over a fullscreen call window, 200% display scaling and several monitors, the open states side by side with the Swift app, and anything on a company-managed PC. Those need your test.

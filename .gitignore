@@ -22,3 +22,4 @@ native/macos-tap/vocify-tap
 app/test/out/
 app/main/dist-test/
 app/main/dist-shell-test/
+app/release/

@@ -11,6 +11,8 @@ const here = dirname(fileURLToPath(import.meta.url));
  * `VOCIFY_DASHBOARD_URL` points the real app at another dashboard (staging, a local build).
  */
 const demo = process.argv.includes("--demo");
+/** `--smoke-test`: start, check the island is on screen, quit with code 0 (1 if it is not). For installers and CI. */
+const smoke = process.argv.includes("--smoke-test");
 const DEFAULT_DASHBOARD = "https://app.getvocify.com";
 
 if (!app.requestSingleInstanceLock()) {
@@ -31,6 +33,9 @@ if (!app.requestSingleInstanceLock()) {
         islandOffsetY: Number(process.env.ISLAND_OFFSET_Y ?? 0) || 0,
         controls: demo,
       });
+      if (smoke) {
+        setTimeout(() => app.exit(handle?.island.isVisible() ? 0 : 1), 4000);
+      }
     })
     .catch((error: unknown) => {
       console.error(error);

@@ -45,6 +45,8 @@ export type AppHandle = {
   detectCall(caller: Caller | null): void;
   /** Test hook: the icon of an app, as the island shows it (a small PNG data URL), or null. */
   iconFor(path: string): Promise<string | null>;
+  /** Test hook: what the dashboard would be told about permissions. */
+  permissions(): Promise<unknown>;
   quit(): void;
 };
 
@@ -399,6 +401,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     islandBounds: () => island.getBounds(),
     detectCall: (caller) => controller.callChanged(caller),
     iconFor,
+    permissions: () => bridge("permissions:status", {}),
     quit: () => app.quit(),
   };
 

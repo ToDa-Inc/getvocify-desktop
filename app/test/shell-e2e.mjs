@@ -110,6 +110,11 @@ app.whenReady().then(async () => {
     handle.detectCall(null);
     check(mode() === "idle", "the call app letting go returns it to idle");
 
+    // --- permissions, as the dashboard reads them
+    const permissions = await handle.permissions();
+    check(["authorized", "denied", "never_requested"].includes(permissions.microphone) && ["win32", "darwin"].includes(permissions.platform), `permissions report a platform and a microphone state (${JSON.stringify(permissions)})`);
+    if (process.platform === "win32") check(permissions.systemAudio === "authorized", "on Windows call audio needs no permission");
+
     // --- the app's own icon, as the Swift island shows it (the same Electron call reads an .exe on Windows)
     const iconPath = process.platform === "darwin" ? "/System/Applications/Calculator.app" : process.platform === "win32" ? process.env.ComSpec : null;
     if (iconPath) {

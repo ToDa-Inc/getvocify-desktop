@@ -1,0 +1,34 @@
+appId: com.vocify.app
+productName: Vocify
+electronVersion: 33.4.11
+directories:
+  output: release
+  buildResources: build
+# Everything the app needs at run time is bundled by esbuild into these folders; no node_modules ship.
+files:
+  - package.json
+  - main/dist/**
+  - "!main/dist/**/*.map"
+  - main/demo/**
+  - island/dist/index.html
+  - island/dist/island.js
+  - island/dist/island.css
+  - island/dist/icon.png
+asar: true
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.png
+  # No signing yet: Windows shows its "unknown publisher" screen on first run (More info, then Run anyway).
+  signAndEditExecutable: true
+nsis:
+  # A per-user install in %LOCALAPPDATA%: no administrator rights, no prompt.
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  artifactName: Vocify-Setup-${version}.${ext}
+publish: null

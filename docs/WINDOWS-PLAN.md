@@ -406,3 +406,36 @@ Mac permissions under Electron (microphone, screen recording, automation) are at
 helper; confirm in E2 that the helper inside the signed bundle triggers the prompts under the app's name **[verify in E2]**.
 Hardened runtime, notarization and entitlements need the existing `notarize-dmg.sh` flow adapted for Electron.
 Branch work starts from a clean `feat/electron` cut from `origin/integrate/island` (see `docs/BRANCH-CLEANUP.md`).
+
+## 14. Fastest honest route to real use (2026-10-05, from measurements and code, not opinion)
+
+### What is established
+
+| Fact | Source |
+|---|---|
+| Island in Electron: layout and clicks pass in real windows; CPU while recording about 0.5% silent and 1.2% speaking, 2% with the card open | `app/test/perf-island.mjs`, 3 runs each |
+| Electron island memory floor is about 220 MB with the island alone; four Chromium switches were tried (in-process GPU, low-end device mode, both, JS lite mode): none lowered it, two raised it | same script, `--flags=` |
+| Swift Vocify on this Mac: about 50 to 61 MB native plus about 67 MB WebKit helper processes, 0% CPU idle | `ps` and `top` |
+| Electron apps already in daily use here: Granola 263 MB in 9 processes, Slack 297 MB, Discord 370 MB at the moment of measuring (their activity at that moment is unknown) | `ps` |
+| The dashboard on origin/staging already has a full recording path for a shell with no native recorder: mic from the browser, call audio from `bridge.systemAudio.onPcm`, socket and transcript in the page, levels and overlay pushed through `shell.setState` | `DesktopMeetingProvider.tsx` lines 774 to 870 |
+| That path is blocked on Windows only by the platform check `platform === "darwin"` in `desktop-host.ts` and `useDesktopPermissions.ts` | origin/staging |
+| The legacy Electron shell already enables Chromium loopback capture (`audio: 'loopback'`) | `electron-main.mjs` line 378 |
+
+### Not established (must be measured on the Windows PC)
+
+- Memory and CPU of Electron on Windows, and of a WebView2 host as the alternative.
+- Whether Chromium loopback captures a Zoom, Meet or HubSpot call cleanly, including headset changes.
+- Whether the page's timers and audio callbacks stay on time when the window is behind the call. This is why the Mac moved recording out of the web view.
+
+### Route
+
+1. **Mac stays Swift.** Electron costs about four times the memory for no gain a Mac user sees; the only gain is shared code.
+2. **Windows alpha reuses what exists**, so almost nothing is invented:
+   - Electron shell loads the dashboard.
+   - Dashboard allows `win32` (a small change in the dashboard repo).
+   - The shell implements the bridge calls the web path already uses: `systemAudio.start/stop/onPcm/onLost`, `shell.setState`, `saas.request`, permissions, drafts.
+   - Call audio comes from Chromium loopback in a hidden window, converted to 16 kHz PCM and sent to the dashboard.
+   - The island is the React island fed by the `shell:state` the dashboard already sends. The TypeScript core port is not needed for this step.
+3. **Measure on the AnyDesk PC** with a real Meet and a HubSpot call: audio quality, timing with the window behind the call, memory, CPU.
+4. **Only if timing or capture fails**, build the native helper and move the socket and transcript into Electron main using the TypeScript core already written. Nothing built so far is wasted.
+5. **If memory is the blocker on managed PCs**, build a minimal WebView2 host and compare on the same machine.

@@ -11,6 +11,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 const dist = resolve(process.argv.find((a) => a.startsWith("--dist="))?.slice(7) ?? join(here, "../island/dist"));
 const label = process.argv.find((a) => a.startsWith("--label="))?.slice(8) ?? "run";
 if (process.argv.includes("--nogpu")) app.disableHardwareAcceleration();
+// --flags="in-process-gpu;js-flags=--lite-mode": Chromium switches applied before start, to see what trims memory.
+for (const flag of (process.argv.find((a) => a.startsWith("--flags="))?.slice(8) ?? "").split(";").filter(Boolean)) {
+  const [name, ...value] = flag.split("=");
+  app.commandLine.appendSwitch(name, value.join("=") || undefined);
+}
+const ONLY = (process.argv.find((a) => a.startsWith("--only="))?.slice(7) ?? "").split(",").filter(Boolean);
 const WARMUP_MS = 2500;
 const SAMPLE_MS = 8000;
 const REPEATS = Number(process.argv.find((a) => a.startsWith("--repeat="))?.slice(9) ?? 1);
@@ -86,13 +92,13 @@ app.whenReady().then(async () => {
   const anchor = new BrowserWindow({ show: false, width: 100, height: 100 });
   await anchor.loadURL("data:text/html,<title>anchor</title>");
   const results = [];
-  for (const variant of variants) {
+  for (const variant of variants.filter((v) => ONLY.length === 0 || ONLY.includes(v.name))) {
     const runs = [];
     for (let i = 0; i < REPEATS; i += 1) runs.push(await measure(variant));
     const totals = runs.map((r) => r.totalCpu);
     const mean = totals.reduce((a, b) => a + b, 0) / totals.length;
     results.push({ name: variant.name, mean: Number(mean.toFixed(2)), min: Math.min(...totals), max: Math.max(...totals), runs });
-    console.log(`${label} | ${variant.name}: mean ${mean.toFixed(2)}% (min ${Math.min(...totals)}, max ${Math.max(...totals)}) | memory ${Object.values(runs.at(-1).byType).map((v) => v.split(", ")[1]).join(" + ")}`);
+    console.log(`${label} | ${variant.name}: mean ${mean.toFixed(2)}% (min ${Math.min(...totals)}, max ${Math.max(...totals)}) | memory ${Object.values(runs.at(-1).byType).map((v) => v.split(", ")[1]).join(" + ")} = ${Object.values(runs.at(-1).byType).reduce((a, v) => a + Number(v.split(", ")[1].replace(" MB", "")), 0)} MB`);
   }
   writeFileSync(join(here, `out/perf-${label}.json`), JSON.stringify(results, null, 2));
   app.exit(0);

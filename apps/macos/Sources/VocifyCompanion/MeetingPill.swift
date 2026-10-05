@@ -333,8 +333,10 @@ final class MeetingPillState: ObservableObject {
     }
 
     @Published var mode: Mode = .idle
-    /// The dashboard has someone signed in to record for.
-    @Published var recorderReady = false
+    /// The dashboard has someone signed in to record for. Remembered across launches, so the
+    /// island isn't "signed out" while the dashboard is still loading; only the dashboard saying
+    /// there's no session clears it.
+    @Published var recorderReady = UserDefaults.standard.bool(forKey: "vocify.recorderReady")
     /// The call's side stopped reaching Vocify and restarting didn't bring it back.
     @Published var callAudioLost = false
     @Published var postCall: PostCall?
@@ -492,7 +494,10 @@ final class MeetingPillState: ObservableObject {
     /// Applies one `shell:state` update; keys that are absent keep their value.
     func apply(_ state: [String: Any]) {
         if let paused = state["paused"] as? Bool, paused != self.paused { self.paused = paused }
-        if let ready = state["recorderReady"] as? Bool, ready != recorderReady { recorderReady = ready }
+        if let ready = state["recorderReady"] as? Bool, ready != recorderReady {
+            recorderReady = ready
+            UserDefaults.standard.set(ready, forKey: "vocify.recorderReady")
+        }
         if let lost = state["callAudioLost"] as? Bool, lost != callAudioLost {
             let was = callAudioLost
             callAudioLost = lost

@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const island = join(here, "../island/dist/index.html");
-const dashboard = process.argv.find((a) => a.startsWith("--dashboard="))?.slice(12) ?? "/Users/danizal/getvocify-desktop/apps/macos/build/web/index.html";
+const dashboard = process.argv.find((a) => a.startsWith("--dashboard="))?.slice(12) ?? join(here, "../../apps/macos/build/web/index.html");
 if (!existsSync(dashboard)) {
   console.log(`dashboard build not found at ${dashboard}`);
   process.exit(1);

@@ -36,3 +36,23 @@ export function signInHostsFor(dashboardUrl: string): (host: string) => boolean 
     return h === "vercel.com" || h.endsWith(".vercel.com");
   };
 }
+
+export type ReportedPlatform = "win32" | "darwin";
+
+/**
+ * What platform the dashboard is told this is. A dashboard that already knows Windows is told "win32". The production
+ * dashboard does not yet (it accepts only the Mac app), so while it is the configured one the app presents itself with
+ * the identity the dashboard already understands ("darwin"): everything works, only a few permission messages use
+ * Mac wording. `--platform=win32|darwin` or `"platform"` in config.json decides explicitly, and turns the compatibility
+ * off once the Windows-aware dashboard is deployed.
+ */
+export function resolveReportedPlatform(input: { argv: string[]; config: unknown; dashboardUrl: string; production: string }): ReportedPlatform {
+  const explicit = input.argv.find((a) => a.startsWith("--platform="))?.slice("--platform=".length);
+  const fromConfig = typeof input.config === "object" && input.config !== null ? (input.config as { platform?: unknown }).platform : undefined;
+  for (const value of [explicit, fromConfig]) if (value === "win32" || value === "darwin") return value;
+  try {
+    return new URL(input.dashboardUrl).hostname === new URL(input.production).hostname ? "darwin" : "win32";
+  } catch {
+    return "win32";
+  }
+}

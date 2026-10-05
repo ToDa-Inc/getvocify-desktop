@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { islandSize } from "../../island/src/geometry.ts";
 import type { Geometry, IslandAction, IslandState } from "../../island/src/types.ts";
 import { createBridge } from "./bridge.ts";
-import { signInHostsFor } from "./config.ts";
+import { signInHostsFor, type ReportedPlatform } from "./config.ts";
 import { IslandController, type Caller } from "./controller.ts";
 import { DashboardHost } from "./dashboard.ts";
 import { Drafts } from "./drafts.ts";
@@ -32,6 +32,8 @@ export type AppOptions = {
   islandOffsetY?: number;
   /** The demo's window of buttons that stand in for the platform's call detection. */
   controls?: boolean;
+  /** The platform name the dashboard is told (default: the real one). */
+  reportedPlatform?: ReportedPlatform;
   /** How long the dashboard page is kept after its last activity before it may be given back (default 30 s). */
   releaseGraceMs?: number;
 };
@@ -200,6 +202,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     preload: join(here, "dashboard-preload.cjs"),
     isTrustedHost: trustedHostsFor(options.dashboardUrl),
     isSignInHost: signInHostsFor(options.dashboardUrl),
+    reportedPlatform: options.reportedPlatform ?? (platform === "win32" ? "win32" : "darwin"),
     trustFiles: options.trustFiles === true,
     canDestroy,
     log,
@@ -290,6 +293,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   );
   const bridge = createBridge({
     platform,
+    reportedPlatform: options.reportedPlatform,
     controller,
     loopback,
     drafts,
@@ -404,6 +408,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     });
   }
 
+  log(`dashboard told the platform is ${options.reportedPlatform ?? platform}`);
   log(`started: island ${Math.round(initial.width)}x${initial.height}, notch ${Math.round(placement.geometry.notchWidth)}px, bar ${placement.geometry.barHeight}px`);
   return {
     controller,

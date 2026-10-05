@@ -20,10 +20,10 @@ export function microphoneStatus(raw: string): Status {
 }
 
 /** What `permissions.status()` returns. Call audio needs no permission on Windows and cannot be captured elsewhere. */
-export function permissionSnapshot(platform: NodeJS.Platform, microphoneRaw: string): Record<string, unknown> {
+export function permissionSnapshot(platform: NodeJS.Platform, microphoneRaw: string, reported?: "win32" | "darwin"): Record<string, unknown> {
   const windows = platform === "win32";
   return {
-    platform: windows ? "win32" : "darwin",
+    platform: reported ?? (windows ? "win32" : "darwin"),
     microphone: microphoneStatus(microphoneRaw),
     systemAudio: windows ? "authorized" : "denied",
     ...(windows ? {} : { systemAudioError: "unsupported_platform" }),

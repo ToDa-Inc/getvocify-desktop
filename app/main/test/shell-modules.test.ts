@@ -123,6 +123,10 @@ test("Electron's microphone status becomes the dashboard's three states", () => 
   assert.equal(microphoneStatus("unknown"), "never_requested");
 });
 
+test("the dashboard can be told another platform name than the real one, without changing what is possible", () => {
+  assert.deepEqual(permissionSnapshot("win32", "granted", "darwin"), { platform: "darwin", microphone: "authorized", systemAudio: "authorized" });
+});
+
 test("on Windows call audio needs no permission; elsewhere it is unavailable", () => {
   assert.deepEqual(permissionSnapshot("win32", "granted"), { platform: "win32", microphone: "authorized", systemAudio: "authorized" });
   assert.deepEqual(permissionSnapshot("darwin", "denied"), { platform: "darwin", microphone: "denied", systemAudio: "denied", systemAudioError: "unsupported_platform" });

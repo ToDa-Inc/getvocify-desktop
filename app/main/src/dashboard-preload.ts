@@ -19,8 +19,12 @@ ipcRenderer.on("vocify:emit", (_event, channel: string, payload: unknown) => {
 
 const call = (op: string, args: Record<string, unknown> = {}): Promise<unknown> => ipcRenderer.invoke("vocify", op, args);
 
+// The platform name the dashboard is told is decided by the main process (config.ts) and passed as an argument.
+const told = process.argv.find((a) => a.startsWith("--vocify-platform="))?.slice("--vocify-platform=".length);
+const platform = told === "win32" || told === "darwin" ? told : process.platform === "win32" ? "win32" : "darwin";
+
 contextBridge.exposeInMainWorld("vocifyDesktop", {
-  platform: process.platform === "win32" ? "win32" : "darwin",
+  platform,
   systemAudio: {
     start: () => call("system-audio:start"),
     stop: () => call("system-audio:stop"),

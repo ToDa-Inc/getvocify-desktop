@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { startApp } from "./app.ts";
-import { resolveDashboardUrl } from "./config.ts";
+import { resolveDashboardUrl, resolveReportedPlatform } from "./config.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -34,10 +34,12 @@ if (!app.requestSingleInstanceLock()) {
       } catch {
         // No config file: the defaults apply.
       }
+      const dashboardUrl = demo
+        ? pathToFileURL(join(here, "../demo/fake-dashboard.html")).href
+        : resolveDashboardUrl({ argv: process.argv, env: process.env, config, fallback: DEFAULT_DASHBOARD });
       handle = await startApp({
-        dashboardUrl: demo
-          ? pathToFileURL(join(here, "../demo/fake-dashboard.html")).href
-          : resolveDashboardUrl({ argv: process.argv, env: process.env, config, fallback: DEFAULT_DASHBOARD }),
+        dashboardUrl,
+        reportedPlatform: demo ? undefined : resolveReportedPlatform({ argv: process.argv, config, dashboardUrl, production: DEFAULT_DASHBOARD }),
         trustFiles: demo,
         userDataDir: demo ? join(app.getPath("userData"), "demo") : app.getPath("userData"),
         islandOffsetY: Number(process.env.ISLAND_OFFSET_Y ?? 0) || 0,

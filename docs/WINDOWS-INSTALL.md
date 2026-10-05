@@ -21,23 +21,19 @@ Open PowerShell and run:
 
 A small window of buttons stands in for call detection ("Zoom takes the mic", "The call app lets go"), and a stand-in dashboard answers the island. Click the island, press Record, watch the transcript, Stop, and use the after-call card. Nothing is recorded.
 
-## 3. Use the real dashboard
+## 3. Use the live dashboard (the default)
 
-The production dashboard does not know Windows yet. The branch `feat/desktop-windows` of `ToDa-Inc/getvocify` adds it and already has a Vercel preview:
+With no options, the app loads `https://app.getvocify.com` and you sign in with your normal account. The live dashboard does not know Windows yet, so the app tells it the platform name it already understands (a compatibility mode); everything works, and only a few permission messages (for example when the microphone is blocked) use Mac wording.
 
-```
-https://getvocify-b9cvrknpn-danis-projects-c38305cd.vercel.app
-```
+Once the Windows-aware dashboard is deployed, turn the compatibility off by adding `--platform=win32` to the shortcut, or `{ "platform": "win32" }` to `%APPDATA%\Vocify\config.json`.
 
-Start the app pointed at it (any one of these):
+The dashboard change is the branch `feat/desktop-windows` of `ToDa-Inc/getvocify` (pushed). Until it is merged, its Vercel preview can be used instead, which needs a Vercel sign-in inside the app the first time:
 
 ```powershell
 & "$env:LOCALAPPDATA\Programs\Vocify\Vocify.exe" --dashboard=https://getvocify-b9cvrknpn-danis-projects-c38305cd.vercel.app
 ```
 
-or set `{ "dashboardUrl": "https://getvocify-b9cvrknpn-danis-projects-c38305cd.vercel.app" }` in `%APPDATA%\Vocify\config.json`, or the `VOCIFY_DASHBOARD_URL` environment variable.
-
-The preview is behind a Vercel sign-in: the first time, sign in to Vercel in the app window (it stays inside the app), then sign in to Vocify. Once the branch is merged and deployed, none of this is needed.
+The dashboard address can also come from `{ "dashboardUrl": "..." }` in `%APPDATA%\Vocify\config.json` or the `VOCIFY_DASHBOARD_URL` environment variable.
 
 ## 4. What to check
 
@@ -51,6 +47,10 @@ The preview is behind a Vercel sign-in: the first time, sign in to Vercel in the
 | Focus | Clicking the island must never take focus from the call window. |
 
 Logs: `%APPDATA%\Vocify\logs\vocify.log`. Quit from the tray icon. Memory with the dashboard open is about 600 MB; the island alone is about 230 MB.
+
+## How close the look is to the Mac app
+
+Same layout, sizes, colours, copy and behaviour, ported from the Swift code and checked state by state. Known differences: no blur behind the glass (the open island is a denser dark instead), the system font is Segoe UI instead of SF Pro, the icons are drawn as SVG instead of SF Symbols, the open and close motion is a close approximation of the spring, and there is no notch on Windows, so the island is a pill at the top centre of the screen.
 
 ## What is and is not proven
 

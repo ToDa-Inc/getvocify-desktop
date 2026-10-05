@@ -11,6 +11,8 @@ export type DashboardOptions = {
   preload: string;
   /** Hosts whose pages may use the microphone and open inside the app. */
   isTrustedHost(host: string): boolean;
+  /** The platform name the page is told through its bridge. */
+  reportedPlatform: "win32" | "darwin";
   /** Hosts that may open inside the app without being trusted with the microphone (a preview's sign-in). */
   isSignInHost?(host: string): boolean;
   /** Local file pages (the demo's stand-in dashboard) count as the app. */
@@ -65,6 +67,7 @@ export class DashboardHost {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        additionalArguments: [`--vocify-platform=${this.options.reportedPlatform}`],
         // The page records and times the call: it must not be slowed down when hidden or behind the call.
         backgroundThrottling: false,
       },

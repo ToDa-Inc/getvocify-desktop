@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { acceptDashboardUrl, resolveDashboardUrl, signInHostsFor } from "../src/config.ts";
+import { acceptDashboardUrl, resolveDashboardUrl, resolveReportedPlatform, signInHostsFor } from "../src/config.ts";
 
 const fallback = "https://app.getvocify.com";
 
@@ -33,4 +33,20 @@ test("a Vercel preview may sign in on vercel.com inside the app; no other dashbo
   const production = signInHostsFor("https://app.getvocify.com");
   assert.equal(production("vercel.com"), false);
   assert.equal(signInHostsFor("garbage")("vercel.com"), false);
+});
+
+test("the production dashboard is told the identity it already understands, anything else is told Windows", () => {
+  const base = { argv: [], config: null, production: "https://app.getvocify.com" };
+  assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "https://app.getvocify.com/" }), "darwin");
+  assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "https://getvocify-abc.vercel.app" }), "win32");
+  assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "http://localhost:8080" }), "win32");
+  assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "nonsense" }), "win32");
+});
+
+test("an explicit platform wins, from the command line first, so the compatibility can be turned off", () => {
+  const base = { production: "https://app.getvocify.com", dashboardUrl: "https://app.getvocify.com" };
+  assert.equal(resolveReportedPlatform({ ...base, argv: ["--platform=win32"], config: null }), "win32");
+  assert.equal(resolveReportedPlatform({ ...base, argv: [], config: { platform: "win32" } }), "win32");
+  assert.equal(resolveReportedPlatform({ ...base, argv: ["--platform=darwin"], config: { platform: "win32" } }), "darwin");
+  assert.equal(resolveReportedPlatform({ ...base, argv: ["--platform=linux"], config: { platform: 5 } }), "darwin", "an unknown value is ignored");
 });

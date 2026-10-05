@@ -12,6 +12,8 @@ import type { KeyEvent, ShortcutManager } from "./shortcut.ts";
  */
 export type BridgeDeps = {
   platform: NodeJS.Platform;
+  /** The platform name the dashboard is told (see config.ts); defaults to the real one. */
+  reportedPlatform?: "win32" | "darwin";
   controller: IslandController;
   loopback: Loopback;
   drafts: Drafts;
@@ -55,7 +57,7 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
     return { ok: false, reason: started.reason ?? "no_system_audio" };
   }
 
-  const permissions = () => permissionSnapshot(deps.platform, deps.microphoneAccess());
+  const permissions = () => permissionSnapshot(deps.platform, deps.microphoneAccess(), deps.reportedPlatform);
 
   return async (op, args) => {
     switch (op) {

@@ -38,6 +38,8 @@ app.whenReady().then(async () => {
       userDataDir,
       islandOffsetY: 200,
       releaseGraceMs: 1500,
+      // The compatibility identity the production dashboard needs today: the page must be told "darwin".
+      reportedPlatform: "darwin",
     });
     const { controller, dashboard, island } = handle;
     const mode = () => controller.state.mode.kind;
@@ -57,6 +59,7 @@ app.whenReady().then(async () => {
     check(mode() === "starting", "Record shows 'starting'");
     check(await until(() => mode() === "recording", 15000, "recording"), "the hidden dashboard starts the recording and the island follows");
     check(dashboard.exists && !dashboard.visible, "the dashboard runs hidden while recording");
+    check((await dashboard.contents.executeJavaScript("window.vocifyDesktop.platform")) === "darwin", "the dashboard page is told the platform it already understands (compatibility mode)");
     check(await until(() => controller.state.turns.length >= 2, 10000, "transcript"), "the transcript streams into the island");
     check(controller.state.clock !== null && controller.state.liveHelp === true, "clock and live help arrive from the dashboard");
     check(controller.state.typeMenu?.title === "Discovery call" && controller.state.typeMenu.sparkle, "the call type is Vocify's proposal");

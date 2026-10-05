@@ -39,13 +39,10 @@ jobs:
       # Real windows on the Windows runner: the island's layout, the call-audio pipeline, a whole call through the shell.
       - name: Island checks in real windows
         run: npm run test:island
-        continue-on-error: true
       - name: Call-audio pipeline
         run: npm run test:loopback
-        continue-on-error: true
       - name: A whole call through the shell
         run: npm run test:shell
-        continue-on-error: true
 
       - name: Build the installer
         run: npm run dist:win

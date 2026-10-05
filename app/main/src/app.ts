@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { islandSize } from "../../island/src/geometry.ts";
 import type { Geometry, IslandAction, IslandState } from "../../island/src/types.ts";
 import { createBridge } from "./bridge.ts";
+import { signInHostsFor } from "./config.ts";
 import { IslandController, type Caller } from "./controller.ts";
 import { DashboardHost } from "./dashboard.ts";
 import { Drafts } from "./drafts.ts";
@@ -84,9 +85,18 @@ function measureElectron(): Placement {
   };
 }
 
-const isTrustedHost = (host: string): boolean => {
-  const h = host.toLowerCase();
-  return h === "localhost" || h === "127.0.0.1" || h === "getvocify.com" || h.endsWith(".getvocify.com");
+/** Pages that may use the microphone and open inside the app: Vocify's own, this computer, and the dashboard that was configured. */
+const trustedHostsFor = (dashboardUrl: string) => {
+  let configured = "";
+  try {
+    configured = new URL(dashboardUrl).hostname.toLowerCase();
+  } catch {
+    // Not a URL: only the built-in hosts are trusted.
+  }
+  return (host: string): boolean => {
+    const h = host.toLowerCase();
+    return h === "localhost" || h === "127.0.0.1" || h === "getvocify.com" || h.endsWith(".getvocify.com") || (configured !== "" && h === configured);
+  };
 };
 
 export async function startApp(options: AppOptions): Promise<AppHandle> {
@@ -188,7 +198,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const dashboard = new DashboardHost({
     url: options.dashboardUrl,
     preload: join(here, "dashboard-preload.cjs"),
-    isTrustedHost,
+    isTrustedHost: trustedHostsFor(options.dashboardUrl),
+    isSignInHost: signInHostsFor(options.dashboardUrl),
     trustFiles: options.trustFiles === true,
     canDestroy,
     log,

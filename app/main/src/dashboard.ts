@@ -11,6 +11,8 @@ export type DashboardOptions = {
   preload: string;
   /** Hosts whose pages may use the microphone and open inside the app. */
   isTrustedHost(host: string): boolean;
+  /** Hosts that may open inside the app without being trusted with the microphone (a preview's sign-in). */
+  isSignInHost?(host: string): boolean;
   /** Local file pages (the demo's stand-in dashboard) count as the app. */
   trustFiles: boolean;
   /** Whether the page may be destroyed now (nothing is recording and no call update is waiting). */
@@ -102,7 +104,7 @@ export class DashboardHost {
     try {
       const url = new URL(raw);
       if (url.protocol === "file:") return this.options.trustFiles;
-      return (url.protocol === "https:" || url.protocol === "http:") && this.options.isTrustedHost(url.hostname);
+      return (url.protocol === "https:" || url.protocol === "http:") && (this.options.isTrustedHost(url.hostname) || this.options.isSignInHost?.(url.hostname) === true);
     } catch {
       return false;
     }
@@ -112,7 +114,14 @@ export class DashboardHost {
   private setPermissions(): void {
     if (this.permissionsSet) return;
     this.permissionsSet = true;
-    const trusted = (origin: string) => this.isAppUrl(origin);
+    const trusted = (origin: string) => {
+      try {
+        const url = new URL(origin);
+        return url.protocol === "file:" ? this.options.trustFiles : this.options.isTrustedHost(url.hostname);
+      } catch {
+        return false;
+      }
+    };
     session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) => {
       callback(permission === "media" && this.isFrom(contents) && trusted(details.requestingUrl));
     });

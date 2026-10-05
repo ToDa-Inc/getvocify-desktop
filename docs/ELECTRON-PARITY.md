@@ -28,7 +28,18 @@ The dashboard side of the contract (the `shell:state` keys read in `MeetingPillS
 
 - **Focus**: Electron logs `NSWindow does not support nonactivating panel styleMask` for the island. Whether a real click on the island takes focus from the call app is not yet tested. Test: put another app in front, click Pause on the island, check the menu bar still names the other app.
 - **Glass blur** behind the open island: window-level vibrancy cannot follow the rounded shape while the window is larger than the island during animation, so Electron uses the denser opaque glass. Needs a native view or an accepted visual change.
-- **Cost while recording (measured 2026-10-05, 14 minutes, island closed, simulated call):** 5 processes, about 179 MB in total, and about 22% of one CPU core (GPU process 13%, island renderer 9%). The wave redraws React state 24 times a second and the red dot pulses in a transparent always-on-top window. This must come down before shipping; budget to set, with idle target near zero.
+- **Cost of the island (measured 2026-10-05 with `app/test/perf-island.mjs`, real transparent always-on-top windows, 3 runs each, CPU as share of one core).** An earlier note here said 22%; that came from `ps`, which reports a decaying average, and was wrong.
+
+  | Closed island | Before | After |
+  |---|---|---|
+  | idle | 0.03% | 0.07% |
+  | recording, silent | 2.07% | 0.47% |
+  | recording, someone speaking | 2.60% | 1.17% |
+  | recording, speaking, reduced motion | 0.33% | 0.63% |
+  | open card, speaking | 1.97% | 2.03% |
+
+  What changed: the voice wave no longer re-renders React 24 times a second (levels bypass React, the loop only runs while there is sound), the timer ticks once per second on the boundary, the typing dots and countdown line are CSS-only, and the pulsing dot steps instead of animating smoothly. Run-to-run noise is about plus or minus 0.3. The open card did not improve and is the next target.
+  **Memory is the larger cost:** the island alone is 4 processes and about 250 to 270 MB (main 98, GPU 48, utility 19, renderer 85 to 95). The installed Swift Vocify is about 61 MB native plus about 67 MB for its WebKit processes, at 0% CPU when idle. The dashboard window adds more on top in Electron.
 - **App icon** of the call app in the closed call state: the demo shows a generic waveform; the real icon needs the Mac helper.
 
 - **Real window behaviour not covered by the harness**: non-activating, first click acts without taking focus, always on top, DPI. The layout, size, click and scroll checks do pass in real Electron windows (42 of 42, including the transcript staying pinned to the latest line when the type list opens).

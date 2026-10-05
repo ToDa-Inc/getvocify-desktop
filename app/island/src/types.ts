@@ -71,5 +71,7 @@ export type IslandAction =
 
 export type IslandHost = {
   onState(cb: (state: IslandState) => void): () => void;
+  /** Voice levels arrive on their own channel so they never trigger a render. */
+  onLevels(cb: (levels: Levels) => void): () => void;
   act(action: IslandAction): void;
 };

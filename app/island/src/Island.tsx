@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cornerRadius, earWidth, islandSize } from "./geometry.ts";
+import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, formatElapsed, helpText, turnParts } from "./helpers.ts";
 import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Pause, Play, Sparkle, Waveform } from "./icons.tsx";
 import type { Assist, IslandAction, IslandState, Turn, TypeMenuRow, TypeMenuView } from "./types.ts";
@@ -98,12 +99,24 @@ function Rim({ lifted, open }: { lifted: boolean; open: boolean }) {
 }
 
 function CountdownLine({ countdown }: { countdown: NonNullable<IslandState["countdown"]> }) {
-  const now = useNow(33, countdown.runningSince !== null);
-  const left = countdown.remaining - (countdown.runningSince === null ? 0 : (now - countdown.runningSince) / 1000);
-  const fraction = Math.max(0, Math.min(1, left / countdown.total));
+  const bar = useRef<HTMLDivElement>(null);
+  const running = countdown.runningSince !== null;
+  const secondsLeft = countdown.remaining - (running ? (Date.now() - (countdown.runningSince as number)) / 1000 : 0);
+  const fraction = Math.max(0, Math.min(1, secondsLeft / countdown.total));
+  // The line runs out on its own, on the compositor: set where it is now, then let it shrink to nothing.
+  useEffect(() => {
+    const el = bar.current;
+    if (!el) return;
+    el.style.transition = "none";
+    el.style.transform = `scaleX(${fraction})`;
+    if (!running) return;
+    void el.offsetWidth;
+    el.style.transition = `transform ${Math.max(0, secondsLeft)}s linear`;
+    el.style.transform = "scaleX(0)";
+  }, [countdown]);
   return (
     <div className="countdown" aria-hidden>
-      <div className="countdown-bar" style={{ width: `${fraction * 100}%` }} />
+      <div className="countdown-bar" ref={bar} />
     </div>
   );
 }
@@ -435,33 +448,70 @@ function TurnBubble({ turn }: { turn: Turn }) {
 /* ---------- small pieces ---------- */
 
 function Elapsed({ state }: { state: IslandState }) {
-  const running = state.clock !== null && state.clock.pausedAt === null;
-  const now = useNow(250, running);
-  return <span className="elapsed">{formatElapsed(elapsedSeconds(state.clock, now))}</span>;
+  const clock = state.clock;
+  const running = clock !== null && clock.pausedAt === null;
+  const fixed = (window as unknown as { __fixedNow?: number }).__fixedNow;
+  const [now, setNow] = useState(() => fixed ?? Date.now());
+  // One tick per whole second of meeting time, scheduled for the boundary: no second is skipped or shown twice.
+  useEffect(() => {
+    if (!running || fixed !== undefined || !clock) return;
+    const origin = clock.startedAt + clock.pausedMs;
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const t = Date.now();
+      setNow(t);
+      timer = setTimeout(schedule, 1000 - (((t - origin) % 1000) + 1000) % 1000 + 5);
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, [running, clock?.startedAt, clock?.pausedMs, fixed]);
+  return <span className="elapsed">{formatElapsed(elapsedSeconds(clock, fixed ?? now))}</span>;
 }
 
 const REST = [3, 4.5, 6, 4.5, 3];
+const WAVE_FRAME_MS = 42;
+const SILENT = 0.002;
 
 function VoiceWave({ state }: { state: IslandState }) {
-  const now = useNow(42, !state.reduceMotion);
-  const you = fadedLevel(state.levels, "you", now);
-  const them = fadedLevel(state.levels, "them", now);
-  const level = Math.min(1, Math.max(you, them) * 1.4);
-  const t = now / 1000;
+  const root = useRef<HTMLDivElement>(null);
+  const { reduceMotion } = state;
+
+  // Redraw on each new level, then keep going only while the fade-out has something left to show.
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const fixed = (window as unknown as { __fixedNow?: number }).__fixedNow;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const draw = () => {
+      clearTimeout(timer);
+      const levels = levelsStore.get();
+      const now = fixed ?? Date.now();
+      const you = fadedLevel(levels, "you", now);
+      const them = fadedLevel(levels, "them", now);
+      const level = Math.min(1, Math.max(you, them) * 1.4);
+      const t = now / 1000;
+      el.style.opacity = String(0.45 + 0.55 * Math.min(1, level / 0.15));
+      el.dataset.side = levels.side;
+      const bars = el.children;
+      for (let index = 0; index < bars.length; index += 1) {
+        const wave = reduceMotion ? 1 : 0.55 + 0.45 * Math.sin(t * 9 + index * 1.2);
+        (bars[index] as HTMLElement).style.height = `${REST[index] + 10 * level * wave}px`;
+      }
+      if (level > SILENT && !reduceMotion && fixed === undefined) timer = setTimeout(draw, WAVE_FRAME_MS);
+    };
+    draw();
+    const unsubscribe = levelsStore.subscribe(draw);
+    return () => {
+      unsubscribe();
+      clearTimeout(timer);
+    };
+  }, [reduceMotion]);
+
   return (
-    <div className="wave" title="Beige is you speaking, white is them" aria-label="Voice activity" style={{ opacity: 0.45 + 0.55 * Math.min(1, level / 0.15) }}>
-      {REST.map((rest, index) => {
-        const wave = state.reduceMotion ? 1 : 0.55 + 0.45 * Math.sin(t * 9 + index * 1.2);
-        return (
-          <span
-            key={index}
-            style={{
-              height: rest + 10 * level * wave,
-              background: state.levels.side === "you" ? "var(--beige)" : "rgba(255,255,255,.85)",
-            }}
-          />
-        );
-      })}
+    <div className="wave" ref={root} title="Beige is you speaking, white is them" aria-label="Voice activity">
+      {REST.map((_, index) => (
+        <span key={index} />
+      ))}
     </div>
   );
 }
@@ -506,13 +556,11 @@ function PendingBadge({ count }: { count: number }) {
 }
 
 function TypingDots() {
-  const now = useNow(33, true);
-  const t = now / 1000;
   return (
     <span className="dots" aria-label="Writing">
-      {[0, 1, 2].map((index) => (
-        <span key={index} style={{ opacity: 0.35 + 0.65 * Math.max(0, Math.sin(t * 4 - index * 0.7)) }} />
-      ))}
+      <span style={{ animationDelay: "0s" }} />
+      <span style={{ animationDelay: "-0.17s" }} />
+      <span style={{ animationDelay: "-0.34s" }} />
     </span>
   );
 }

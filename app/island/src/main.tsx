@@ -1,7 +1,8 @@
 import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
 import { Island } from "./Island.tsx";
-import type { IslandHost, IslandState } from "./types.ts";
+import { levelsStore } from "./levels.ts";
+import type { IslandHost, IslandState, Levels } from "./types.ts";
 
 declare global {
   interface Window {
@@ -9,6 +10,7 @@ declare global {
     vocifyIsland?: IslandHost;
     __fixedNow?: number;
     __setIslandState?: (state: IslandState) => void;
+    __setIslandLevels?: (levels: Levels) => void;
     __islandActions?: unknown[];
   }
 }
@@ -16,10 +18,23 @@ declare global {
 function App() {
   const [state, setState] = useState<IslandState | null>(null);
   useEffect(() => {
-    window.__setIslandState = setState;
+    window.__setIslandState = (next) => {
+      levelsStore.set(next.levels);
+      setState(next);
+    };
+    window.__setIslandLevels = (levels) => levelsStore.set(levels);
     window.__islandActions = [];
     const host = window.vocifyIsland;
-    return host ? host.onState(setState) : undefined;
+    if (!host) return undefined;
+    const offState = host.onState((next) => {
+      levelsStore.set(next.levels);
+      setState(next);
+    });
+    const offLevels = host.onLevels((levels) => levelsStore.set(levels));
+    return () => {
+      offState();
+      offLevels();
+    };
   }, []);
   if (!state) return null;
   const act: IslandHost["act"] = (action) => {

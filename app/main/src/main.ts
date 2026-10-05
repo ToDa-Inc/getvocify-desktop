@@ -100,6 +100,7 @@ async function start(): Promise<void> {
     fitTimer = setTimeout(() => island?.setBounds(frameFor(placement, target.width, target.height)), 420);
   };
   demo.subscribe(push);
+  demo.subscribeLevels((levels) => island?.webContents.send("island:levels", levels));
   island.webContents.once("did-finish-load", () => island?.webContents.send("island:state", demo.state));
   island.webContents.send("island:state", demo.state);
   island.showInactive();

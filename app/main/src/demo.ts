@@ -44,6 +44,7 @@ type Timer = ReturnType<typeof setTimeout>;
 export class DemoController {
   state: IslandState;
   private listeners = new Set<(state: IslandState) => void>();
+  private levelListeners = new Set<(levels: IslandState["levels"]) => void>();
   private log: (line: string) => void;
   private timers = new Map<string, Timer>();
   private pointerInside = false;
@@ -82,8 +83,19 @@ export class DemoController {
     return () => this.listeners.delete(listener);
   }
 
+  /** Voice levels change ten times a second: they take their own channel and never cause a full state render. */
+  subscribeLevels(listener: (levels: IslandState["levels"]) => void): () => void {
+    this.levelListeners.add(listener);
+    return () => this.levelListeners.delete(listener);
+  }
+
   private set(patch: Partial<IslandState>): void {
     this.state = { ...this.state, ...patch };
+    const keys = Object.keys(patch);
+    if (keys.length === 1 && keys[0] === "levels") {
+      for (const listener of this.levelListeners) listener(this.state.levels);
+      return;
+    }
     for (const listener of this.listeners) listener(this.state);
   }
 

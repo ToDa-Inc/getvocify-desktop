@@ -141,15 +141,22 @@ export class DashboardHost {
     if (!this.exists) this.create();
   }
 
-  /** To the page (`__vocifyEmit`). Before the page is ready the message waits, and the page is started if it is not. */
+  /**
+   * To the page (`__vocifyEmit`). Before the page is ready the message waits. Only what needs the page starts it: a
+   * recording to begin, or a call's app and CRM page to name its contact. Everything else (a call ended, a pause) means
+   * nothing to a page that is not there, and is dropped instead of paying for a window.
+   */
   emit(channel: string, payload: unknown): void {
     const contents = this.contents;
-    if (contents && this.ready) {
-      contents.send("vocify:emit", channel, payload);
+    if (!contents) {
+      const needsPage = (channel === "shell:command" && payload === "listen") || channel === "call:pages" || channel === "call:source";
+      if (!needsPage) return;
+      this.queue.push({ channel, payload });
+      this.ensureHidden();
       return;
     }
-    this.queue.push({ channel, payload });
-    if (!contents) this.ensureHidden();
+    if (this.ready) contents.send("vocify:emit", channel, payload);
+    else this.queue.push({ channel, payload });
   }
 
   /** The page has said something through the bridge, so its listeners exist: what waited can be delivered. */

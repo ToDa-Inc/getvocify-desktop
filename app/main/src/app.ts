@@ -180,7 +180,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       },
     },
     placement.geometry,
-    { recorderReady: settings.get("recorderReady") === true, material: "opaque", reduceMotion: false },
+    { recorderReady: settings.get("recorderReady") === true, material: "opaque", reduceMotion: systemPreferences.getAnimationSettings().prefersReducedMotion },
   );
 
   /* ---------- the dashboard window ---------- */

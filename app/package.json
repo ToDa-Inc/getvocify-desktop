@@ -17,6 +17,7 @@
     "test:loopback": "node test/build-loopback-test.mjs && electron test/loopback-e2e.mjs",
     "test:shell": "node test/build-shell-test.mjs && electron test/shell-e2e.mjs",
     "test:windows": "node test/windows-real.mjs",
+    "test:focus": "node test/build-shell-test.mjs && electron test/focus-windows.mjs",
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {

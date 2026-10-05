@@ -25,6 +25,8 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
   const open = state.expanded && kind !== "starting";
   // The after-call card is as tall as its content, which only the page can measure (fonts differ by OS).
   const [cardHeight, setCardHeight] = useState<number | null>(null);
+  // A dropdown over the card reaches past it: the window must be as tall as the dropdown, the island's shape is not.
+  const [popupBottom, setPopupBottom] = useState<number | null>(null);
   const column = useRef<HTMLDivElement>(null);
   const natural = kind === "postCall" && open;
   const shape = islandSize(state.geometry, kind, open);
@@ -50,10 +52,10 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
   // The window follows the island: reported here, because only the page knows the height.
   useEffect(() => {
     if (!natural || cardHeight === null) return;
-    const reported = { width: size.width, height: cardHeight };
+    const reported = { width: size.width, height: Math.max(cardHeight, popupBottom ?? 0) };
     if (window.vocifyIsland) window.vocifyIsland.resize(reported);
     else (window.__islandSizes ??= []).push(reported);
-  }, [natural, cardHeight, size.width]);
+  }, [natural, cardHeight, popupBottom, size.width]);
 
   const style = {
     width: size.width,
@@ -95,7 +97,7 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
             <RightEar state={state} open={open} lifted={lifted} act={act} />
           </div>
         </div>
-        {open && <Body state={state} act={act} />}
+        {open && <Body state={state} act={act} onPopupExtent={setPopupBottom} />}
       </div>
       {open && state.countdown && <CountdownLine countdown={state.countdown} />}
       <Rim lifted={lifted} open={open} />
@@ -227,7 +229,7 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
   }
 }
 
-function Body({ state, act }: { state: IslandState; act: Act }) {
+function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onPopupExtent: (bottom: number | null) => void }) {
   const mode = state.mode;
   switch (mode.kind) {
     case "recording":
@@ -237,7 +239,7 @@ function Body({ state, act }: { state: IslandState; act: Act }) {
     case "stopped":
       return <StoppedMenu title={mode.title} act={act} />;
     case "postCall":
-      return state.postCall ? <PostCallCard postCall={state.postCall} act={act} /> : null;
+      return state.postCall ? <PostCallCard postCall={state.postCall} act={act} onPopupExtent={onPopupExtent} /> : null;
     default:
       return <IdleMenu ready={state.recorderReady} act={act} />;
   }

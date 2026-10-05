@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Close } from "./icons.tsx";
 import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallData } from "./types.ts";
 
@@ -34,7 +34,7 @@ function shown(change: PostCallChange, e: Record<string, string>): string {
   return lbls.length ? lbls.join(", ") : "—";
 }
 
-export function PostCallCard({ postCall, act }: { postCall: PostCallData; act: Act }) {
+export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostCallData; act: Act; /** Where an open dropdown ends (px from the window's top), or null: the window grows to include it. */ onPopupExtent: (bottom: number | null) => void }) {
   const [keptChanges, setKeptChanges] = useState<Set<string>>(() => new Set(postCall.changes.filter(c => !c.check).map(c => c.key)));
   const [editedValues, setEditedValues] = useState<Record<string, string>>({});
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
@@ -42,8 +42,6 @@ export function PostCallCard({ postCall, act }: { postCall: PostCallData; act: A
   const [openOptions, setOpenOptions] = useState<string | null>(null);
   const [optionsAnchor, setOptionsAnchor] = useState<{ x: number; y: number; height: number } | null>(null);
   const [typeListOpen, setTypeListOpen] = useState(false);
-  const [popupBounds, setPopupBounds] = useState<{ bottom: number }>({ bottom: 0 });
-  const popupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setKeptChanges(new Set(postCall.changes.filter(c => !c.check).map(c => c.key)));
@@ -88,11 +86,30 @@ export function PostCallCard({ postCall, act }: { postCall: PostCallData; act: A
     }
   };
 
+  // A dropdown closes on a click anywhere else in the island, and when the pointer leaves the island for a moment (the
+  // island never takes focus, so it cannot see clicks in other apps the way the Mac app's global monitor does).
+  const dropdownOpen = openOptions !== null || typeListOpen;
   useEffect(() => {
-    const click = () => { setOpenOptions(null); setTypeListOpen(false); };
-    if (openOptions || typeListOpen) document.addEventListener("click", click);
-    return () => document.removeEventListener("click", click);
-  }, [openOptions, typeListOpen]);
+    if (!dropdownOpen) return;
+    const close = () => { setOpenOptions(null); setTypeListOpen(false); };
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const leave = () => { timer = setTimeout(close, 600); };
+    const enter = () => clearTimeout(timer);
+    document.addEventListener("click", close);
+    document.documentElement.addEventListener("mouseleave", leave);
+    document.documentElement.addEventListener("mouseenter", enter);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("click", close);
+      document.documentElement.removeEventListener("mouseleave", leave);
+      document.documentElement.removeEventListener("mouseenter", enter);
+    };
+  }, [dropdownOpen]);
+
+  // The window must be as tall as the dropdown reaches, or the end of it is cut off.
+  useEffect(() => {
+    if (openOptions === null) onPopupExtent(null);
+  }, [openOptions, onPopupExtent]);
 
   const handleApprove = () => {
     const kept = postCall.changes.filter(c => keptChanges.has(c.key));
@@ -208,7 +225,7 @@ export function PostCallCard({ postCall, act }: { postCall: PostCallData; act: A
       </div>
 
       {openOptions && optionsAnchor && postCall.changes.find(c => c.key === openOptions) && (
-        <OptionsPopup ref={popupRef} anchor={optionsAnchor} change={postCall.changes.find(c => c.key === openOptions)!} editedValues={editedValues} onPick={pick} onBoundsChange={setPopupBounds} />
+        <OptionsPopup anchor={optionsAnchor} change={postCall.changes.find((c) => c.key === openOptions)!} editedValues={editedValues} onPick={pick} onExtent={onPopupExtent} />
       )}
     </>
   );
@@ -249,20 +266,36 @@ function MeetingRow({ meeting, onAdd, onReview }: { meeting: { state: string; wh
   );
 }
 
-const OptionsPopup = ({ anchor, change, editedValues, onPick, onBoundsChange }: { ref: any; anchor: { x: number; y: number; height: number }; change: PostCallChange; editedValues: Record<string, string>; onPick: (v: string, c: PostCallChange) => void; onBoundsChange: (b: { bottom: number }) => void }) => {
-  const selected = editedValues[change.key] ? editedValues[change.key].split(";").map(v => v.trim()) : [];
-  const ref = useRef<HTMLDivElement>(null);
+const POPUP_WIDTH = 200;
 
-  useEffect(() => {
-    if (ref.current) {
-      const rect = ref.current.getBoundingClientRect();
-      onBoundsChange({ bottom: rect.bottom });
-    }
-  }, [onBoundsChange]);
+/** The values picked now: what the rep chose, else what was extracted (`;`-joined for a checkbox list). */
+function pickedValues(change: PostCallChange, edited: string | undefined): string[] {
+  const raw = edited ?? change.value;
+  return change.multiple ? raw.split(";").map((v) => v.trim()).filter(Boolean) : [raw];
+}
+
+function OptionsPopup({ anchor, change, editedValues, onPick, onExtent }: {
+  anchor: { x: number; y: number; height: number };
+  change: PostCallChange;
+  editedValues: Record<string, string>;
+  onPick: (value: string, change: PostCallChange) => void;
+  onExtent: (bottom: number | null) => void;
+}) {
+  const selected = pickedValues(change, editedValues[change.key]);
+  const ref = useRef<HTMLDivElement>(null);
+  // Inside the island's width, whatever the row it opens from.
+  const left = Math.max(8, Math.min(anchor.x - 8, document.documentElement.clientWidth - POPUP_WIDTH - 8));
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    onExtent(Math.ceil(el.getBoundingClientRect().bottom) + 8);
+    return () => onExtent(null);
+  }, [change.key, change.options.length, onExtent]);
 
   return (
-    <div ref={ref} className="options-popup" style={{ top: `${anchor.y + anchor.height + 8}px`, left: `${anchor.x - 8}px` }} onClick={e => e.stopPropagation()}>
-      {change.options.map(opt => (
+    <div ref={ref} className="options-popup" style={{ top: `${anchor.y + anchor.height + 8}px`, left: `${left}px`, width: POPUP_WIDTH }} onClick={(e) => e.stopPropagation()}>
+      {change.options.map((opt) => (
         <button key={opt.value} type="button" className="option-row" data-selected={selected.includes(opt.value)} onClick={() => onPick(opt.value, change)}>
           <Check size={10} />
           <span>{opt.label}</span>
@@ -270,4 +303,4 @@ const OptionsPopup = ({ anchor, change, editedValues, onPick, onBoundsChange }: 
       ))}
     </div>
   );
-};
+}

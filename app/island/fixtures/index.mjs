@@ -62,7 +62,7 @@ const postCallChanges = [
     object: "contact",
     from: "Manager",
     to: "Director of Sales",
-    value: "Director of Sales",
+    value: "director",
     options: [
       { value: "director", label: "Director" },
       { value: "manager", label: "Manager" },

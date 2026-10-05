@@ -39,6 +39,16 @@ jobs:
       # Real windows on the Windows runner: the island's layout, the call-audio pipeline, a whole call through the shell.
       - name: Island checks in real windows
         run: npm run test:island
+      # What a rep notices first: a real mouse click on the island must act at once and must not take focus from the call.
+      - name: Real click on the island does not take focus
+        run: npm run test:focus
+      - name: Keep the island screenshots from the Windows run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: island-screenshots-windows
+          path: app/test/out/*.png
+          if-no-files-found: ignore
       - name: Call-audio pipeline
         run: npm run test:loopback
       - name: A whole call through the shell

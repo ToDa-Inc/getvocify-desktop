@@ -439,3 +439,17 @@ Branch work starts from a clean `feat/electron` cut from `origin/integrate/islan
 3. **Measure on the AnyDesk PC** with a real Meet and a HubSpot call: audio quality, timing with the window behind the call, memory, CPU.
 4. **Only if timing or capture fails**, build the native helper and move the socket and transcript into Electron main using the TypeScript core already written. Nothing built so far is wasted.
 5. **If memory is the blocker on managed PCs**, build a minimal WebView2 host and compare on the same machine.
+
+### Added 2026-10-05: running, updating, looks, weight, permissions
+
+Documented in Electron 33.4.11's own type definitions:
+- `systemPreferences.getMediaAccessStatus('microphone' | 'camera' | 'screen')` works on Windows and macOS. On Windows 10 and later it reflects the global setting that controls microphone and camera access for all desktop apps, and always returns granted for screen.
+- `systemPreferences.askForMediaAccess` is macOS only. Windows has no per-app prompt.
+- System-audio loopback (`audio: 'loopback'`) is, in this version, supported only on Windows. On the Mac, Electron cannot capture the call's audio alone, which is why a Swift helper would stay.
+- Electron's built-in updater uses Squirrel on Windows.
+
+Present in this repo: `electron-builder` 25.1.8 with NSIS, MSI and AppX targets. Not present: `electron-updater`, the usual updater that works with electron-builder.
+
+Measured (`app/test/perf-dashboard.mjs`, dashboard login page, not a signed-in session): a dashboard window adds roughly 30 to 70 MB of renderer memory and gives it back when the window is closed (344 MB with it open, 275 MB after closing, harness windows included). The base of Browser, GPU and Utility processes is about 170 to 200 MB and does not shrink.
+
+Levers that work: create the dashboard window on demand and destroy it when closed. Levers that did not: the four Chromium switches tested earlier. Not measured: a signed-in dashboard, and WebView2.

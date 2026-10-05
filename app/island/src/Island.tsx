@@ -3,7 +3,7 @@ import { cornerRadius, earWidth, islandSize } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, formatElapsed, helpText, turnParts } from "./helpers.ts";
 import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Pause, Play, Sparkle, Waveform } from "./icons.tsx";
-import type { Assist, IslandAction, IslandState, Turn, TypeMenuRow, TypeMenuView } from "./types.ts";
+import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuRow, type TypeMenuView } from "./types.ts";
 
 type Act = (action: IslandAction) => void;
 
@@ -59,7 +59,7 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
         <div
           className="topbar"
           style={{ height: bar, padding: open ? "0 6px" : 0 }}
-          title={helpText({ kind, open, stage: state.postCall?.stage ?? null, crmName: state.postCall?.crmName ?? null, pending: state.postCall?.pending ?? 0 })}
+          title={helpText({ kind, open, stage: state.postCall?.stage ?? null, crmName: state.postCall ? postCallCrmName(state.postCall) : null, pending: state.postCall ? postCallPending(state.postCall) : 0 })}
           onClick={() => act({ name: "toggle" })}
         >
           <div className="ear ear-left" style={{ width: ear, paddingLeft: !open && kind !== "recording" ? 12 : 14 }}>
@@ -198,7 +198,7 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
       return <OpenArrow open={open} style={{ opacity: lifted || open ? 1 : 0.8 }} />;
     case "postCall":
       if (open) return <OpenArrow open />;
-      return state.postCall && state.postCall.pending > 0 ? <PendingBadge count={state.postCall.pending} /> : null;
+      return state.postCall && postCallPending(state.postCall) > 0 ? <PendingBadge count={postCallPending(state.postCall)} /> : null;
   }
 }
 

@@ -1,7 +1,7 @@
 import { StopGrace } from "../../core/stopGrace.ts";
 import { TypeMenu } from "../../core/typeMenu.ts";
 import { WaveSide } from "../../core/waveSide.ts";
-import type { Assist, Geometry, IslandAction, IslandState, Turn } from "../../island/src/types.ts";
+import type { Assist, Geometry, IslandAction, IslandState, PostCallData, Turn } from "../../island/src/types.ts";
 
 /**
  * Drives the island with scripted calls, so every state can be tried by hand before the real recorder,
@@ -29,6 +29,11 @@ const SCRIPT: { you: boolean; label: string | null; text: string }[] = [
   { you: false, label: "Marta Ruiz", text: "And how long would that take, realistically? We cannot be offline for more than a day." },
   { you: true, label: null, text: "Most teams are live within a week and never lose a day of work." },
 ];
+
+const postCallData = (stage: PostCallData["stage"], extra: Partial<PostCallData> = {}): PostCallData => ({
+  stage, memoId: "demo-memo", contactName: "Marta Ruiz", changes: [], canApprove: false, applied: null, undoUntil: null, note: null,
+  email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, ...extra,
+});
 
 const ANSWER: Assist = {
   label: "Price objection",
@@ -318,12 +323,12 @@ export class DemoController {
   private finishStop(): void {
     this.grace = null;
     this.cancel("countdown");
-    this.set({ mode: { kind: "postCall" }, expanded: false, countdown: null, postCall: { stage: "writing", pending: 0, crmName: "HubSpot" } });
+    this.set({ mode: { kind: "postCall" }, expanded: false, countdown: null, postCall: postCallData("writing") });
     this.log("Call over: the memo is written, then the CRM update (closed states only; the card is not ported).");
     this.after("post", 2.5, () => {
-      this.set({ postCall: { stage: "ready", pending: 3, crmName: "HubSpot" } });
+      this.set({ postCall: postCallData("ready", { email: { state: "ready", to: null, subject: null, preview: null }, meeting: { state: "pending", when: null } }) });
       this.after("post", 6, () => {
-        this.set({ postCall: { stage: "done", pending: 0, crmName: "HubSpot" } });
+        this.set({ postCall: postCallData("done", { applied: 4 }) });
         this.after("post", 3, () => this.reset());
       });
     });

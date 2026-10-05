@@ -33,7 +33,66 @@ export type Countdown = { total: number; remaining: number; runningSince: number
 
 export type Geometry = { notchWidth: number; barHeight: number; screenHeight: number };
 
-export type PostCallClosed = { stage: "writing" | "ready" | "applying" | "done" | "review" | "internal"; pending: number; crmName: string | null };
+export type PostCallStage = "writing" | "ready" | "applying" | "done" | "review" | "internal";
+
+export type PostCallOption = { value: string; label: string };
+
+export type PostCallChange = {
+  /** `object_type:field_name`, the key Vocify's review omits fields by. */
+  key: string;
+  label: string;
+  /** The record it lands on: contact, company, deal or other. */
+  object: string;
+  /** As the rep reads it; null when the CRM has nothing. */
+  from: string | null;
+  to: string;
+  /** What gets written: the option value(s), ";"-joined for a checkbox list. */
+  value: string;
+  /** Picked from in place; empty for free text, which is edited in Vocify. */
+  options: PostCallOption[];
+  multiple: boolean;
+  /** Scored under "needs review": shown unticked, or left to the review in Vocify. */
+  check: boolean;
+};
+
+export type PostCallEmail = { state: "writing" | "ready" | "skipped" | "sent"; to: string | null; subject: string | null; preview: string | null };
+export type PostCallMeeting = { state: "pending" | "check" | "added"; when: string | null };
+export type PostCallType = { key: string; label: string; options: { key: string; label: string }[] };
+
+/** What the dashboard says about the call that just ended (the Swift `PostCall`). A part that doesn't apply is null. */
+export type PostCallData = {
+  stage: PostCallStage;
+  memoId: string;
+  contactName: string | null;
+  changes: PostCallChange[];
+  canApprove: boolean;
+  applied: number | null;
+  /** ms since the epoch: the write is held until then so it can be undone. */
+  undoUntil: number | null;
+  note: string | null;
+  email: PostCallEmail | null;
+  meeting: PostCallMeeting | null;
+  notes: boolean;
+  /** The note's first lines, plain text. */
+  summary: string | null;
+  /** The connected CRM's name; the card says "the CRM" when it isn't known. */
+  crm: string | null;
+  offerStopEmails: boolean;
+  type: PostCallType | null;
+};
+
+/** What still needs the rep; the count on the closed island. */
+export function postCallPending(data: PostCallData): number {
+  return (
+    (data.stage === "ready" || data.stage === "review" ? 1 : 0) +
+    (data.email?.state === "ready" ? 1 : 0) +
+    (data.meeting && data.meeting.state !== "added" ? 1 : 0)
+  );
+}
+
+export function postCallCrmName(data: PostCallData): string {
+  return data.crm ?? "the CRM";
+}
 
 export type IslandState = {
   mode: Mode;
@@ -51,7 +110,7 @@ export type IslandState = {
   liveHelp: boolean | null;
   countdown: Countdown | null;
   geometry: Geometry;
-  postCall: PostCallClosed | null;
+  postCall: PostCallData | null;
   /** "vibrancy": the window blurs what is behind it (macOS). "opaque": no blur available, so the glass is denser. */
   material: "vibrancy" | "opaque";
   reduceMotion: boolean;
@@ -67,11 +126,18 @@ export type IslandAction =
   | { name: "resume" }
   | { name: "pickCallType"; key: string | null }
   | { name: "toggleLiveHelp" }
-  | { name: "pointer"; inside: boolean };
+  | { name: "pointer"; inside: boolean }
+  /** A choice in the after-call card; `type` and `details` go to the dashboard unchanged (approve, undo, review, setType, dismiss...). */
+  | { name: "postCall"; type: string; details?: Record<string, unknown> };
 
 export type IslandHost = {
   onState(cb: (state: IslandState) => void): () => void;
   /** Voice levels arrive on their own channel so they never trigger a render. */
   onLevels(cb: (levels: Levels) => void): () => void;
   act(action: IslandAction): void;
+  /**
+   * The after-call card is as tall as its content, which only the page can measure (fonts differ by OS).
+   * The page reports the island's size in px and the window follows.
+   */
+  resize(size: { width: number; height: number }): void;
 };

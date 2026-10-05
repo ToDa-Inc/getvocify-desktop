@@ -50,6 +50,11 @@ const typeMenu = {
   ],
 };
 
+const postCall = (stage, extra = {}) => ({
+  stage, memoId: "memo-1", contactName: "Marta Ruiz", changes: [], canApprove: false, applied: null, undoUntil: null, note: null,
+  email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, ...extra,
+});
+
 const answer = {
   label: "Price objection",
   isQuestion: false,
@@ -95,9 +100,9 @@ export const fixtures = [
   { name: "stopped-open-manual", state: { mode: { kind: "stopped", title: "Recording stopped" }, expanded: true, clock: clock(754, { pausedAt: NOW }), countdown: { total: 5, remaining: 3, runningSince: null } }, expect: { width: 380, height: 88 } },
   { name: "stopped-open-hangup", state: { mode: { kind: "stopped", title: "Call ended" }, expanded: true, clock: clock(1810, { pausedAt: NOW }) }, expect: { width: 380, height: 88 } },
   // post-call (closed only in this slice)
-  { name: "postcall-closed-writing", state: { mode: { kind: "postCall" }, postCall: { stage: "writing", pending: 0, crmName: "HubSpot" } }, expect: { width: 277, height: 32 } },
-  { name: "postcall-closed-ready-3", state: { mode: { kind: "postCall" }, postCall: { stage: "ready", pending: 3, crmName: "HubSpot" } }, expect: { width: 277, height: 32 } },
-  { name: "postcall-closed-done", state: { mode: { kind: "postCall" }, postCall: { stage: "done", pending: 0, crmName: "HubSpot" } }, expect: { width: 277, height: 32 } },
+  { name: "postcall-closed-writing", state: { mode: { kind: "postCall" }, postCall: postCall("writing") }, expect: { width: 277, height: 32 } },
+  { name: "postcall-closed-ready-3", state: { mode: { kind: "postCall" }, postCall: postCall("ready", { email: { state: "ready", to: "marta@acme.com", subject: "Next steps", preview: "Hi Marta, thanks for the time today" }, meeting: { state: "pending", when: "Thursday 10:00" } }) }, expect: { width: 277, height: 32 } },
+  { name: "postcall-closed-done", state: { mode: { kind: "postCall" }, postCall: postCall("done", { applied: 4 }) }, expect: { width: 277, height: 32 } },
 ].map((fixture) => ({ ...fixture, state: { ...base, ...fixture.state } }));
 
 // Interactions: a click must send exactly this action, and a button inside the top bar must not also toggle it.

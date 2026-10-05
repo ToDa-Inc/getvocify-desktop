@@ -108,8 +108,12 @@ for (const fixture of fixtures) {
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);
   }
   if (errors.length) problems.push(`console errors: ${errors.join(" | ")}`);
-  const image = await win.webContents.capturePage();
-  const png = image.toPNG();
+  // A hidden window can hand back a blank frame the first time; ask again before calling it empty.
+  let png = (await win.webContents.capturePage()).toPNG();
+  for (let attempt = 0; attempt < 3 && png.length < 2000; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    png = (await win.webContents.capturePage()).toPNG();
+  }
   if (png.length < 2000) problems.push("screenshot is empty");
   writeFileSync(join(out, `${fixture.name}.png`), png);
   report.push({ name: fixture.name, measured: m, problems });

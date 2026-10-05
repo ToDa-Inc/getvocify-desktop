@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>island preview</title>
+<style>
+body{margin:0;background:#101114;color:#9aa0aa;font:11px -apple-system,sans-serif;padding:12px}
+.grid{display:flex;flex-wrap:wrap;gap:14px}
+figure{margin:0}figcaption{padding:3px 0}
+iframe{border:1px solid #2a2d34;display:block}
+</style></head><body><div class="grid" id="grid"></div>
+<script src="./fixtures.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const only = params.get("only");
+const scale = Number(params.get("scale")) || 1;
+for (const f of (params.get("check") ? [] : window.__FIXTURES)) {
+  if (only && !f.name.startsWith(only)) continue;
+  const fig = document.createElement("figure");
+  fig.style.zoom = scale;
+  fig.innerHTML = `<figcaption>${f.name}</figcaption><iframe src="frame.html?fixture=${f.name}" width="${Math.max(520, f.expect.width + 60)}" height="${f.expect.height + 40}"></iframe>`;
+  document.getElementById("grid").appendChild(fig);
+}
+</script>
+<script src="./check.js"></script></body></html>

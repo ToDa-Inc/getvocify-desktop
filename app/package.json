@@ -1,0 +1,20 @@
+{
+  "name": "vocify-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "island:build": "node island/build.mjs",
+    "island:typecheck": "tsc -p island/tsconfig.json --noEmit",
+    "test:core": "node --test core/*.test.ts",
+    "test:island": "node island/build.mjs && electron test/island-shots.mjs"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "esbuild": "^0.25.0"
+  }
+}

@@ -1,0 +1,54 @@
+import type { Geometry, Mode } from "./types.ts";
+
+export const EAR = 82;
+/** Just room for the mark, so the idle island barely widens the camera housing. */
+export const IDLE_EAR = 36;
+/** Room for an app icon or a small record dot, no more. */
+export const CALL_EAR = 46;
+export const POST_CALL_WIDTH = 420;
+
+export const COLLAPSED_RADIUS = 12;
+export const OPEN_RADIUS = 22;
+export const OTHER_OPEN_RADIUS = 18;
+
+type Kind = Mode["kind"];
+
+const gap = (g: Geometry) => Math.max(g.notchWidth, 12);
+
+export function earWidth(kind: Kind, open: boolean): number {
+  if (open) return EAR;
+  switch (kind) {
+    case "idle":
+      return IDLE_EAR;
+    case "call":
+    case "postCall":
+      return CALL_EAR;
+    default:
+      return EAR;
+  }
+}
+
+export type Size = { width: number; height: number };
+
+/** The island's shape in px. Same numbers as `IslandGeometry.size` in MeetingPill.swift. */
+export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody = 44): Size {
+  const closed = { width: gap(g) + earWidth(kind, false) * 2, height: g.barHeight };
+  const wide = (min: number) => Math.max(gap(g) + EAR * 2, min);
+  switch (kind) {
+    case "idle":
+    case "call":
+    case "stopped":
+      return open ? { width: wide(380), height: g.barHeight + 56 } : closed;
+    case "recording":
+      return open ? { width: wide(460), height: Math.min(400, Math.round(g.screenHeight * 0.5)) } : closed;
+    case "postCall":
+      return open ? { width: wide(POST_CALL_WIDTH), height: g.barHeight + postCallBody } : closed;
+    case "starting":
+      return closed;
+  }
+}
+
+export function cornerRadius(kind: Kind, open: boolean): number {
+  if (!open) return COLLAPSED_RADIUS;
+  return kind === "recording" ? OPEN_RADIUS : OTHER_OPEN_RADIUS;
+}

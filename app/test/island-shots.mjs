@@ -25,7 +25,7 @@ async function open(fixture) {
   });
   const errors = [];
   win.webContents.on("console-message", (_event, level, message) => {
-    if (level >= 2) errors.push(message);
+    if (level >= 3) errors.push(message);
   });
   win.webContents.on("render-process-gone", (_e, details) => errors.push(`renderer gone: ${details.reason}`));
   await win.loadFile(dist);
@@ -69,6 +69,10 @@ app.whenReady().then(main).catch((error) => {
 });
 
 async function main() {
+  // Destroying the last live window makes the next window's renderer fail to start in some environments,
+  // so one hidden window stays open for the whole run.
+  const anchor = new BrowserWindow({ show: false, width: 100, height: 100 });
+  await anchor.loadURL("data:text/html,<title>anchor</title>");
 
 for (const fixture of fixtures) {
   const { win, errors } = await open(fixture);

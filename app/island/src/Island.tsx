@@ -3,6 +3,7 @@ import { cornerRadius, earWidth, islandSize } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, formatElapsed, helpText, turnParts } from "./helpers.ts";
 import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Pause, Play, Sparkle, Waveform } from "./icons.tsx";
+import { PostCallCard } from "./PostCallCard.tsx";
 import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuRow, type TypeMenuView } from "./types.ts";
 
 type Act = (action: IslandAction) => void;
@@ -22,13 +23,37 @@ function useNow(intervalMs: number, active: boolean): number {
 export function Island({ state, act }: { state: IslandState; act: Act }) {
   const kind = state.mode.kind;
   const open = state.expanded && kind !== "starting";
-  const size = islandSize(state.geometry, kind, open);
+  // The after-call card is as tall as its content, which only the page can measure (fonts differ by OS).
+  const [cardHeight, setCardHeight] = useState<number | null>(null);
+  const column = useRef<HTMLDivElement>(null);
+  const natural = kind === "postCall" && open;
+  const shape = islandSize(state.geometry, kind, open);
+  const size = natural && cardHeight !== null ? { width: shape.width, height: cardHeight } : shape;
   const radius = cornerRadius(kind, open);
   const [hovered, setHovered] = useState(false);
   const lifted = hovered && !open && kind !== "starting";
   const ear = earWidth(kind, open);
   const bar = state.geometry.barHeight;
   const isCall = kind === "call" || kind === "postCall";
+
+  // Its column has no fixed height while the card is open, so what is measured is the content itself.
+  useLayoutEffect(() => {
+    const el = column.current;
+    if (!natural || !el) return;
+    const measure = () => setCardHeight(Math.ceil(el.getBoundingClientRect().height));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [natural]);
+
+  // The window follows the island: reported here, because only the page knows the height.
+  useEffect(() => {
+    if (!natural || cardHeight === null) return;
+    const reported = { width: size.width, height: cardHeight };
+    if (window.vocifyIsland) window.vocifyIsland.resize(reported);
+    else (window.__islandSizes ??= []).push(reported);
+  }, [natural, cardHeight, size.width]);
 
   const style = {
     width: size.width,
@@ -55,7 +80,7 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
       }}
     >
       <Background open={open} />
-      <div className="column">
+      <div className="column" ref={column}>
         <div
           className="topbar"
           style={{ height: bar, padding: open ? "0 6px" : 0 }}
@@ -212,8 +237,7 @@ function Body({ state, act }: { state: IslandState; act: Act }) {
     case "stopped":
       return <StoppedMenu title={mode.title} act={act} />;
     case "postCall":
-      // The after-call card is not ported yet; it lands in the next slice of this branch.
-      return null;
+      return state.postCall ? <PostCallCard postCall={state.postCall} act={act} /> : null;
     default:
       return <IdleMenu ready={state.recorderReady} act={act} />;
   }

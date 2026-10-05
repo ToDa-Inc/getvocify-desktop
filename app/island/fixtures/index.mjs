@@ -55,6 +55,73 @@ const postCall = (stage, extra = {}) => ({
   email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, ...extra,
 });
 
+const postCallChanges = [
+  {
+    key: "contact:title",
+    label: "Title",
+    object: "contact",
+    from: "Manager",
+    to: "Director of Sales",
+    value: "Director of Sales",
+    options: [
+      { value: "director", label: "Director" },
+      { value: "manager", label: "Manager" },
+      { value: "individual_contributor", label: "Individual Contributor" },
+    ],
+    multiple: false,
+    check: false,
+  },
+  {
+    key: "contact:interests",
+    label: "Interests",
+    object: "contact",
+    from: null,
+    to: "CRM;Sales automation",
+    value: "CRM;Sales automation",
+    options: [
+      { value: "crm", label: "CRM" },
+      { value: "sales_automation", label: "Sales automation" },
+      { value: "analytics", label: "Analytics" },
+      { value: "reporting", label: "Reporting" },
+    ],
+    multiple: true,
+    check: false,
+  },
+  {
+    key: "contact:needs_review",
+    label: "Something unclear",
+    object: "contact",
+    from: null,
+    to: "Budget approval pending",
+    value: "Budget approval pending",
+    options: [],
+    multiple: false,
+    check: true,
+  },
+  {
+    key: "company:industry",
+    label: "Industry",
+    object: "company",
+    from: "Manufacturing",
+    to: "Software",
+    value: "Software",
+    options: [],
+    multiple: false,
+    check: false,
+  },
+  {
+    key: "deal:stage",
+    label: "Stage",
+    object: "deal",
+    from: "Qualification",
+    to: "Needs Analysis",
+    value: "Needs Analysis",
+    options: [],
+    multiple: false,
+    check: false,
+  },
+];
+
 const answer = {
   label: "Price objection",
   isQuestion: false,
@@ -99,10 +166,21 @@ export const fixtures = [
   // stopped
   { name: "stopped-open-manual", state: { mode: { kind: "stopped", title: "Recording stopped" }, expanded: true, clock: clock(754, { pausedAt: NOW }), countdown: { total: 5, remaining: 3, runningSince: null } }, expect: { width: 380, height: 88 } },
   { name: "stopped-open-hangup", state: { mode: { kind: "stopped", title: "Call ended" }, expanded: true, clock: clock(1810, { pausedAt: NOW }) }, expect: { width: 380, height: 88 } },
-  // post-call (closed only in this slice)
+  // post-call (closed only in previous slice)
   { name: "postcall-closed-writing", state: { mode: { kind: "postCall" }, postCall: postCall("writing") }, expect: { width: 277, height: 32 } },
   { name: "postcall-closed-ready-3", state: { mode: { kind: "postCall" }, postCall: postCall("ready", { email: { state: "ready", to: "marta@acme.com", subject: "Next steps", preview: "Hi Marta, thanks for the time today" }, meeting: { state: "pending", when: "Thursday 10:00" } }) }, expect: { width: 277, height: 32 } },
   { name: "postcall-closed-done", state: { mode: { kind: "postCall" }, postCall: postCall("done", { applied: 4 }) }, expect: { width: 277, height: 32 } },
+  // post-call open
+  { name: "postcall-open-writing", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("writing") }, expect: { width: 420, height: 200 }, fit: true },
+  { name: "postcall-open-ready", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 4), canApprove: true }) }, expect: { width: 420, height: 380 }, fit: true },
+  { name: "postcall-open-ready-all-changes", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges, canApprove: true }) }, expect: { width: 420, height: 450 }, fit: true },
+  { name: "postcall-open-applying", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("applying", { undoUntil: NOW + 3500 }) }, expect: { width: 420, height: 200 }, fit: true },
+  { name: "postcall-open-done", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("done", { applied: 4 }) }, expect: { width: 420, height: 200 }, fit: true },
+  { name: "postcall-open-review", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("review") }, expect: { width: 420, height: 200 }, fit: true },
+  { name: "postcall-open-internal", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("internal") }, expect: { width: 420, height: 200 }, fit: true },
+  { name: "postcall-open-email-tab", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, email: { state: "ready", to: "marta@acme.com", subject: "Next steps", preview: "Hi Marta, thanks for the time today. Let's move forward with the pilot." } }) }, expect: { width: 420, height: 350 }, fit: true, steps: [".postcall-tab:nth-child(2)"] },
+  { name: "postcall-open-notes-tab", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, summary: "Discussed CRM migration timeline. Team concerned about data migration and costs. Marta interested in pilot next quarter.", notes: true }) }, expect: { width: 420, height: 300 }, fit: true, steps: [".postcall-tab:nth-child(2)"] },
+  { name: "postcall-open-nothing-sure", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [], canApprove: false }) }, expect: { width: 420, height: 220 }, fit: true },
 ].map((fixture) => ({ ...fixture, state: { ...base, ...fixture.state } }));
 
 // Interactions: a click must send exactly this action, and a button inside the top bar must not also toggle it.

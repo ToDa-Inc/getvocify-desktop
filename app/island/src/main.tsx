@@ -12,6 +12,7 @@ declare global {
     __setIslandState?: (state: IslandState) => void;
     __setIslandLevels?: (levels: Levels) => void;
     __islandActions?: unknown[];
+    __islandSizes?: { width: number; height: number }[];
   }
 }
 

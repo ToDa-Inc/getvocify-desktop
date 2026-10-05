@@ -17,7 +17,8 @@ const frame = () => new Promise((resolve) => setTimeout(resolve, 60));
 
 async function open(fixture) {
   const width = Math.max(520, fixture.expect.width + 60);
-  const height = fixture.expect.height + 40;
+  // A card that is as tall as its content has no fixed expected height: give its window room.
+  const height = fixture.fit ? 760 : fixture.expect.height + 40;
   const win = new BrowserWindow({
     show: false, width, height, useContentSize: true, frame: false, resizable: false,
     backgroundColor: "#27324a",
@@ -34,7 +35,8 @@ async function open(fixture) {
   const started = await win.webContents.executeJavaScript(`new Promise(r=>{let n=0;const t=()=>window.__setIslandState?r(true):++n>300?r(false):setTimeout(t,10);t()})`);
   if (!started) errors.push("island script never started (window.__setIslandState missing)");
   if (started) await win.webContents.executeJavaScript(`window.__setIslandState(${JSON.stringify(fixture.state)}); true`);
-  await frame();
+  // A card sized from its content animates to its height after it is measured.
+  await (fixture.fit ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
   return { win, errors };
 }
 
@@ -50,6 +52,11 @@ const measure = (win) => win.webContents.executeJavaScript(`(() => {
   const clipped = t ? bubbles.filter((b) => b.left < r.left - 0.5 || b.right > r.right + 0.5).length : 0;
   return {
     width: Math.round(r.width), height: Math.round(r.height),
+    card: (() => {
+      const card = document.querySelector('.postcall-card');
+      if (!card) return null;
+      return { overflow: card.scrollHeight - card.clientHeight, cardHeight: Math.round(card.getBoundingClientRect().height), bar: document.querySelector('.topbar').getBoundingClientRect().height };
+    })(),
     inViewport: r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
     overflow,
     atBottom: t ? t.scrollHeight - t.scrollTop - t.clientHeight < 2 : null,
@@ -76,18 +83,26 @@ async function main() {
 
 for (const fixture of fixtures) {
   const { win, errors } = await open(fixture);
+  const problems = [];
   for (const selector of fixture.steps ?? []) {
-    await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).click(); true`);
-    await frame();
+    const clicked = await win.webContents.executeJavaScript(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`);
+    if (!clicked) problems.push(`step target missing: ${selector}`);
+    await (fixture.fit ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
   }
   const m = await measure(win);
-  const problems = [];
   if (m.missing) problems.push("island did not render");
   else {
-    if (m.width !== fixture.expect.width || m.height !== fixture.expect.height) {
+    if (m.width !== fixture.expect.width || (!fixture.fit && m.height !== fixture.expect.height)) {
       problems.push(`size ${m.width}x${m.height}, expected ${fixture.expect.width}x${fixture.expect.height}`);
     }
     if (!m.inViewport) problems.push("island outside its window");
+    if (fixture.fit) {
+      if (!m.card) problems.push("no after-call card rendered");
+      else {
+        if (m.card.overflow > 1) problems.push(`card content ${m.card.overflow}px taller than its box`);
+        if (Math.abs(m.height - (m.card.bar + m.card.cardHeight)) > 1) problems.push(`island ${m.height}px but bar + card is ${m.card.bar + m.card.cardHeight}px`);
+      }
+    }
     if (m.overflow.length) problems.push(`content wider than its box: ${m.overflow.join("; ")}`);
     if (m.atBottom === false) problems.push("transcript not scrolled to the latest line");
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);

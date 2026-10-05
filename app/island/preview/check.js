@@ -48,6 +48,14 @@
       }
       const topbar = doc.querySelector(".topbar").getBoundingClientRect();
       if (Math.abs(topbar.height - fixture.state.geometry.barHeight) > 0.5) problems.push(`top bar ${topbar.height}px, expected ${fixture.state.geometry.barHeight}px`);
+      // Check for fit: true fixtures (post-call card)
+      if (fixture.fit) {
+        const body = doc.querySelector(".postcall-card, .open-island");
+        if (body) {
+          const bodyOverflow = body.scrollHeight - body.clientHeight;
+          if (bodyOverflow > 1) problems.push(`body overflow ${bodyOverflow}px (fit: true but content exceeds available height)`);
+        }
+      }
     }
     report.push({ name: fixture.name, problems });
     if (problems.length) failures.push(`${fixture.name}: ${problems.join("; ")}`);

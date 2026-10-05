@@ -1,4 +1,5 @@
 import { build } from "esbuild";
+import { copyFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,9 +19,16 @@ await build({
 // Preloads run in a sandboxed context that only loads CommonJS.
 await build({
   ...common,
-  entryPoints: { preload: join(here, "src/preload.ts"), "controls-preload": join(here, "src/controls-preload.ts") },
+  entryPoints: {
+    preload: join(here, "src/preload.ts"),
+    "controls-preload": join(here, "src/controls-preload.ts"),
+    "loopback-preload": join(here, "src/loopback/loopback-preload.ts"),
+  },
   platform: "node",
   format: "cjs",
   target: "node20",
   outExtension: { ".js": ".cjs" },
 });
+
+// The call-audio window loads these three files from next to the bundle.
+for (const file of ["loopback-page.html", "loopback-page.js", "pcm-worklet.js"]) copyFileSync(join(here, "src/loopback", file), join(dist, file));

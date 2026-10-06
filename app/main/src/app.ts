@@ -52,6 +52,8 @@ export type AppHandle = {
   permissions(): Promise<unknown>;
   /** True when a restart would interrupt nothing: no recording and no call update on screen. */
   canInstallUpdate(): boolean;
+  /** What "Check for updates" in the tray menu does (set by the updater, which starts after the app). */
+  onCheckForUpdates(fn: () => void): void;
   /** Writes a line to the app's log file. */
   log(message: string): void;
   quit(): void;
@@ -268,6 +270,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     fitTimer = setTimeout(() => island.setBounds(frameFor(target.width, target.height)), 420);
   };
 
+  let checkForUpdates: (() => void) | null = null;
+  const dashboardHost = (() => {
+    try {
+      return new URL(options.dashboardUrl).hostname || "demo";
+    } catch {
+      return "demo";
+    }
+  })();
   const tray = createTray();
   function pushState(state: IslandState): void {
     if (island.isDestroyed()) return;
@@ -419,6 +429,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     });
   }
 
+  log(`app ${app.getVersion()}, dashboard ${options.dashboardUrl}`);
   log(`dashboard told the platform is ${options.reportedPlatform ?? platform}`);
   log(`started: island ${Math.round(initial.width)}x${initial.height}, notch ${Math.round(placement.geometry.notchWidth)}px, bar ${placement.geometry.barHeight}px`);
   return {
@@ -430,6 +441,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     iconFor,
     permissions: () => bridge("permissions:status", {}),
     canInstallUpdate: () => !controller.isListening && controller.state.mode.kind !== "recording" && controller.state.mode.kind !== "stopped" && controller.state.postCall === null,
+    onCheckForUpdates: (fn) => void (checkForUpdates = fn),
     log,
     quit: () => app.quit(),
   };
@@ -448,12 +460,13 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   function buildTrayMenu(state: IslandState): Menu {
     return Menu.buildFromTemplate(
-      trayItems(state).map((item) => {
+      trayItems(state, `Vocify ${app.getVersion()} · ${dashboardHost}`).map((item) => {
         if (item.id === "separator") return { type: "separator" as const };
         const click = () => {
           if (item.id === "open") dashboard.show();
           else if (item.id === "record") controller.shortcutPressed();
           else if (item.id === "stop") controller.act({ name: "stop" });
+          else if (item.id === "update") checkForUpdates?.();
           else app.quit();
         };
         return { label: item.label, enabled: item.enabled, click };

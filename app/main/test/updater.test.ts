@@ -15,7 +15,7 @@ function setup(canInstall: () => boolean) {
     on: (event: string, listener: (arg: never) => void) => void (handlers[event] = listener),
   } as unknown as UpdateSource;
   const logs: string[] = [];
-  const stop = startUpdater({
+  const updater = startUpdater({
     source,
     canInstallNow: canInstall,
     every: (ms, fn) => {
@@ -25,7 +25,7 @@ function setup(canInstall: () => boolean) {
     },
     log: (m) => logs.push(m),
   });
-  return { source, handlers, timers, calls, logs, stop };
+  return { source, handlers, timers, calls, logs, stop: () => updater.stop(), check: () => updater.check() };
 }
 
 test("it downloads in the background, accepts pre-releases and checks now and then every half hour", () => {
@@ -36,6 +36,12 @@ test("it downloads in the background, accepts pre-releases and checks now and th
   assert.equal(t.calls.checks, 1);
   assert.equal(t.timers[0].ms, CHECK_EVERY_MS);
   t.timers[0].fn();
+  assert.equal(t.calls.checks, 2);
+});
+
+test("a manual check asks now, outside the half-hourly rhythm", () => {
+  const t = setup(() => true);
+  t.check();
   assert.equal(t.calls.checks, 2);
 });
 

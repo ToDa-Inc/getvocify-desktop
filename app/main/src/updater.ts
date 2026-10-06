@@ -8,7 +8,7 @@ export type UpdateSource = {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
   allowPrerelease: boolean;
-  checkForUpdates(): Promise<unknown>;
+  checkForUpdates(): Promise<{ updateInfo?: { version?: string } } | null | undefined>;
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
   on(event: "update-downloaded", listener: (info: { version: string }) => void): unknown;
   on(event: "error", listener: (error: Error) => void): unknown;
@@ -25,7 +25,9 @@ export type UpdaterOptions = {
 export const CHECK_EVERY_MS = 30 * 60_000;
 const RETRY_INSTALL_MS = 30_000;
 
-export function startUpdater(options: UpdaterOptions): () => void {
+export type Updater = { stop(): void; /** Asks now, outside the half-hourly rhythm. */ check(): void };
+
+export function startUpdater(options: UpdaterOptions): Updater {
   const { source, log } = options;
   source.autoDownload = true;
   source.autoInstallOnAppQuit = true;
@@ -54,12 +56,18 @@ export function startUpdater(options: UpdaterOptions): () => void {
 
   const check = () => {
     if (downloaded !== null) return;
-    source.checkForUpdates().catch((error: unknown) => log(`update check failed: ${String(error)}`));
+    source
+      .checkForUpdates()
+      .then((result) => log(`checked: newest published build is ${result?.updateInfo?.version ?? "unknown"}`))
+      .catch((error: unknown) => log(`update check failed: ${String(error)}`));
   };
   check();
   const stopChecking = options.every(CHECK_EVERY_MS, check);
-  return () => {
-    stopChecking();
-    stopWaiting?.();
+  return {
+    check,
+    stop: () => {
+      stopChecking();
+      stopWaiting?.();
+    },
   };
 }

@@ -52,7 +52,7 @@ if (!app.requestSingleInstanceLock()) {
       // Only an installed build updates itself; the demo, the smoke test and a developer's checkout never do.
       if (app.isPackaged && !demo && !smoke && process.env.VOCIFY_NO_UPDATE !== "1") {
         const { default: updater } = await import("electron-updater");
-        startUpdater({
+        const updates = startUpdater({
           source: updater.autoUpdater as unknown as UpdateSource,
           canInstallNow: () => handle?.canInstallUpdate() ?? false,
           every: (ms, fn) => {
@@ -61,6 +61,7 @@ if (!app.requestSingleInstanceLock()) {
           },
           log: (message) => handle?.log(`update: ${message}`),
         });
+        handle?.onCheckForUpdates(updates.check);
       }
       // The smoke test also proves the bundled update library loads, since an installed build depends on it.
       if (smoke) await import("electron-updater");

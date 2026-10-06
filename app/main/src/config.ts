@@ -34,7 +34,10 @@ export function withEntryPath(address: string): string {
   }
 }
 
-/** A Vercel preview of the dashboard is behind a Vercel sign-in; its pages stay inside the app so that sign-in can finish. */
+/** The dashboard's staging site: it has the island bridge the live site lacks, and is behind a Vercel sign-in too. */
+const STAGING_HOST = "staging.getvocify.com";
+
+/** A Vercel preview (or the staging site) of the dashboard is behind a Vercel sign-in; its pages stay inside the app so that sign-in can finish. */
 export function signInHostsFor(dashboardUrl: string): (host: string) => boolean {
   let host = "";
   try {
@@ -42,7 +45,7 @@ export function signInHostsFor(dashboardUrl: string): (host: string) => boolean 
   } catch {
     return () => false;
   }
-  if (!host.endsWith(".vercel.app")) return () => false;
+  if (!host.endsWith(".vercel.app") && host !== STAGING_HOST) return () => false;
   return (candidate) => {
     const h = candidate.toLowerCase();
     return h === "vercel.com" || h.endsWith(".vercel.com");
@@ -63,7 +66,8 @@ export function resolveReportedPlatform(input: { argv: string[]; config: unknown
   const fromConfig = typeof input.config === "object" && input.config !== null ? (input.config as { platform?: unknown }).platform : undefined;
   for (const value of [explicit, fromConfig]) if (value === "win32" || value === "darwin") return value;
   try {
-    return new URL(input.dashboardUrl).hostname === new URL(input.production).hostname ? "darwin" : "win32";
+    const host = new URL(input.dashboardUrl).hostname;
+    return host === new URL(input.production).hostname || host === STAGING_HOST ? "darwin" : "win32";
   } catch {
     return "win32";
   }

@@ -38,6 +38,7 @@ test("a Vercel preview may sign in on vercel.com inside the app; no other dashbo
   assert.equal(preview("sso.vercel.com"), true);
   assert.equal(preview("evil-vercel.com"), false);
   assert.equal(preview("vercel.com.evil.com"), false);
+  assert.equal(signInHostsFor("https://staging.getvocify.com")("vercel.com"), true, "staging is behind the same sign-in");
   const production = signInHostsFor("https://app.getvocify.com");
   assert.equal(production("vercel.com"), false);
   assert.equal(signInHostsFor("garbage")("vercel.com"), false);
@@ -46,6 +47,7 @@ test("a Vercel preview may sign in on vercel.com inside the app; no other dashbo
 test("the production dashboard is told the identity it already understands, anything else is told Windows", () => {
   const base = { argv: [], config: null, production: "https://app.getvocify.com" };
   assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "https://app.getvocify.com/" }), "darwin");
+  assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "https://staging.getvocify.com/" }), "darwin", "staging does not know Windows yet either");
   assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "https://getvocify-abc.vercel.app" }), "win32");
   assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "http://localhost:8080" }), "win32");
   assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "nonsense" }), "win32");

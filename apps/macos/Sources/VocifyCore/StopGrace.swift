@@ -1,7 +1,7 @@
 import Foundation
 
-/// Stopping a recording: it pauses at once and only ends once `seconds` pass without Resume,
-/// so a misclick or a call app dropping the mic is one click to undo, not a split memo.
+/// Stopping a recording: it pauses at once and only ends once `seconds` pass without Resume
+/// (or Finish), so a misclick or a call app dropping the mic is one click to undo, not a split memo.
 public struct StopGrace: Equatable {
     public enum Step: Equatable { case pause, resume, stop, callEnded }
 
@@ -21,7 +21,4 @@ public struct StopGrace: Equatable {
     public var onResume: [Step] { wasPaused ? [] : [.resume] }
     public var onFinish: [Step] { byHangUp ? [.callEnded, .stop] : [.stop] }
     public var title: String { byHangUp ? "Call ended" : "Recording stopped" }
-    /// The call app hung up: the call is over, so the analysis starts at once. Only a manual
-    /// Stop (which can be a misclick) waits for Resume.
-    public var immediate: Bool { byHangUp }
 }

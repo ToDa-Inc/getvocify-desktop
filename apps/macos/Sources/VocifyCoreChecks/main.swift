@@ -235,7 +235,7 @@ check(alreadyPaused.onStop.isEmpty && alreadyPaused.onResume.isEmpty, "a paused 
 let hungUp = StopGrace(byHangUp: true, wasPaused: false)
 check(hungUp.onFinish == [.callEnded, .stop], "a hang-up reports the call ended only once it finishes")
 check(hungUp.title == "Call ended", "a hang-up says the call ended")
-check(hungUp.immediate && !manual.immediate, "a hang-up starts the analysis at once; only a manual stop waits for Resume")
+check(hungUp.onStop == [.pause] && hungUp.onResume == [.resume], "a hang-up waits for Resume like a manual stop, in case the call only dropped")
 
 // Losing the call's audio opens the closed island once, the moment it happens.
 check(LostAudio.opensIsland(was: false, now: true, recording: true, open: false), "lost while recording opens the island")

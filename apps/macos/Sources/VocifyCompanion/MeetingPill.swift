@@ -68,6 +68,14 @@ final class MeetingPillState: ObservableObject {
             if case .stopped = self { return true }
             return false
         }
+
+        /// A call offered, or being recorded.
+        var isCallOrRecording: Bool {
+            switch self {
+            case .call, .starting, .recording, .stopped: return true
+            default: return false
+            }
+        }
     }
 
     /// What the dashboard says about the call that just ended. Every part comes from something
@@ -95,6 +103,29 @@ final class MeetingPillState: ObservableObject {
             }
             guard !options.isEmpty else { return nil }
             self.init(selected: raw["selected"] as? String, proposed: raw["proposed"] as? Bool ?? false, options: options)
+        }
+    }
+
+    /// Where the recording that just ended is, as the dashboard reports it.
+    struct Finish: Equatable {
+        enum Step: String { case stopping, uploading, failed }
+
+        let step: Step
+        /// Why it failed, in the dashboard's words.
+        let message: String?
+
+        init?(_ raw: [String: Any]) {
+            guard let step = (raw["step"] as? String).flatMap(Step.init(rawValue:)) else { return nil }
+            self.step = step
+            self.message = raw["message"] as? String
+        }
+
+        var line: String {
+            switch step {
+            case .stopping: return "Finishing the transcript"
+            case .uploading: return "Sending the call to Vocify"
+            case .failed: return message ?? "Couldn't send the call"
+            }
         }
     }
 
@@ -343,6 +374,8 @@ final class MeetingPillState: ObservableObject {
     /// The call's side stopped reaching Vocify and restarting didn't bring it back.
     @Published var callAudioLost = false
     @Published var postCall: PostCall?
+    /// The recording that just ended, until its memo is being written; nil when the dashboard says nothing.
+    @Published var finish: Finish?
     /// The changes the rep keeps ticked; starts as everything not flagged "check".
     @Published var keptChanges: Set<String> = []
     /// Options the rep picked in the card, by change key.
@@ -354,6 +387,8 @@ final class MeetingPillState: ObservableObject {
     @Published var openOptions: String?
     /// Lets the controller move the island when the memo's state changes.
     var onPostCallChange: (() -> Void)?
+    /// Lets the controller react when the ended recording moves on (sending, failed).
+    var onFinishChange: (() -> Void)?
     /// Lets the controller react when the call's audio is lost or comes back (was, now).
     var onCallAudioChange: ((Bool, Bool) -> Void)?
     /// Who the detected call is with, when the tab on screen is a CRM contact.
@@ -521,6 +556,13 @@ final class MeetingPillState: ObservableObject {
                 onPostCallChange?()
             }
         }
+        if state.keys.contains("finish") {
+            let next = (state["finish"] as? [String: Any]).flatMap(Finish.init)
+            if next != finish {
+                finish = next
+                onFinishChange?()
+            }
+        }
         if let on = state["liveHelp"] as? Bool, on != liveHelp { liveHelp = on }
         if state.keys.contains("liveType") {
             let next = (state["liveType"] as? [String: Any]).flatMap(LiveType.init)
@@ -654,7 +696,9 @@ struct IslandGeometry: Equatable {
             return open ? CGSize(width: max(gap + Self.ear * 2, MeetingPillState.PostCallLayout.width), height: barHeight + postCallBody) : closed
         case .stopped:
             return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
-        case .starting, .finishing:
+        case .finishing:
+            return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
+        case .starting:
             return closed
         }
     }
@@ -734,6 +778,7 @@ final class MeetingPillController {
         calls.onCall = { [weak self] caller in self?.callChanged(caller) }
         calls.start()
         state.onPostCallChange = { [weak self] in self?.postCallChanged() }
+        state.onFinishChange = { [weak self] in self?.finishChanged() }
         state.onCallAudioChange = { [weak self] was, now in self?.callAudioChanged(was: was, now: now) }
         RecordShortcut.shared.onPress = { [weak self] in self?.shortcutPressed() }
         RecordShortcut.shared.activate()
@@ -808,7 +853,15 @@ final class MeetingPillController {
         case .postCall:
             transition(to: .postCall, expanded: !state.expanded)
             if state.expanded { startCountdown(Self.postCallLinger) }
-        case .starting, .stopped, .finishing:
+        case .finishing:
+            // Closing a failure ends the wait; otherwise it just peeks at where the call is.
+            if state.finish?.step == .failed, state.expanded {
+                finishTimeout?.cancel()
+                rest()
+            } else {
+                transition(to: .finishing, expanded: !state.expanded)
+            }
+        case .starting, .stopped:
             break
         }
     }
@@ -869,10 +922,6 @@ final class MeetingPillController {
         guard state.mode == .recording else { return }
         hangUp?.cancel()
         let grace = StopGrace(byHangUp: byHangUp, wasPaused: state.paused)
-        if grace.immediate {
-            run(grace.onFinish)
-            return
-        }
         run(grace.onStop)
         transition(to: .stopped(grace), expanded: true)
         startCountdown(StopGrace.seconds)
@@ -904,6 +953,7 @@ final class MeetingPillController {
     /// being written, so there's no gap where it looks idle and a new recording could start.
     private func finish() {
         finishingAfter = state.postCall?.memoId
+        state.finish = nil
         autoClose?.cancel()
         state.countdown = nil
         transition(to: .finishing, expanded: false)
@@ -913,6 +963,13 @@ final class MeetingPillController {
             guard let self, !Task.isCancelled, self.state.mode == .finishing else { return }
             self.rest()
         }
+    }
+
+    /// The dashboard says how the ended recording is going: a failure opens the island and stays.
+    private func finishChanged() {
+        guard state.mode == .finishing, state.finish?.step == .failed else { return }
+        finishTimeout?.cancel()
+        transition(to: .finishing, expanded: true)
     }
 
     /// Ends the stop grace now, without waiting for its line to run out.
@@ -1265,9 +1322,13 @@ final class MeetingPillController {
         let caller = currentCaller
         Task { @MainActor [weak self] in
             let read = await CrmPageReader.read(ask: true)
-            guard let self, case .call = self.state.mode else { return }
+            let browsers = (read.result["browsers"] as? [[String: String]] ?? []).map { "\($0["name"] ?? "?"): \($0["access"] ?? "?")" }
+            let urls = read.result["urls"] as? [String] ?? []
+            DesktopBridge.callLog.notice("page read: \(urls.count) CRM page(s); browsers \(browsers.joined(separator: ", "), privacy: .public); source \(read.source?.name ?? "none", privacy: .public)")
+            // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
+            guard let self, self.state.mode.isCallOrRecording else { return }
             self.bridge?.emitCallSource(CallSource.app(bundleID: caller?.bundleID) ?? read.source)
-            if let urls = read.result["urls"] as? [String], !urls.isEmpty {
+            if !urls.isEmpty {
                 self.bridge?.emitCallPages(urls)
             }
         }
@@ -1407,6 +1468,9 @@ struct IslandView: View {
                 case .stopped(let grace):
                     StoppedMenu(title: grace.title, controller: controller)
                         .transition(.opacity)
+                case .finishing:
+                    FinishingMenu(finish: state.finish, controller: controller)
+                        .transition(.opacity)
                 case .postCall:
                     if let postCall = state.postCall {
                         PostCallMenu(state: state, postCall: postCall, controller: controller)
@@ -1459,7 +1523,7 @@ struct IslandView: View {
         case .idle: return open ? "Close" : "Record a meeting"
         case .call: return open ? "Close" : ""
         case .starting, .stopped: return ""
-        case .finishing: return "Saving the call"
+        case .finishing: return open ? "Close" : state.finish?.line ?? "Saving the call"
         case .postCall:
             switch state.postCall?.stage {
             case .writing: return "Writing the update"
@@ -1486,6 +1550,10 @@ struct IslandView: View {
                 RecordingDot(paused: true)
                 ElapsedText(clock: state.clock)
             }
+        case .finishing where state.finish?.step == .failed:
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(IslandStyle.warning)
         case .starting, .finishing:
             ProgressView().controlSize(.mini)
         case .idle:
@@ -1544,8 +1612,10 @@ struct IslandView: View {
             } else {
                 RecordDot(caller: caller, ready: state.recorderReady, action: controller.record)
             }
-        case .stopped, .finishing:
+        case .stopped:
             EmptyView()
+        case .finishing:
+            if open { OpenArrow(open: true) }
         case .starting:
             Text("Starting")
                 .font(.system(size: 11.5, weight: .medium))
@@ -1618,6 +1688,28 @@ private struct StoppedMenu: View {
             TextAction(title: "Resume", symbol: "play.fill", action: controller.resumeRecording)
                 .help("Keep recording this call")
             PrimaryActionButton(title: "Finish", symbol: "checkmark", help: "End the call and write its update", action: controller.finishRecording)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxHeight: .infinity)
+    }
+}
+
+/// The recording ended and its memo isn't being written yet: where the call is, and when
+/// it couldn't be sent, a way to Vocify, where the meeting is kept.
+private struct FinishingMenu: View {
+    let finish: MeetingPillState.Finish?
+    let controller: MeetingPillController
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(finish?.line ?? "Saving the call")
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(IslandStyle.text)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+            if finish?.step == .failed {
+                PrimaryActionButton(title: "Open Vocify", symbol: "arrow.up.right", help: "See the meeting in Vocify", action: controller.openApp)
+            }
         }
         .padding(.horizontal, 14)
         .frame(maxHeight: .infinity)

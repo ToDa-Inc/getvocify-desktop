@@ -147,12 +147,17 @@
     meeting = null;
     if (quiet) return;
     bridge.shell.hideOverlay();
-    set({ listening: false, liveType: null, levels: { you: 0, them: 0 } });
-    log("stopped; writing the update");
-    postCall = { stage: "writing", memoId: "demo-" + Date.now(), contactName: "Marta Ruiz", crm: "HubSpot", changes: [], canApprove: false, notes: false, type: { key: "discovery", label: "Discovery call", options: OPTIONS } };
-    set({ postCall });
+    // The same order as the real dashboard: the island is told the call is being finished, then sent, then the memo is being written.
+    set({ listening: false, liveType: null, levels: { you: 0, them: 0 }, finish: { step: "stopping" } });
+    log("stopped; finishing the transcript");
+    later(600, () => set({ finish: { step: "uploading" } }));
+    later(1300, () => {
+      log("sent; writing the update");
+      postCall = { stage: "writing", memoId: "demo-" + Date.now(), contactName: "Marta Ruiz", crm: "HubSpot", changes: [], canApprove: false, notes: false, type: { key: "discovery", label: "Discovery call", options: OPTIONS } };
+      set({ finish: null, postCall });
+    });
     later(1200, () => bridge.drafts.remove("demo-draft"));
-    later(2500, () => setPostCall({
+    later(3500, () => setPostCall({
       stage: "ready", canApprove: true, changes: CHANGES,
       email: { state: "ready", to: "marta@acme.com", subject: "Next steps", preview: "Hi Marta, thanks for the time today." },
       meeting: { state: "pending", when: "Thursday 10:00" }, notes: true, summary: "Discussed the CRM migration and price. Marta wants a pilot next quarter.",

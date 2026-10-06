@@ -4,7 +4,7 @@ import { TypeMenu } from "../../core/typeMenu.ts";
 import { WaveSide } from "../../core/waveSide.ts";
 import type { Assist, Geometry, IslandAction, IslandState, Levels, Mode, PostCallData } from "../../island/src/types.ts";
 import { postCallPending } from "../../island/src/types.ts";
-import { parseAssist, parseClock, parseContact, parseLiveType, parsePostCall, parseTurns, type LiveType } from "./parse.ts";
+import { parseAssist, parseClock, parseContact, parseFinish, parseLiveType, parsePostCall, parseTurns, type LiveType } from "./parse.ts";
 
 /**
  * The island's brain: what it shows and what each click does. A port of `MeetingPillController` and
@@ -22,6 +22,8 @@ const HANG_UP_GRACE = 3;
 const START_TIMEOUT = 8;
 const MIN_HOLD_AFTER_LEAVE = 1.5;
 const LEVEL_FADE_SECONDS = 0.5;
+/** Waiting on a memo that never came (nothing was said, the upload failed): the dashboard says why in its window, and the island goes back to rest. */
+const FINISH_GIVE_UP = 30;
 
 /** The app holding the mic, as detection reports it. */
 export type Caller = { name: string | null; appId: string | null; icon?: string | null };
@@ -45,7 +47,7 @@ export type Effects = {
   lookUpCallContact?(caller: Caller | null): void;
 };
 
-type Timers = "autoClose" | "startTimeout" | "hangUp";
+type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout";
 
 export class IslandController {
   private effects: Effects;
@@ -58,6 +60,8 @@ export class IslandController {
   /** Set by a recording or a dismiss; cleared once the mic goes quiet, i.e. the call ended. */
   private callHandled = false;
   private lastPostCallStage: PostCallData["stage"] | null = null;
+  /** The card on show when the recording ended: `finishing` waits for a newer one. */
+  private finishingAfter: string | null = null;
   /** The call app being recorded; its letting go of the mic is the hang-up. */
   private recordingCaller: Caller | null = null;
   /** The call app holding the mic right now, as last reported. */
@@ -90,6 +94,7 @@ export class IslandController {
       countdown: null,
       geometry,
       postCall: null,
+      finish: null,
       material: options.material,
       reduceMotion: options.reduceMotion,
     };
@@ -152,6 +157,14 @@ export class IslandController {
         postCallChanged = true;
       }
     }
+    let finishChanged = false;
+    if (has("finish")) {
+      const next = parseFinish(update.finish);
+      if (JSON.stringify(next) !== JSON.stringify(this.current.finish)) {
+        patch.finish = next;
+        finishChanged = true;
+      }
+    }
     if (typeof update.liveHelp === "boolean" && update.liveHelp !== this.current.liveHelp) patch.liveHelp = update.liveHelp;
     if (has("liveType")) {
       const next = parseLiveType(update.liveType);
@@ -186,6 +199,7 @@ export class IslandController {
       this.transition({ kind: "recording" }, true);
     }
     if (postCallChanged) this.postCallChanged();
+    if (finishChanged) this.finishChanged();
   }
 
   private typeMenuView(): IslandState["typeMenu"] {
@@ -229,6 +243,8 @@ export class IslandController {
         return this.stop(false);
       case "resume":
         return this.resumeRecording();
+      case "finish":
+        return this.finishRecording();
       case "pickCallType":
         return this.pickCallType(action.key);
       case "toggleLiveHelp":
@@ -246,6 +262,7 @@ export class IslandController {
       case "stopped":
         return this.resumeRecording();
       case "starting":
+      case "finishing":
         return;
       case "postCall":
         // A new call: the last one's card stays in Vocify.
@@ -270,6 +287,13 @@ export class IslandController {
         this.transition(mode, !expanded);
         if (this.current.expanded) this.startCountdown(POST_CALL_LINGER);
         return;
+      case "finishing":
+        // Closing a failure ends the wait; otherwise it just peeks at where the call is.
+        if (this.current.finish?.step === "failed" && expanded) {
+          this.stopTimer("finishTimeout");
+          return this.rest();
+        }
+        return this.transition(mode, !expanded);
       case "starting":
       case "stopped":
         return;
@@ -321,7 +345,6 @@ export class IslandController {
     this.stopTimer("hangUp");
     const grace = new StopGrace(byHangUp, this.current.paused);
     this.grace = grace;
-    if (grace.immediate) return this.run(grace.onFinish);
     this.run(grace.onStop);
     this.transition({ kind: "stopped", title: grace.title }, true);
     this.startCountdown(StopGrace.seconds);
@@ -351,7 +374,7 @@ export class IslandController {
           break;
         case "stop":
           this.grace = null;
-          this.hide();
+          this.hide(true);
           this.effects.emit("shell:command", "stop");
           break;
       }
@@ -383,8 +406,14 @@ export class IslandController {
     this.transition({ kind: "recording" }, this.mode === "recording" && this.current.expanded);
   }
 
-  /** Back to rest: the last call's update if one is pending, else the mark beside the camera. */
-  hide(): void {
+  /** Ends the stop grace now, without waiting for its line to run out. */
+  finishRecording(): void {
+    if (this.mode !== "stopped" || !this.grace) return;
+    this.run(this.grace.onFinish);
+  }
+
+  /** Back to rest: the last call's update if one is pending, else the mark beside the camera. `finishing`: the recording just ended from the island; wait for its memo instead. */
+  hide(finishing = false): void {
     this.stopTimer("startTimeout");
     this.stopTimer("hangUp");
     if ((this.mode === "recording" || this.mode === "stopped") && this.recordingCaller?.appId) {
@@ -392,7 +421,27 @@ export class IslandController {
     }
     this.recordingCaller = null;
     this.set({ callContact: null });
-    this.rest();
+    if (finishing) this.finish();
+    // The dashboard hides the island as it stops; a finishing one keeps waiting.
+    else if (this.mode !== "finishing") this.rest();
+  }
+
+  /** Holds the island on a spinner from the moment the recording ends until its memo is being written, so there is no gap where it looks idle and a new recording could start. */
+  private finish(): void {
+    this.finishingAfter = this.current.postCall?.memoId ?? null;
+    this.stopTimer("autoClose");
+    this.set({ finish: null, countdown: null });
+    this.transition({ kind: "finishing" }, false);
+    this.start("finishTimeout", FINISH_GIVE_UP, () => {
+      if (this.mode === "finishing") this.rest();
+    });
+  }
+
+  /** The dashboard says how the ended recording is going: a failure opens the island and stays. */
+  private finishChanged(): void {
+    if (this.mode !== "finishing" || this.current.finish?.step !== "failed") return;
+    this.stopTimer("finishTimeout");
+    this.transition({ kind: "finishing" }, true);
   }
 
   private rest(): void {
@@ -433,6 +482,13 @@ export class IslandController {
       case "call":
       case "stopped":
         return; // shown once the island is back at rest
+      case "finishing": {
+        // The card just cleared, or is still the last call's: keep waiting for this one.
+        const card = this.current.postCall;
+        if (!card || card.memoId === this.finishingAfter) return;
+        this.stopTimer("finishTimeout");
+        return this.rest();
+      }
       case "idle":
         if (this.current.postCall) this.rest();
         return;
@@ -475,6 +531,7 @@ export class IslandController {
         return this.watchForHangUp(caller);
       case "starting":
       case "stopped":
+      case "finishing":
         return;
       default: {
         const detected = caller !== null && !this.callHandled && !this.isListening && !this.isQuiet(caller);

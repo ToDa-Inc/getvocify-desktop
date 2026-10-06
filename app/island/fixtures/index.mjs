@@ -22,6 +22,7 @@ const base = {
   countdown: null,
   geometry: NOTCH,
   postCall: null,
+  finish: null,
   material: "vibrancy",
   reduceMotion: true,
 };
@@ -166,6 +167,12 @@ export const fixtures = [
   // stopped
   { name: "stopped-open-manual", state: { mode: { kind: "stopped", title: "Recording stopped" }, expanded: true, clock: clock(754, { pausedAt: NOW }), countdown: { total: 5, remaining: 3, runningSince: null } }, expect: { width: 380, height: 88 } },
   { name: "stopped-open-hangup", state: { mode: { kind: "stopped", title: "Call ended" }, expanded: true, clock: clock(1810, { pausedAt: NOW }) }, expect: { width: 380, height: 88 } },
+  // finishing: the recording ended, the memo is not being written yet
+  { name: "finishing-closed", state: { mode: { kind: "finishing" } }, expect: { width: 277, height: 32 } },
+  { name: "finishing-open-stopping", state: { mode: { kind: "finishing" }, expanded: true, finish: { step: "stopping", message: null } }, expect: { width: 380, height: 88 } },
+  { name: "finishing-open-uploading", state: { mode: { kind: "finishing" }, expanded: true, finish: { step: "uploading", message: null } }, expect: { width: 380, height: 88 } },
+  { name: "finishing-open-failed", state: { mode: { kind: "finishing" }, expanded: true, finish: { step: "failed", message: "Nothing was heard, so there is no call to write up. Your recording is kept in Vocify." } }, expect: { width: 380, height: 88 } },
+  { name: "finishing-closed-failed", state: { mode: { kind: "finishing" }, finish: { step: "failed", message: "Couldn't send the call" } }, expect: { width: 277, height: 32 } },
   // post-call (closed only in previous slice)
   { name: "postcall-closed-writing", state: { mode: { kind: "postCall" }, postCall: postCall("writing") }, expect: { width: 277, height: 32 } },
   { name: "postcall-closed-ready-3", state: { mode: { kind: "postCall" }, postCall: postCall("ready", { email: { state: "ready", to: "marta@acme.com", subject: "Next steps", preview: "Hi Marta, thanks for the time today" }, meeting: { state: "pending", when: "Thursday 10:00" } }) }, expect: { width: 277, height: 32 } },
@@ -200,6 +207,8 @@ export const interactions = [
   { name: "record-button-records-only", fixture: "call-open-contact", click: ".quiet-record", expect: [{ name: "record" }] },
   { name: "skip-call", fixture: "call-open-contact", click: ".menu .icon-button", expect: [{ name: "dismissCall" }] },
   { name: "idle-record", fixture: "idle-open", click: ".quiet-record", expect: [{ name: "record" }] },
-  { name: "resume-after-stop", fixture: "stopped-open-manual", click: ".primary-action", expect: [{ name: "resume" }] },
+  { name: "resume-after-stop", fixture: "stopped-open-manual", click: ".text-action", expect: [{ name: "resume" }] },
+  { name: "finish-after-stop", fixture: "stopped-open-manual", click: ".primary-action", expect: [{ name: "finish" }] },
+  { name: "open-vocify-after-failed-send", fixture: "finishing-open-failed", click: ".primary-action", expect: [{ name: "openApp" }] },
   { name: "pick-type", fixture: "recording-open-type-list", click: ".type-row:nth-child(3)", expect: [{ name: "pickCallType", key: "demo" }], after: true },
 ];

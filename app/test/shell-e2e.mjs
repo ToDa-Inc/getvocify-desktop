@@ -86,7 +86,9 @@ app.whenReady().then(async () => {
     // --- Stop: grace, then the call's update
     controller.act({ name: "stop" });
     check(mode() === "stopped", "Stop pauses and shows Resume for 5 s");
-    check(await until(() => mode() === "postCall", 9000, "post-call"), "after the grace the call's update appears");
+    check(await until(() => mode() === "finishing" && controller.state.finish?.step === "stopping", 9000, "finishing"), "after the grace the island holds on a spinner while the dashboard finishes the transcript");
+    check(await until(() => controller.state.finish?.step === "uploading", 4000, "uploading"), "then says the call is being sent");
+    check(await until(() => mode() === "postCall", 6000, "post-call"), "once the memo is being written the call's update appears");
     check(await until(() => controller.state.postCall?.stage === "ready" && controller.state.expanded, 8000, "ready"), "the update opens when it is ready");
     await sleep(900);
     const card = handle.islandBounds();

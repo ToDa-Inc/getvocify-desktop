@@ -22,6 +22,7 @@ export function earWidth(kind: Kind, open: boolean): number {
       return IDLE_EAR;
     case "call":
     case "postCall":
+    case "finishing":
       return CALL_EAR;
     default:
       return EAR;
@@ -38,6 +39,7 @@ export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody 
     case "idle":
     case "call":
     case "stopped":
+    case "finishing":
       return open ? { width: wide(380), height: g.barHeight + 56 } : closed;
     case "recording":
       return open ? { width: wide(460), height: Math.min(400, Math.round(g.screenHeight * 0.5)) } : closed;

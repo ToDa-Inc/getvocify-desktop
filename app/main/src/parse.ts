@@ -1,4 +1,4 @@
-import type { Assist, Clock, PostCallChange, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn } from "../../island/src/types.ts";
+import type { Assist, Clock, Finish, PostCallChange, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn } from "../../island/src/types.ts";
 
 /**
  * Turns what the dashboard pushes through `shell:state` into the island's types. The rules are the Swift
@@ -144,6 +144,15 @@ export function parseClock(raw: unknown): Clock | null {
   const startedAt = num(raw.startedAt);
   if (startedAt === undefined) return null;
   return { startedAt, pausedMs: num(raw.pausedMs) ?? 0, pausedAt: num(raw.pausedAt) ?? null };
+}
+
+const FINISH_STEPS = ["stopping", "uploading", "failed"] as const;
+
+/** `{ step, message? }`: where the recording that just ended is. An unknown step is dropped. */
+export function parseFinish(raw: unknown): Finish | null {
+  if (!isRaw(raw)) return null;
+  const step = FINISH_STEPS.find((s) => s === raw.step);
+  return step ? { step, message: str(raw.message) ?? null } : null;
 }
 
 /** `{ name }` from the dashboard; blank is no contact. */

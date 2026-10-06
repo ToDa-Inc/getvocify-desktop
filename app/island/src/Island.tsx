@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { cornerRadius, earWidth, islandSize } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
-import { elapsedSeconds, fadedLevel, formatElapsed, helpText, turnParts } from "./helpers.ts";
+import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
 import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Pause, Play, Sparkle, Waveform } from "./icons.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
 import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuRow, type TypeMenuView } from "./types.ts";
@@ -86,7 +86,7 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
         <div
           className="topbar"
           style={{ height: bar, padding: open ? "0 6px" : 0 }}
-          title={helpText({ kind, open, stage: state.postCall?.stage ?? null, crmName: state.postCall ? postCallCrmName(state.postCall) : null, pending: state.postCall ? postCallPending(state.postCall) : 0 })}
+          title={helpText({ kind, open, stage: state.postCall?.stage ?? null, crmName: state.postCall ? postCallCrmName(state.postCall) : null, pending: state.postCall ? postCallPending(state.postCall) : 0, finishLine: finishLine(state.finish) })}
           onClick={() => act({ name: "toggle" })}
         >
           <div className="ear ear-left" style={{ width: ear, paddingLeft: !open && kind !== "recording" ? 12 : 14 }}>
@@ -167,6 +167,8 @@ function LeftEar({ state, open, lifted }: { state: IslandState; open: boolean; l
       );
     case "call":
       return <CallerIcon caller={mode.caller} />;
+    case "finishing":
+      return state.finish?.step === "failed" ? <AlertCircle size={12} style={{ color: "var(--warning)" }} /> : <Spinner />;
     case "starting":
       return <Spinner />;
     case "idle":
@@ -219,6 +221,8 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
       );
     case "stopped":
       return null;
+    case "finishing":
+      return open ? <OpenArrow open /> : null;
     case "starting":
       return <span className="starting">Starting</span>;
     case "idle":
@@ -238,6 +242,8 @@ function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onP
       return <CallMenu state={state} caller={mode.caller} act={act} />;
     case "stopped":
       return <StoppedMenu title={mode.title} act={act} />;
+    case "finishing":
+      return <FinishingMenu finish={state.finish} act={act} />;
     case "postCall":
       return state.postCall ? <PostCallCard postCall={state.postCall} act={act} onPopupExtent={onPopupExtent} /> : null;
     default:
@@ -278,9 +284,28 @@ function StoppedMenu({ title, act }: { title: string; act: Act }) {
     <div className="menu">
       <span className="menu-title">{title}</span>
       <div className="grow" />
-      <PrimaryActionButton title="Resume" help="Keep recording this call" onClick={() => act({ name: "resume" })}>
-        <Play size={9} />
+      <button type="button" className="text-action" title="Keep recording this call" onClick={() => act({ name: "resume" })}>
+        <Play size={10} />
+        <span>Resume</span>
+      </button>
+      <PrimaryActionButton title="Finish" help="End the call and write its update" onClick={() => act({ name: "finish" })}>
+        <Check size={9} />
       </PrimaryActionButton>
+    </div>
+  );
+}
+
+/** The recording ended and its memo isn't being written yet: where the call is, and when it couldn't be sent, a way to Vocify, where the meeting is kept. */
+function FinishingMenu({ finish, act }: { finish: IslandState["finish"]; act: Act }) {
+  return (
+    <div className="menu">
+      <span className="menu-title menu-title-wrap">{finishLine(finish)}</span>
+      <div className="grow" />
+      {finish?.step === "failed" && (
+        <PrimaryActionButton title="Open Vocify" help="See the meeting in Vocify" onClick={() => act({ name: "openApp" })}>
+          <ArrowUpRight size={9} />
+        </PrimaryActionButton>
+      )}
     </div>
   );
 }

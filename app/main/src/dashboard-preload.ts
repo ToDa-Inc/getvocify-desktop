@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
     showOverlay: () => call("overlay:show"),
     hideOverlay: () => call("overlay:hide"),
     openExternal: (url: string) => call("shell:open-external", { url }),
+    relaunch: () => call("shell:relaunch"),
     command: (name: string) => void call("shell:command", { name }),
     onCommand: on("shell:command"),
     onCallType: on("call:type"),

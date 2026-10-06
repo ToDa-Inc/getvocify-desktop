@@ -55,3 +55,15 @@ node --test core/*.test.ts                     # core port
 ../node_modules/.bin/electron test/island-shots.mjs   # real-window island checks and screenshots (needs a normal terminal session, not the agent sandbox)
 # or serve app/island/dist and open preview.html?check=1 in any browser
 ```
+
+
+## Caught up with the Mac app (2026-10-06)
+
+The port was made from the Mac code at `add3bef`. Four Mac commits landed after it and are now ported:
+
+- Stop and hang-up both pause and wait for Resume (a hang-up no longer ends the call at once); the stopped card has **Resume** (text) and **Finish** (button), and Finish ends the call now.
+- A new `finishing` state from the end of the recording until its memo is being written: spinner on the closed island, the dashboard's line ("Finishing the transcript", "Sending the call to Vocify"), and on a failure the island opens with the dashboard's message and **Open Vocify**; it gives up after 30 s with no memo. The dashboard drives it through `shell:state` `finish`.
+- The island keeps the dashboard page alive and does not restart for an update while finishing.
+- A CRM page read that outlasts the click on Record still counts.
+- `shell.relaunch` exists in the bridge.
+- The island remembering it is signed in across launches was already ported.

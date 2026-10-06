@@ -437,9 +437,9 @@ test("StopGrace hangup", async (t) => {
   await t.test("a hang-up says the call ended", () => {
     assert.strictEqual(hungUp.title, "Call ended");
   });
-  const manual = new StopGrace(false, false);
-  await t.test("a hang-up starts the analysis at once; only a manual stop waits for Resume", () => {
-    assert.ok(hungUp.immediate && !manual.immediate);
+  await t.test("a hang-up waits for Resume like a manual stop, in case the call only dropped", () => {
+    assert.deepStrictEqual(hungUp.onStop, ["pause"]);
+    assert.deepStrictEqual(hungUp.onResume, ["resume"]);
   });
 });
 

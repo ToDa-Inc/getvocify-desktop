@@ -263,6 +263,7 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
     showMainWindow: () => void (mainWindow += 1),
     microphoneAccess: () => options.microphone ?? "granted",
     openExternal: (url) => opened.push(url),
+    relaunch: () => {},
     fetch: async () => ({ status: 200, text: async () => "{}" }),
     log: (line) => logs.push(line),
   };

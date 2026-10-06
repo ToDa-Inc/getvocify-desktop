@@ -24,6 +24,8 @@ export type BridgeDeps = {
   /** Electron's `getMediaAccessStatus('microphone')`. */
   microphoneAccess(): string;
   openExternal(url: string): void;
+  /** Quits and reopens this app (a permission that applies only after a restart). */
+  relaunch(): void;
   fetch(url: string, init: { method: string; headers: Record<string, string>; body?: string }): Promise<{ status: number; text(): Promise<string> }>;
   log(line: string): void;
   /** A draft was saved or removed: the dashboard page may now be needed, or no longer. */
@@ -106,6 +108,9 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
           deps.controller.applyShellState(state);
         }
         return null;
+      case "shell:relaunch":
+        deps.relaunch();
+        return { ok: true };
       case "shell:open-external":
         if (typeof args.url === "string" && OPEN_URL.test(args.url)) deps.openExternal(args.url);
         return { ok: true };

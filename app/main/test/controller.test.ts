@@ -154,8 +154,75 @@ test("Stop pauses at once, says so, and ends the recording when 5 s pass without
   t.advance(4.9);
   assert.equal(t.mode(), "stopped");
   t.advance(0.2);
-  assert.equal(t.mode(), "idle");
+  assert.equal(t.mode(), "finishing", "the island waits, on a spinner, for the memo");
   assert.deepEqual(t.commands().slice(-2), ["pause", "stop"]);
+});
+
+test("Finish ends the stopped recording at once, without waiting for the line to run out", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.advance(1);
+  t.controller.act({ name: "finish" });
+  assert.equal(t.mode(), "finishing");
+  assert.deepEqual(t.commands().slice(-2), ["pause", "stop"]);
+  t.controller.act({ name: "finish" });
+  assert.deepEqual(t.commands().slice(-2), ["pause", "stop"], "a second press does nothing");
+});
+
+test("while finishing the island ignores the dashboard hiding it, the shortcut and a call app, and shows the memo when a new one arrives", () => {
+  const t = recording();
+  t.controller.applyShellState({ postCall: postCall("done") });
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  t.controller.hide();
+  assert.equal(t.mode(), "finishing", "the dashboard hides its overlay as it stops");
+  t.controller.shortcutPressed();
+  assert.equal(t.mode(), "finishing");
+  t.controller.callChanged(zoom);
+  assert.equal(t.mode(), "finishing");
+  t.controller.applyShellState({ postCall: postCall("writing") });
+  assert.equal(t.mode(), "finishing", "the card on show when the recording ended is the last call's, not this one's");
+  t.controller.applyShellState({ postCall: { ...postCall("writing"), memoId: "m2" } });
+  assert.equal(t.mode(), "postCall");
+});
+
+test("the dashboard's account of the ended recording: sending shows a line, a failure opens the island and stays until closed", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  t.controller.applyShellState({ finish: { step: "stopping" } });
+  assert.equal(t.controller.state.finish?.step, "stopping");
+  assert.equal(t.controller.state.expanded, false, "progress does not open it");
+  t.controller.applyShellState({ finish: { step: "bogus" } });
+  assert.equal(t.controller.state.finish, null, "an unknown step is dropped");
+  t.controller.applyShellState({ finish: { step: "failed", message: "No audio was heard" } });
+  assert.equal(t.controller.state.expanded, true);
+  assert.equal(t.controller.state.finish?.message, "No audio was heard");
+  t.advance(120);
+  assert.equal(t.mode(), "finishing", "a failure is not given up on");
+  t.controller.act({ name: "toggle" });
+  assert.equal(t.mode(), "idle", "closing the failure ends the wait");
+});
+
+test("a recording whose memo never comes stops waiting after 30 s", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  t.advance(29);
+  assert.equal(t.mode(), "finishing");
+  t.advance(2);
+  assert.equal(t.mode(), "idle");
+});
+
+test("clicking the finishing island peeks at where the call is and closes again", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  t.controller.act({ name: "toggle" });
+  assert.equal(t.controller.state.expanded, true);
+  t.controller.act({ name: "toggle" });
+  assert.equal(t.controller.state.expanded, false);
+  assert.equal(t.mode(), "finishing");
 });
 
 test("Resume inside the grace carries on the same recording", () => {
@@ -182,7 +249,7 @@ test("the pointer cannot hold the stop grace open", () => {
   t.controller.act({ name: "stop" });
   t.controller.act({ name: "pointer", inside: true });
   t.advance(5.1);
-  assert.equal(t.mode(), "idle");
+  assert.equal(t.mode(), "finishing");
 });
 
 test("the record shortcut records, stops, resumes, and starts a new call from an old card", () => {
@@ -261,7 +328,12 @@ test("recording a detected call: the call app letting go of the mic for 3 s stop
   t.advance(2.9);
   assert.equal(t.mode(), "recording");
   t.advance(0.2);
-  assert.equal(t.mode(), "idle", "a hang-up ends at once, with no stop grace");
+  assert.equal(t.mode(), "stopped", "a hang-up waits for Resume like a stop, in case the call only dropped");
+  assert.equal(t.controller.state.mode.kind === "stopped" && t.controller.state.mode.title, "Call ended");
+  assert.deepEqual(t.commands().slice(-1), ["pause"]);
+  assert.ok(!t.emitted.some((e) => e.channel === "call:ended"), "the call is reported over only once it finishes");
+  t.advance(5.1);
+  assert.equal(t.mode(), "finishing");
   assert.deepEqual(t.commands().slice(-1), ["stop"]);
   assert.ok(t.emitted.some((e) => e.channel === "call:ended"));
 });
@@ -285,6 +357,7 @@ test("the app just recorded is not offered again for 120 s, other apps are", () 
   t.controller.show();
   t.controller.act({ name: "stop" });
   t.advance(6);
+  t.advance(31); // no memo ever comes: back to rest
   t.controller.applyShellState({ listening: false });
   t.controller.callChanged(null);
   t.controller.callChanged(zoom);
@@ -428,10 +501,12 @@ test("a state with nothing new makes no render", () => {
 
 test("the call's update waits for the island to come back to rest, then opens with a 14 s countdown", () => {
   const t = recording();
-  t.controller.applyShellState({ postCall: postCall("writing") });
+  t.controller.applyShellState({ postCall: { ...postCall("writing"), memoId: "m0" } });
   assert.equal(t.mode(), "recording", "not shown while recording");
   t.controller.act({ name: "stop" });
   t.advance(6);
+  assert.equal(t.mode(), "finishing", "the card on show is the last call's: wait for this one");
+  t.controller.applyShellState({ postCall: postCall("writing") });
   assert.equal(t.mode(), "postCall");
   assert.equal(t.controller.state.expanded, false, "writing stays closed: the spinner says enough");
   t.controller.applyShellState({ postCall: postCall("ready", { canApprove: true }) });

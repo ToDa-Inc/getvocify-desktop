@@ -8,6 +8,8 @@ export type Mode =
   | { kind: "starting" }
   | { kind: "recording" }
   | { kind: "stopped"; title: string }
+  /** The recording ended: the dashboard is taking its last words and sending it, until its memo shows up as the card. */
+  | { kind: "finishing" }
   | { kind: "postCall" };
 
 export type Turn = { id: string; you: boolean; label: string | null; text: string; pending: string };
@@ -24,6 +26,9 @@ export type Assist = {
 
 export type TypeMenuRow = { key: string | null; label: string; checked: boolean; suggested: boolean };
 export type TypeMenuView = { title: string; placeholder: boolean; sparkle: boolean; rows: TypeMenuRow[] };
+
+/** Where the recording that just ended is, as the dashboard reports it. */
+export type Finish = { step: "stopping" | "uploading" | "failed"; message: string | null };
 
 export type Clock = { startedAt: number; pausedMs: number; pausedAt: number | null };
 
@@ -111,6 +116,8 @@ export type IslandState = {
   countdown: Countdown | null;
   geometry: Geometry;
   postCall: PostCallData | null;
+  /** The recording that just ended, until its memo is being written; null when the dashboard says nothing. */
+  finish: Finish | null;
   /** "vibrancy": the window blurs what is behind it (macOS). "opaque": no blur available, so the glass is denser. */
   material: "vibrancy" | "opaque";
   reduceMotion: boolean;
@@ -124,6 +131,8 @@ export type IslandAction =
   | { name: "togglePause" }
   | { name: "stop" }
   | { name: "resume" }
+  /** End the stopped recording now, without waiting for its line to run out. */
+  | { name: "finish" }
   | { name: "pickCallType"; key: string | null }
   | { name: "toggleLiveHelp" }
   | { name: "pointer"; inside: boolean }

@@ -170,7 +170,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       lookUpCallContact: (caller) => {
         if (platform !== "win32") return;
         void pageReader.read().then((pages) => {
-          if (controller.state.mode.kind !== "call") return;
+          // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
+          if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
           dashboard.emit("call:source", (sourceOf(caller, pages) ?? null)?.json ?? null);
           const urls = crmUrlsOf(pages);
           if (urls.length > 0) dashboard.emit("call:pages", { urls });
@@ -203,9 +204,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   };
   // Once the app is quitting (a tray quit, an update restart) the dashboard window must close, not hide.
   let quitting = false;
+  // The dashboard page does the recording and, after Stop, the upload: it must stay until the call is handed over.
+  const recordingOrFinishing = () => ["recording", "stopped", "finishing"].includes(controller.state.mode.kind);
   const canDestroy = () =>
     quitting ||
-    Date.now() >= busyUntil && !controller.isListening && controller.state.mode.kind !== "recording" && controller.state.mode.kind !== "stopped" && controller.state.postCall === null && drafts.count() === 0;
+    Date.now() >= busyUntil && !controller.isListening && !recordingOrFinishing() && controller.state.postCall === null && drafts.count() === 0;
   const dashboard = new DashboardHost({
     url: options.dashboardUrl,
     preload: join(here, "dashboard-preload.cjs"),
@@ -319,6 +322,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     showMainWindow: () => dashboard.show(),
     microphoneAccess: () => systemPreferences.getMediaAccessStatus("microphone"),
     openExternal: (url) => void shell.openExternal(url),
+    relaunch: () => {
+      app.relaunch();
+      app.quit();
+    },
     fetch: async (url, init) => {
       const response = await net.fetch(url, init);
       return { status: response.status, text: () => response.text() };
@@ -440,7 +447,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     detectCall: (caller) => controller.callChanged(caller),
     iconFor,
     permissions: () => bridge("permissions:status", {}),
-    canInstallUpdate: () => !controller.isListening && controller.state.mode.kind !== "recording" && controller.state.mode.kind !== "stopped" && controller.state.postCall === null,
+    canInstallUpdate: () => !controller.isListening && !recordingOrFinishing() && controller.state.postCall === null,
     onCheckForUpdates: (fn) => void (checkForUpdates = fn),
     log,
     quit: () => app.quit(),

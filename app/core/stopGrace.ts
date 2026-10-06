@@ -27,8 +27,4 @@ export class StopGrace {
   get title(): string {
     return this.byHangUp ? "Call ended" : "Recording stopped";
   }
-
-  get immediate(): boolean {
-    return this.byHangUp;
-  }
 }

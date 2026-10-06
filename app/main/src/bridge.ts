@@ -38,6 +38,8 @@ type Args = Record<string, unknown>;
 const OPEN_URL = /^(https?:\/\/|mailto:)/i;
 
 export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Promise<unknown> {
+  /** The last session state the dashboard reported (undefined until it first does), so the log shows it once per change. */
+  let reportedReady: boolean | undefined;
   let unsubscribePcm: (() => void) | null = null;
   let unsubscribeLost: (() => void) | null = null;
 
@@ -104,7 +106,10 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
         if (typeof args.state === "object" && args.state !== null) {
           const state = args.state as Args;
           // Whether the dashboard says a session exists is the one fact the island's Record button depends on.
-          if (typeof state.recorderReady === "boolean" && state.recorderReady !== deps.controller.state.recorderReady) deps.log(`dashboard says signed ${state.recorderReady ? "in" : "out"}`);
+          if (typeof state.recorderReady === "boolean" && state.recorderReady !== reportedReady) {
+            reportedReady = state.recorderReady;
+            deps.log(`dashboard says signed ${state.recorderReady ? "in" : "out"}`);
+          }
           deps.controller.applyShellState(state);
         }
         return null;

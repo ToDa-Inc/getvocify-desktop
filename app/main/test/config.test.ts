@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { acceptDashboardUrl, resolveDashboardUrl, resolveReportedPlatform, signInHostsFor } from "../src/config.ts";
 
 const fallback = "https://app.getvocify.com";
+const entry = `${fallback}/dashboard/record`;
 
 test("only https addresses, and http on this computer, are accepted as the dashboard", () => {
   assert.equal(acceptDashboardUrl("https://getvocify-abc.vercel.app"), "https://getvocify-abc.vercel.app/");
@@ -13,15 +14,22 @@ test("only https addresses, and http on this computer, are accepted as the dashb
 
 test("the dashboard comes from the command line, then the environment, then the config file, then production", () => {
   const base = { argv: [], env: {}, config: undefined, fallback };
-  assert.equal(resolveDashboardUrl(base), fallback);
-  assert.equal(resolveDashboardUrl({ ...base, config: { dashboardUrl: "https://c.example.com" } }), "https://c.example.com/");
-  assert.equal(resolveDashboardUrl({ ...base, config: { dashboardUrl: "https://c.example.com" }, env: { VOCIFY_DASHBOARD_URL: "https://e.example.com" } }), "https://e.example.com/");
-  assert.equal(resolveDashboardUrl({ ...base, env: { VOCIFY_DASHBOARD_URL: "https://e.example.com" }, argv: ["--dashboard=https://a.example.com"] }), "https://a.example.com/");
+  assert.equal(resolveDashboardUrl(base), entry);
+  assert.equal(resolveDashboardUrl({ ...base, config: { dashboardUrl: "https://c.example.com" } }), "https://c.example.com/dashboard/record");
+  assert.equal(resolveDashboardUrl({ ...base, config: { dashboardUrl: "https://c.example.com" }, env: { VOCIFY_DASHBOARD_URL: "https://e.example.com" } }), "https://e.example.com/dashboard/record");
+  assert.equal(resolveDashboardUrl({ ...base, env: { VOCIFY_DASHBOARD_URL: "https://e.example.com" }, argv: ["--dashboard=https://a.example.com"] }), "https://a.example.com/dashboard/record");
+});
+
+test("a bare address opens the dashboard, never the marketing page; an explicit path is kept", () => {
+  const base = { argv: [], env: {}, config: undefined, fallback };
+  assert.equal(resolveDashboardUrl({ ...base, fallback: "https://app.getvocify.com" }), "https://app.getvocify.com/dashboard/record");
+  assert.equal(resolveDashboardUrl({ ...base, argv: ["--dashboard=https://x.vercel.app/login"] }), "https://x.vercel.app/login");
+  assert.equal(resolveDashboardUrl({ ...base, argv: ["--dashboard=http://localhost:8080/?a=1"] }), "http://localhost:8080/?a=1");
 });
 
 test("a bad address is ignored and the next source is used, never an unsafe page", () => {
-  assert.equal(resolveDashboardUrl({ argv: ["--dashboard=http://evil.com"], env: { VOCIFY_DASHBOARD_URL: "https://e.example.com" }, config: null, fallback }), "https://e.example.com/");
-  assert.equal(resolveDashboardUrl({ argv: ["--dashboard=nonsense"], env: {}, config: "oops", fallback }), fallback);
+  assert.equal(resolveDashboardUrl({ argv: ["--dashboard=http://evil.com"], env: { VOCIFY_DASHBOARD_URL: "https://e.example.com" }, config: null, fallback }), "https://e.example.com/dashboard/record");
+  assert.equal(resolveDashboardUrl({ argv: ["--dashboard=nonsense"], env: {}, config: "oops", fallback }), entry);
 });
 
 test("a Vercel preview may sign in on vercel.com inside the app; no other dashboard may", () => {

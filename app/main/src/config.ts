@@ -19,7 +19,19 @@ export function acceptDashboardUrl(raw: unknown): string | null {
 export function resolveDashboardUrl(input: { argv: string[]; env: Record<string, string | undefined>; config: unknown; fallback: string }): string {
   const fromArgument = input.argv.find((a) => a.startsWith("--dashboard="))?.slice("--dashboard=".length);
   const fromConfig = typeof input.config === "object" && input.config !== null ? (input.config as { dashboardUrl?: unknown }).dashboardUrl : undefined;
-  return acceptDashboardUrl(fromArgument) ?? acceptDashboardUrl(input.env.VOCIFY_DASHBOARD_URL) ?? acceptDashboardUrl(fromConfig) ?? input.fallback;
+  return withEntryPath(acceptDashboardUrl(fromArgument) ?? acceptDashboardUrl(input.env.VOCIFY_DASHBOARD_URL) ?? acceptDashboardUrl(fromConfig) ?? input.fallback);
+}
+
+/** The site root is the marketing page. Like the Mac app, a bare address opens the dashboard (its sign-in comes first). */
+export function withEntryPath(address: string): string {
+  try {
+    const url = new URL(address);
+    if (url.pathname !== "/" || url.search || url.hash) return address;
+    url.pathname = "/dashboard/record";
+    return url.toString();
+  } catch {
+    return address;
+  }
 }
 
 /** A Vercel preview of the dashboard is behind a Vercel sign-in; its pages stay inside the app so that sign-in can finish. */

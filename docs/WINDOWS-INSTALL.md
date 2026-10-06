@@ -23,7 +23,7 @@ A small window of buttons stands in for call detection ("Zoom takes the mic", "T
 
 ## 3. Use the live dashboard (the default)
 
-With no options, the app loads `https://app.getvocify.com` and you sign in with your normal account. The live dashboard does not know Windows yet, so the app tells it the platform name it already understands (a compatibility mode); everything works, and only a few permission messages (for example when the microphone is blocked) use Mac wording.
+With no options, the app loads `https://app.getvocify.com/dashboard/record` (the Mac app's entry, so the marketing page never opens) and you sign in with your normal account. The live dashboard does not know Windows yet, so the app tells it the platform name it already understands (a compatibility mode); everything works, and only a few permission messages (for example when the microphone is blocked) use Mac wording.
 
 Once the Windows-aware dashboard is deployed, turn the compatibility off by adding `--platform=win32` to the shortcut, or `{ "platform": "win32" }` to `%APPDATA%\Vocify\config.json`.
 

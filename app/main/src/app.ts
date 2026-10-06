@@ -37,6 +37,8 @@ export type AppOptions = {
   controls?: boolean;
   /** The platform name the dashboard is told (default: the real one). */
   reportedPlatform?: ReportedPlatform;
+  /** For trying the permission flow: microphone and call audio start "not asked" until the dashboard asks for them. */
+  testPermissions?: boolean;
   /** How long the dashboard page is kept after its last activity before it may be given back (default 30 s). */
   releaseGraceMs?: number;
 };
@@ -298,7 +300,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   trayRefresh?.unref();
   if (platform === "darwin") {
     // Keeping the island over full-screen windows turns the app into one without a Dock icon; give it back.
-    const dockIcon = nativeImage.createFromPath(appIconPath);
+    // The same icon as the Mac app: the mark inside a cream squircle (VocifyMark.squircle, rendered once).
+    const dockIcon = nativeImage.createFromPath(join(here, "../assets/dock-icon.png"));
     void app.dock?.show().then(() => {
       if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon);
     });
@@ -335,6 +338,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const bridge = createBridge({
     platform,
     reportedPlatform: options.reportedPlatform,
+    testPermissions: options.testPermissions === true,
     controller,
     loopback,
     drafts,

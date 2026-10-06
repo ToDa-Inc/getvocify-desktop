@@ -14,6 +14,8 @@ export type BridgeDeps = {
   platform: NodeJS.Platform;
   /** The platform name the dashboard is told (see config.ts); defaults to the real one. */
   reportedPlatform?: "win32" | "darwin";
+  /** Trying the permission flow: both permissions read "not asked" until the dashboard asks for each. */
+  testPermissions?: boolean;
   controller: IslandController;
   loopback: Loopback;
   drafts: Drafts;
@@ -65,7 +67,17 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
     return { ok: false, reason: started.reason ?? "no_system_audio" };
   }
 
-  const permissions = () => permissionSnapshot(deps.platform, deps.microphoneAccess(), deps.reportedPlatform);
+  /** In the permission test, the permissions the dashboard has asked for so far; the others read "not asked". */
+  const asked = new Set<string>();
+  const permissions = () => {
+    const real = permissionSnapshot(deps.platform, deps.microphoneAccess(), deps.reportedPlatform);
+    if (!deps.testPermissions) return real;
+    return {
+      ...real,
+      microphone: asked.has("microphone") ? real.microphone : "never_requested",
+      systemAudio: asked.has("systemAudio") ? real.systemAudio : "never_requested",
+    };
+  };
 
   return async (op, args) => {
     switch (op) {
@@ -97,6 +109,10 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
       case "permissions:status":
         return permissions();
       case "permissions:request":
+        if (deps.testPermissions && typeof args.type === "string" && !asked.has(args.type)) {
+          deps.log(`permission test: the dashboard asked for ${args.type}`);
+          asked.add(args.type);
+        }
         if (args.type === "microphone") {
           const status = permissions().microphone;
           if (status !== "authorized") {

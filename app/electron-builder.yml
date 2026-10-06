@@ -10,6 +10,7 @@ files:
   - main/dist/**
   - "!main/dist/**/*.map"
   - main/demo/**
+  - main/assets/**
   - island/dist/index.html
   - island/dist/island.js
   - island/dist/island.css

@@ -88,6 +88,8 @@ export class DashboardHost {
       event.preventDefault();
       void shell.openExternal(url);
     });
+    // Like the Mac app's window: always "Vocify", not the web page's title.
+    win.on("page-title-updated", (event) => event.preventDefault());
     win.webContents.on("console-message", (_event, level, message, line, source) => {
       if (level >= 3) this.options.log(`dashboard console error: ${message} (${source}:${line})`);
     });

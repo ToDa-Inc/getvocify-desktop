@@ -48,6 +48,8 @@ if (!app.requestSingleInstanceLock()) {
         userDataDir: demo ? join(app.getPath("userData"), "demo") : app.getPath("userData"),
         islandOffsetY: Number(process.env.ISLAND_OFFSET_Y ?? 0) || 0,
         controls: demo,
+        // Trying the permission flow on a machine that already allowed everything.
+        testPermissions: process.argv.includes("--test-permissions") || process.env.VOCIFY_TEST_PERMISSIONS === "1",
       });
       // Opening the app opens its window, like any app; the island alone is for starts nobody asked for (an update restart, `--hidden`).
       if (!smoke && !handle.startedAfterUpdate && !process.argv.includes("--hidden")) handle.dashboard.show();

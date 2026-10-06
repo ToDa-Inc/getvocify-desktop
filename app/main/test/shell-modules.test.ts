@@ -222,7 +222,7 @@ test("a saved shortcut is restored on the next launch, and 'off' stays off", () 
 
 /* ---------- the bridge ---------- */
 
-function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean> } = {}) {
+function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean } = {}) {
   const emitted: { channel: string; payload: unknown }[] = [];
   const opened: string[] = [];
   const logs: string[] = [];
@@ -256,6 +256,7 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
     readCrmPages: async () => ({ urls: ["https://app.hubspot.com/contacts/1/contact/2"], browsers: [{ name: "chrome", bundleId: "chrome", access: "granted" }] }),
     platform: options.platform ?? "win32",
     askMicrophone: options.askMicrophone,
+    testPermissions: options.testPermissions,
     controller,
     loopback,
     drafts: new Drafts(join(tmp(), "meetings")),
@@ -270,6 +271,16 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
   };
   return { call: createBridge(deps), emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, loopbackStops: () => loopbackStops };
 }
+
+test("bridge: the permission test shows both permissions as not asked until the dashboard asks for each", async () => {
+  const t = bridgeSetup({ microphone: "granted", testPermissions: true });
+  assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "never_requested", systemAudio: "never_requested" });
+  await t.call("permissions:request", { type: "microphone" });
+  assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "authorized", systemAudio: "never_requested" });
+  await t.call("permissions:request", { type: "systemAudio" });
+  assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "authorized", systemAudio: "authorized" });
+  assert.deepEqual(t.opened, [], "an allowed microphone sends nobody to Settings");
+});
 
 test("bridge: on a Mac the microphone is asked for with the system prompt once, and a refusal points to System Settings", async () => {
   let asked = 0;

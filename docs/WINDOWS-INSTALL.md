@@ -24,17 +24,13 @@ Open PowerShell and run:
 
 A small window of buttons stands in for call detection ("Zoom takes the mic", "The call app lets go"), and a stand-in dashboard answers the island. Click the island, press Record, watch the transcript, Stop, and use the after-call card. Nothing is recorded.
 
-## 3. Use a dashboard that has the island code
+## 3. Which dashboard it opens
 
-The live site `app.getvocify.com` (branch `main`, last updated 2026-09-29) has no island or desktop-bridge code, so the app cannot learn from it that you are signed in, and recording and call detection cannot work there. The code is on `staging`, which is served at `staging.getvocify.com` behind a Vercel sign-in. Start the app on it:
+The live site `app.getvocify.com` (branch `main`) has no island or desktop-bridge code, so on it the island can never learn that you are signed in. Until that code is deployed there, the app opens the staging site `https://staging.getvocify.com` by default (it has the bridge, and is behind a Vercel sign-in: the first time you see a Vercel login inside the app, then the Vocify one). Staging does not know Windows yet, so the app tells it the platform name it understands (compatibility mode); only a few permission messages use Mac wording.
 
-```powershell
-& "$env:LOCALAPPDATA\Programs\Vocify\Vocify.exe" --dashboard=https://staging.getvocify.com
-```
+If the island still says signed out after you sign in, the log (`%APPDATA%\Vocify\logs\vocify.log`) tells why: a line `dashboard says signed in` means the dashboard reported your session; no such line means the page did not talk to the app.
 
-First a Vercel sign-in appears inside the app (your Vercel account), then the dashboard's own sign-in. The island reads "signed in" from the dashboard once the Vocify session exists. Staging does not know Windows yet, so the app tells it the platform name it understands (compatibility mode); only a few permission messages use Mac wording. To make this permanent put `{ "dashboardUrl": "https://staging.getvocify.com" }` in `%APPDATA%\Vocify\config.json`.
-
-The Windows-aware dashboard change is the branch `feat/desktop-windows` of `ToDa-Inc/getvocify`; once it is merged and deployed, add `--platform=win32` to turn the compatibility off.
+Other addresses: `--dashboard=<url>`, `{ "dashboardUrl": "..." }` in `%APPDATA%\Vocify\config.json`, or `VOCIFY_DASHBOARD_URL`. The Windows-aware dashboard change is the branch `feat/desktop-windows` of `ToDa-Inc/getvocify`; once merged and deployed, add `--platform=win32` to turn the compatibility off.
 
 ## 4. What to check
 

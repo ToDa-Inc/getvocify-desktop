@@ -99,7 +99,12 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
       case "permissions:appInfo":
         return APP_INFO;
       case "shell:state":
-        if (typeof args.state === "object" && args.state !== null) deps.controller.applyShellState(args.state as Args);
+        if (typeof args.state === "object" && args.state !== null) {
+          const state = args.state as Args;
+          // Whether the dashboard says a session exists is the one fact the island's Record button depends on.
+          if (typeof state.recorderReady === "boolean" && state.recorderReady !== deps.controller.state.recorderReady) deps.log(`dashboard says signed ${state.recorderReady ? "in" : "out"}`);
+          deps.controller.applyShellState(state);
+        }
         return null;
       case "shell:open-external":
         if (typeof args.url === "string" && OPEN_URL.test(args.url)) deps.openExternal(args.url);

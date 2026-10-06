@@ -16,7 +16,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const demo = process.argv.includes("--demo");
 /** `--smoke-test`: start, check the island is on screen, quit with code 0 (1 if it is not). For installers and CI. */
 const smoke = process.argv.includes("--smoke-test");
-const DEFAULT_DASHBOARD = "https://app.getvocify.com";
+/** The live site. It does not carry the island's bridge code yet, so it is only used when asked for (it still gets the Mac identity). */
+const PRODUCTION_DASHBOARD = "https://app.getvocify.com";
+/** What an installed build opens: the staging site, which has the bridge. Change to PRODUCTION_DASHBOARD once the live site has it. */
+const DEFAULT_DASHBOARD = "https://staging.getvocify.com";
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -40,7 +43,7 @@ if (!app.requestSingleInstanceLock()) {
         : resolveDashboardUrl({ argv: process.argv, env: process.env, config, fallback: DEFAULT_DASHBOARD });
       handle = await startApp({
         dashboardUrl,
-        reportedPlatform: demo ? undefined : resolveReportedPlatform({ argv: process.argv, config, dashboardUrl, production: DEFAULT_DASHBOARD }),
+        reportedPlatform: demo ? undefined : resolveReportedPlatform({ argv: process.argv, config, dashboardUrl, production: PRODUCTION_DASHBOARD }),
         trustFiles: demo,
         userDataDir: demo ? join(app.getPath("userData"), "demo") : app.getPath("userData"),
         islandOffsetY: Number(process.env.ISLAND_OFFSET_Y ?? 0) || 0,

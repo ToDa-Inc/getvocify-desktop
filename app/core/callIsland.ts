@@ -93,10 +93,8 @@ export const CallWording = {
   confirm(s: OnScreenCall): { title: string; line: string; button: string | null } {
     const title = s.name ?? (s.phone ? PhoneFormat.grouped(s.phone) : s.crmLabel);
     switch (s.state) {
-      case "callable": {
-        const from = s.callerId ? ` · from ${PhoneFormat.grouped(s.callerId)}` : "";
-        return { title, line: PhoneFormat.grouped(s.phone ?? "") + from, button: "Call" };
-      }
+      case "callable":
+        return { title, line: PhoneFormat.grouped(s.phone ?? ""), button: "Call" };
       case "no_phone":
         return { title, line: `No phone in ${s.crmLabel}`, button: null };
       case "no_caller_id":

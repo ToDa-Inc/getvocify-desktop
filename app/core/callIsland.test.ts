@@ -31,7 +31,7 @@ test("the contact on screen", () => {
   assert.equal(ana?.state, "callable");
   assert.equal(decodeOnScreen(null), null);
   assert.equal(decodeOnScreen({ state: "weird" }), null);
-  assert.deepEqual(CallWording.confirm(ana!), { title: "Ana Ruiz", line: "+34 600 11 12 22 · from +34 910 00 00 00", button: "Call" });
+  assert.deepEqual(CallWording.confirm(ana!), { title: "Ana Ruiz", line: "+34 600 11 12 22", button: "Call" });
   assert.equal(CallWording.glyphHelp(ana!), "Call Ana Ruiz");
   const noPhone = decodeOnScreen({ provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", state: "no_phone" })!;
   assert.equal(CallWording.glyphHelp(noPhone), "No phone in HubSpot");

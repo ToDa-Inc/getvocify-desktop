@@ -40,11 +40,12 @@ public class W {
 `;
 const powershell = (script) => execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", POWERSHELL_NATIVE + script], { encoding: "utf8", windowsHide: true, timeout: 60000 }).trim();
 
-/** A real click at screen point (x, y), then optionally real key presses typing `text`. */
+/** A real click at screen point (x, y) (none when x is negative), then optionally real key presses typing `text`. */
 function input(x, y, text = "") {
   if (mac) return execFileSync(macTool, [String(x), String(y), text]);
   const keys = text.replace(/[+^%~(){}[\]]/g, "{$&}");
-  powershell(`[void][W]::SetCursorPos(${Math.round(x)}, ${Math.round(y)}); Start-Sleep -Milliseconds 150; [W]::mouse_event(2,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 60; [W]::mouse_event(4,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 400; ${keys ? `[System.Windows.Forms.SendKeys]::SendWait('${keys.replace(/'/g, "''")}')` : ""}`);
+  const click = x < 0 ? "" : `[void][W]::SetCursorPos(${Math.round(x)}, ${Math.round(y)}); Start-Sleep -Milliseconds 150; [W]::mouse_event(2,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 60; [W]::mouse_event(4,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 400; `;
+  powershell(`${click}${keys ? `[System.Windows.Forms.SendKeys]::SendWait('${keys.replace(/'/g, "''")}')` : ""}`);
 }
 /** The process the system sends the keyboard to right now. */
 function foregroundPid() {
@@ -98,12 +99,27 @@ app.whenReady().then(async () => {
       const w = island.getBounds();
       return { x: w.x + r.x, y: w.y + r.y };
     };
+    /** What has the keyboard right now, for a step that types. */
+    const diagnose = async (label) => {
+      const fg = foregroundPid();
+      console.log(`      [${label}] foreground ${ours.has(fg) ? "the island's app" : `pid ${fg}`}; island focused ${island.isFocused()}, focusable ${island.isFocusable()}; caret in ${await page("document.activeElement?.className || document.activeElement?.tagName")}; ${describe()}`);
+    };
     const click = async (selector, options = {}) => {
       await sleep(250);
       const p = await point(selector, options.fx ?? 0.5, options.fy ?? 0.5, options.index ?? 0);
       if (!p) {
-        check(false, `${selector} is on screen to click`);
+        check(false, `${selector} is on screen to click (${describe()})`);
         return false;
+      }
+      if (options.type) {
+        // Click first, look at who has the keyboard, then type: shows where keys would go.
+        input(p.x, p.y);
+        await sleep(400);
+        await diagnose(`after clicking ${selector}`);
+        input(-1, -1, options.type);
+        await sleep(options.settle ?? 450);
+        await diagnose(`after typing into ${selector}`);
+        return true;
       }
       input(p.x, p.y, options.type ?? "");
       await sleep(options.settle ?? 450);

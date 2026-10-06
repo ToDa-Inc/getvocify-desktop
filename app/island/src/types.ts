@@ -149,4 +149,6 @@ export type IslandHost = {
    * The page reports the island's size in px and the window follows.
    */
   resize(size: { width: number; height: number }): void;
+  /** The island never takes keyboard focus (a click must not take it from the call), except while an editable note is shown. */
+  typing?(on: boolean): void;
 };

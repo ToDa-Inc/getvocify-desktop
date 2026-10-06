@@ -18,4 +18,7 @@ contextBridge.exposeInMainWorld("vocifyIsland", {
   act(action: IslandAction) {
     ipcRenderer.send("island:act", action);
   },
+  typing(on: boolean) {
+    ipcRenderer.send("island:typing", on === true);
+  },
 });

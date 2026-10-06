@@ -35,9 +35,10 @@ function pickedValues(change: PostCallChange, edited: string | undefined): strin
   return change.multiple ? raw.split(";").map((v) => v.trim()).filter(Boolean) : [raw];
 }
 
-/** What the value reads as: the picked options' labels, or the proposed text. */
+/** What the value reads as: the picked options' labels, or the text (as typed, when the rep edited it). */
 function shownValue(change: PostCallChange, edited: string | undefined): string {
-  if (edited === undefined || change.options.length === 0) return change.to;
+  if (edited === undefined) return change.to;
+  if (change.options.length === 0) return edited;
   const labels = pickedValues(change, edited).map((v) => change.options.find((o) => o.value === v)?.label ?? v);
   return labels.length ? labels.join(", ") : "—";
 }
@@ -75,6 +76,15 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const tab = tabs.includes(activeTab) ? activeTab : "crm";
   const keptCount = postCall.changes.filter((c) => kept.has(c.key)).length;
   const crm = postCallCrmName(postCall);
+
+  // The island never takes the keyboard (a click must not take it from the call), except while this card can still save:
+  // then its note and its free-text values can be typed in, and a click in them focuses the window like any text field.
+  const typable = postCall.stage === "ready" && postCall.canApprove;
+  useEffect(() => {
+    if (!typable) return;
+    window.vocifyIsland?.typing?.(true);
+    return () => window.vocifyIsland?.typing?.(false);
+  }, [typable]);
 
   const closeMenus = useCallback(() => {
     setOptions(null);
@@ -173,6 +183,11 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
                           kept={kept.has(change.key)}
                           open={options?.key === change.key}
                           toggle={() => toggleChange(change.key)}
+                          editable={typable}
+                          onEdit={(text) => {
+                            setEdited((previous) => ({ ...previous, [change.key]: text }));
+                            setKept((previous) => new Set([...previous, change.key]));
+                          }}
                           toggleOptions={(element) => {
                             setTypeMenu(null);
                             setOptions((open) => (open?.key === change.key ? null : { key: change.key, anchor: anchorOf(element) }));
@@ -362,8 +377,9 @@ function ChangesList({ children }: { children: ReactNode }) {
 }
 
 /** One proposed change: tick to keep, its field, and what it becomes (then what it was). */
-function ChangeRow({ change, shown, kept, open, toggle, toggleOptions }: { change: PostCallChange; shown: string; kept: boolean; open: boolean; toggle: () => void; toggleOptions: (element: Element) => void }) {
+function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable, onEdit }: { change: PostCallChange; shown: string; kept: boolean; open: boolean; toggle: () => void; toggleOptions: (element: Element) => void; editable: boolean; onEdit: (text: string) => void }) {
   const value = useRef<HTMLDivElement>(null);
+  const [editing, setEditing] = useState(false);
   const before = change.from !== null && change.from !== shown ? change.from : null;
   const hasOptions = change.options.length > 0;
   return (
@@ -376,20 +392,75 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions }: { chang
         ref={value}
         className="change-value"
         data-open={open}
-        title={hasOptions ? (change.multiple ? "Pick one or more" : "Pick another value") : "Edit it in Vocify"}
+        title={hasOptions ? (change.multiple ? "Pick one or more" : "Pick another value") : editable ? "Edit the text" : "Edit it in Vocify"}
         onClick={(event) => {
-          if (!hasOptions) return toggle();
+          if (!hasOptions) return editable ? setEditing(true) : toggle();
           event.stopPropagation();
           if (value.current) toggleOptions(value.current);
         }}
       >
-        <span className="value-text">
-          <span data-kept={kept}>{shown}</span>
-          {before !== null && <span className="was-text">{"  was "}{before}</span>}
-        </span>
+        {editing ? (
+          <ValueEditor text={shown} onDone={(text) => {
+            setEditing(false);
+            if (text !== null && text.trim() !== "" && text !== shown) onEdit(text.trim());
+          }} />
+        ) : (
+          <span className="value-text">
+            <span data-kept={kept}>{shown}</span>
+            {before !== null && <span className="was-text">{"  was "}{before}</span>}
+          </span>
+        )}
         <span className="value-chevron" style={{ opacity: hasOptions ? 1 : 0 }}><ChevronDown size={8} stroke={3.6} /></span>
       </div>
     </div>
+  );
+}
+
+/** A free-text value typed in place: Enter or a click elsewhere keeps it, Escape leaves it as it was. Grows with the text. */
+function ValueEditor({ text, onDone }: { text: string; onDone: (text: string | null) => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [draft, setDraft] = useState(text);
+  const done = useRef(false);
+  const finish = (value: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(value);
+  };
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+  return (
+    <textarea
+      ref={ref}
+      className="value-input"
+      rows={1}
+      value={draft}
+      // A CRM value is written as typed: no spelling marks, no corrections, no word suggestions from the system.
+      spellCheck={false}
+      autoCorrect="off"
+      autoCapitalize="off"
+      autoComplete="off"
+      onClick={(event) => event.stopPropagation()}
+      onChange={(event) => setDraft(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          finish(draft);
+        } else if (event.key === "Escape") {
+          finish(null);
+        }
+      }}
+      onBlur={() => finish(draft)}
+    />
   );
 }
 
@@ -421,7 +492,15 @@ function NoteBox({ editable, text, placeholder, onChange }: { editable: boolean;
   }, [text, editable]);
   return (
     <div className="note-box" style={{ marginTop: L.gap }}>
-      <textarea ref={ref} className="note-text" value={text} readOnly={!editable} placeholder={placeholder} spellCheck={editable} onChange={(event) => onChange(event.target.value)} />
+      <textarea
+        ref={ref}
+        className="note-text"
+        value={text}
+        readOnly={!editable}
+        placeholder={placeholder}
+        spellCheck={editable}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </div>
   );
 }

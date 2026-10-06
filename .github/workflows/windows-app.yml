@@ -49,12 +49,18 @@ jobs:
       # What a rep notices first: a real mouse click on the island must act at once and must not take focus from the call.
       - name: Real click on the island does not take focus
         run: npm run test:focus
+      # The whole flow with Windows' own mouse and keyboard: every island interaction, typing in the card, and the call
+      # window keeping focus throughout.
+      - name: Whole flow with real input
+        run: npm run test:real
       - name: Keep the island screenshots from the Windows run
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: island-screenshots-windows
-          path: app/test/out/*.png
+          path: |
+            app/test/out/*.png
+            app/test/out-real/*.png
           if-no-files-found: ignore
       - name: Call-audio pipeline
         run: npm run test:loopback

@@ -381,6 +381,12 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   ipcMain.on("island:act", (event, action: IslandAction) => {
     if (event.sender === island.webContents) controller.act(action);
   });
+  // Typing in the island (the call note) needs keyboard focus, which the island otherwise never takes.
+  ipcMain.on("island:typing", (event, on: boolean) => {
+    if (event.sender !== island.webContents) return;
+    // Taking focus is left to the rep's own click in the field, so the caret lands there and no key is lost.
+    island.setFocusable(on);
+  });
   ipcMain.on("island:resize", (event, size: { width: number; height: number }) => {
     if (event.sender !== island.webContents || !size || !(size.width > 0) || !(size.height > 0)) return;
     reportedSize = { width: Math.round(size.width), height: Math.round(size.height) };

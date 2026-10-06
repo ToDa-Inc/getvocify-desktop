@@ -9,6 +9,7 @@
     'shell:command': new Set(),
     'permissions:changed': new Set(),
     'call:pages': new Set(),
+    'crm:screen': new Set(),
     'call:ended': new Set(),
     'call:source': new Set(),
     'call:type': new Set(),
@@ -66,6 +67,8 @@
       // Automation consent the first time unless { ask: false }.
       pages: (options = {}) => call('crm:pages', options),
       openAutomationSettings: () => call('crm:open-automation-settings'),
+      // The CRM pages in the frontmost browser changed: { urls } ([] = no record any more).
+      onScreen: on('crm:screen'),
       // The island detected a call with these CRM pages on screen: { urls }.
       onCallPages: on('call:pages'),
       // That call ended (the call app let go of the mic).

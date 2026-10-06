@@ -99,6 +99,7 @@ final class BridgeHolder: ObservableObject {
         webView.navigationDelegate = navigationDelegate
         bridge.mainWebView = webView
         MeetingPillController.shared.watchCalls(bridge: bridge)
+        CrmScreenWatcher.shared.start(bridge: bridge)
         webView.load(URLRequest(url: entryURL()))
         cachedWebView = webView
         return webView

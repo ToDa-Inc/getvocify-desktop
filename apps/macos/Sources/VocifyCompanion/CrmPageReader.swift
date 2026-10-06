@@ -41,7 +41,48 @@ enum CrmPageReader {
         return (["urls": urls, "browsers": browsers], CallSource.page(in: pages))
     }
 
-    /// Blocks while macOS shows the consent prompt, so never call it on the main thread.
+    /// The CRM URLs in the frontmost app, when it is a supported browser Vocify may read; nil otherwise.
+    /// Never asks for consent (that happens once, from first-run setup), so it never blocks on a prompt.
+    static func readFrontmost() -> [String]? {
+        guard let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+              let browser = CrmPages.browser(bundleID: bundleID),
+              determineAccess(bundleID: bundleID, ask: false) == .granted,
+              let output = runCompiled(browser)
+        else { return nil }
+        return CrmPages.crmURLs(fromScriptOutput: output)
+    }
+
+    /// Each running supported browser's Automation consent; `ask` shows macOS's prompt for the ones not asked yet.
+    static func access(ask: Bool) async -> [String] {
+        let running = NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier)
+        var answers: [String] = []
+        for browser in CrmPages.browsersToRead(running: running, frontmost: nil) {
+            let bundleID = browser.bundleID
+            answers.append(await Task.detached { determineAccess(bundleID: bundleID, ask: ask) }.value.rawValue)
+        }
+        return answers
+    }
+
+    /// The watcher reads every 1.5 s: compile each browser's script once.
+    private static var compiled: [String: NSAppleScript] = [:]
+
+    private static func runCompiled(_ browser: CrmPages.Browser) -> String? {
+        let script: NSAppleScript
+        if let cached = compiled[browser.bundleID] {
+            script = cached
+        } else {
+            guard let fresh = NSAppleScript(source: browser.script) else { return nil }
+            var error: NSDictionary?
+            guard fresh.compileAndReturnError(&error) else { return nil }
+            compiled[browser.bundleID] = fresh
+            script = fresh
+        }
+        var error: NSDictionary?
+        let result = script.executeAndReturnError(&error)
+        return error == nil ? result.stringValue : nil
+    }
+
+    /// Blocks while macOS shows the consent prompt, so never call it on the main thread with `ask`.
     nonisolated private static func determineAccess(bundleID: String, ask: Bool) -> Access {
         let target = NSAppleEventDescriptor(bundleIdentifier: bundleID)
         guard let desc = target.aeDesc else { return .unavailable }

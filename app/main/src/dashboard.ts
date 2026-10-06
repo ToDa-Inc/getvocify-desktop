@@ -9,6 +9,8 @@ import { app, BrowserWindow, session, shell, type WebContents } from "electron";
 export type DashboardOptions = {
   url: string;
   preload: string;
+  /** The app's icon, for the window's title bar and the taskbar. */
+  icon?: string;
   /** Hosts whose pages may use the microphone and open inside the app. */
   isTrustedHost(host: string): boolean;
   /** The platform name the page is told through its bridge. */
@@ -60,6 +62,7 @@ export class DashboardHost {
       minHeight: 640,
       show: false,
       title: "Vocify",
+      icon: this.options.icon,
       backgroundColor: "#f7f4ee",
       autoHideMenuBar: true,
       webPreferences: {

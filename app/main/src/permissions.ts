@@ -25,6 +25,18 @@ export function microphoneStatus(raw: string): Status {
   }
 }
 
+/** The microphone state in a few words, for the tray menu. */
+export function microphoneLabel(raw: string): string {
+  switch (microphoneStatus(raw)) {
+    case "authorized":
+      return "allowed";
+    case "denied":
+      return "off";
+    default:
+      return "not asked yet";
+  }
+}
+
 /**
  * What `permissions.status()` returns. Call audio needs no permission on Windows. Elsewhere this shell cannot capture it
  * (the Mac has its own native app), so it runs microphone-only: call audio is reported ready so the dashboard lets a

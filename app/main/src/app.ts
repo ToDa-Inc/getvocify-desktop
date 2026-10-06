@@ -15,12 +15,15 @@ import { createLoopback } from "./loopback/loopback.ts";
 import { createLogger } from "./logger.ts";
 import { JsonSettings } from "./settings.ts";
 import { ShortcutManager } from "./shortcut.ts";
+import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { trayItems } from "./tray-menu.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
 import { crmUrlsOf, createPageReader, encodePowerShell, type BrowserPage } from "./windows/browser-pages.ts";
 import { MIC_CONSENT_KEY, MicWatcher, type DetectedCaller } from "./windows/mic-use.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
+/** The app's icon (the Vocify mark): the dock on a Mac, the taskbar and title bar and the tray on Windows. */
+const appIconPath = join(here, "../../island/dist/icon.png");
 
 export type AppOptions = {
   /** The page the dashboard window loads. */
@@ -52,6 +55,10 @@ export type AppHandle = {
   permissions(): Promise<unknown>;
   /** True when a restart would interrupt nothing: no recording and no call update on screen. */
   canInstallUpdate(): boolean;
+  /** True when this start is the restart after an automatic update. */
+  startedAfterUpdate: boolean;
+  /** Called just before an update restarts the app. */
+  markUpdateRestart(): void;
   /** What "Check for updates" in the tray menu does (set by the updater, which starts after the app). */
   onCheckForUpdates(fn: () => void): void;
   /** Writes a line to the app's log file. */
@@ -110,6 +117,9 @@ const trustedHostsFor = (dashboardUrl: string) => {
 export async function startApp(options: AppOptions): Promise<AppHandle> {
   const log = createLogger(join(options.userDataDir, "logs", "vocify.log"));
   const settings = new JsonSettings(join(options.userDataDir, "settings.json"));
+  // An update restarts the app by itself: it must not throw the dashboard window up as if the rep had just launched it.
+  const startedAfterUpdate = settings.get("restartedForUpdate") === true;
+  settings.set("restartedForUpdate", false);
   const drafts = new Drafts(join(options.userDataDir, "meetings"));
   const platform = process.platform;
   const placement = (platform === "darwin" ? await measureMac() : null) ?? measureElectron();
@@ -212,6 +222,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const dashboard = new DashboardHost({
     url: options.dashboardUrl,
     preload: join(here, "dashboard-preload.cjs"),
+    icon: appIconPath,
     isTrustedHost: trustedHostsFor(options.dashboardUrl),
     isSignInHost: signInHostsFor(options.dashboardUrl),
     reportedPlatform: options.reportedPlatform ?? (platform === "win32" ? "win32" : "darwin"),
@@ -282,6 +293,13 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     }
   })();
   const tray = createTray();
+  // The microphone can be switched in the system's settings while the app runs: keep the tray's line current.
+  const trayRefresh = tray ? setInterval(() => tray.setContextMenu(buildTrayMenu(controller.state)), 5000) : null;
+  trayRefresh?.unref();
+  if (platform === "darwin") {
+    const dockIcon = nativeImage.createFromPath(appIconPath);
+    if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon);
+  }
   function pushState(state: IslandState): void {
     if (island.isDestroyed()) return;
     island.webContents.send("island:state", state);
@@ -449,6 +467,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     iconFor,
     permissions: () => bridge("permissions:status", {}),
     canInstallUpdate: () => !controller.isListening && !recordingOrFinishing() && controller.state.postCall === null,
+    startedAfterUpdate,
+    markUpdateRestart: () => settings.set("restartedForUpdate", true),
     onCheckForUpdates: (fn) => void (checkForUpdates = fn),
     log,
     quit: () => app.quit(),
@@ -457,8 +477,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   /* ---------- tray ---------- */
 
   function createTray(): Tray | null {
-    const iconPath = join(here, "../../island/dist/icon.png");
-    const image = nativeImage.createFromPath(iconPath);
+    const image = nativeImage.createFromPath(appIconPath);
     if (image.isEmpty()) return null;
     const tray = new Tray(image.resize({ width: 16, height: 16 }));
     tray.setToolTip("Vocify");
@@ -468,13 +487,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   function buildTrayMenu(state: IslandState): Menu {
     return Menu.buildFromTemplate(
-      trayItems(state, `Vocify ${app.getVersion()} · ${dashboardHost}`).map((item) => {
+      trayItems(state, `Vocify ${app.getVersion()} · ${dashboardHost}`, microphoneLabel(systemPreferences.getMediaAccessStatus("microphone"))).map((item) => {
         if (item.id === "separator") return { type: "separator" as const };
         const click = () => {
           if (item.id === "open") dashboard.show();
           else if (item.id === "record") controller.shortcutPressed();
           else if (item.id === "stop") controller.act({ name: "stop" });
           else if (item.id === "update") checkForUpdates?.();
+          else if (item.id === "permissions") void shell.openExternal(microphoneSettingsUrl(platform));
           else app.quit();
         };
         return { label: item.label, enabled: item.enabled, click };

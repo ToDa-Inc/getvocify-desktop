@@ -49,6 +49,8 @@ if (!app.requestSingleInstanceLock()) {
         islandOffsetY: Number(process.env.ISLAND_OFFSET_Y ?? 0) || 0,
         controls: demo,
       });
+      // Opening the app opens its window, like any app; the island alone is for starts nobody asked for (an update restart, `--hidden`).
+      if (!smoke && !handle.startedAfterUpdate && !process.argv.includes("--hidden")) handle.dashboard.show();
       // Only an installed build updates itself; the demo, the smoke test and a developer's checkout never do.
       if (app.isPackaged && !demo && !smoke && process.env.VOCIFY_NO_UPDATE !== "1") {
         const { default: updater } = await import("electron-updater");
@@ -60,6 +62,7 @@ if (!app.requestSingleInstanceLock()) {
             return () => clearInterval(timer);
           },
           log: (message) => handle?.log(`update: ${message}`),
+          beforeInstall: () => handle?.markUpdateRestart(),
         });
         handle?.onCheckForUpdates(updates.check);
       }

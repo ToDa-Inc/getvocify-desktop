@@ -43,6 +43,8 @@ Other addresses: `--dashboard=<url>`, `{ "dashboardUrl": "..." }` in `%APPDATA%\
 | After the call | Stop (5 s to undo), then the CRM update card: Save, Review in Vocify, Email, Notes. |
 | Focus | Clicking the island must never take focus from the call window. |
 
+Opening the app (the installer's last step, the Start-menu shortcut, a second launch) opens its dashboard window; closing the window frees its memory and leaves the island. An automatic update restarts without opening the window, and `--hidden` starts with the island only. The tray menu also shows `Microphone: allowed / off / not asked yet` and has **Microphone settings…**, which opens the system's microphone page.
+
 The tray icon's menu starts with a grey line `Vocify <version> · <dashboard host>` (which build and which dashboard this is) and has **Check for updates**, which asks GitHub now instead of waiting up to 30 minutes.
 
 Logs: `%APPDATA%\Vocify\logs\vocify.log`. Quit from the tray icon. Memory with the dashboard open is about 600 MB; the island alone is about 230 MB.

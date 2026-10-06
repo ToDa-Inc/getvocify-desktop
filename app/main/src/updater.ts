@@ -20,6 +20,8 @@ export type UpdaterOptions = {
   canInstallNow(): boolean;
   every(ms: number, fn: () => void): () => void;
   log(message: string): void;
+  /** Called just before the app quits to install. */
+  beforeInstall?(): void;
 };
 
 export const CHECK_EVERY_MS = 30 * 60_000;
@@ -41,6 +43,7 @@ export function startUpdater(options: UpdaterOptions): Updater {
     if (downloaded === null) return;
     if (options.canInstallNow()) {
       log(`updating to ${downloaded}`);
+      options.beforeInstall?.();
       source.quitAndInstall(true, true);
       return;
     }

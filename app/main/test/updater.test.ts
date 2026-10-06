@@ -5,7 +5,7 @@ import { CHECK_EVERY_MS, startUpdater, type UpdateSource } from "../src/updater.
 function setup(canInstall: () => boolean) {
   const handlers: Record<string, (arg: never) => void> = {};
   const timers: { ms: number; fn: () => void; stopped: boolean }[] = [];
-  const calls = { checks: 0, installs: [] as unknown[][] };
+  const calls = { checks: 0, installs: [] as unknown[][], before: 0 };
   const source = {
     autoDownload: false,
     autoInstallOnAppQuit: false,
@@ -24,6 +24,7 @@ function setup(canInstall: () => boolean) {
       return () => void (t.stopped = true);
     },
     log: (m) => logs.push(m),
+    beforeInstall: () => void (calls.before += 1),
   });
   return { source, handlers, timers, calls, logs, stop: () => updater.stop(), check: () => updater.check() };
 }
@@ -49,6 +50,7 @@ test("a downloaded update is installed at once when nothing is in progress, sile
   const t = setup(() => true);
   t.handlers["update-downloaded"]({ version: "0.4.9" } as never);
   assert.deepEqual(t.calls.installs, [[true, true]]);
+  assert.equal(t.calls.before, 1, "the app is told first so it can start quietly after the restart");
 });
 
 test("while a meeting is being recorded the update waits, and goes in the moment it is free", () => {

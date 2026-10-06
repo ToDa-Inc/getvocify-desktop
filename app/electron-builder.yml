@@ -31,4 +31,9 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   artifactName: Vocify-Setup-${version}.${ext}
-publish: null
+# Builds are published as GitHub pre-releases by the Windows workflow; installed apps check them (see main/src/updater.ts).
+publish:
+  provider: github
+  owner: ToDa-Inc
+  repo: getvocify-desktop
+  releaseType: prerelease

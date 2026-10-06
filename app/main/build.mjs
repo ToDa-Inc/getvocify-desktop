@@ -15,6 +15,8 @@ await build({
   format: "esm",
   target: "node20",
   outExtension: { ".js": ".mjs" },
+  // electron-updater is CommonJS and loads its own parts with `require`, which an ES-module bundle does not have.
+  banner: { js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);' },
 });
 // Preloads run in a sandboxed context that only loads CommonJS.
 await build({

@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { startApp } from "./app.ts";
+import { startUpdater, type UpdateSource } from "./updater.ts";
 import { resolveDashboardUrl, resolveReportedPlatform } from "./config.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -45,6 +46,21 @@ if (!app.requestSingleInstanceLock()) {
         islandOffsetY: Number(process.env.ISLAND_OFFSET_Y ?? 0) || 0,
         controls: demo,
       });
+      // Only an installed build updates itself; the demo, the smoke test and a developer's checkout never do.
+      if (app.isPackaged && !demo && !smoke && process.env.VOCIFY_NO_UPDATE !== "1") {
+        const { default: updater } = await import("electron-updater");
+        startUpdater({
+          source: updater.autoUpdater as unknown as UpdateSource,
+          canInstallNow: () => handle?.canInstallUpdate() ?? false,
+          every: (ms, fn) => {
+            const timer = setInterval(fn, ms);
+            return () => clearInterval(timer);
+          },
+          log: (message) => handle?.log(`update: ${message}`),
+        });
+      }
+      // The smoke test also proves the bundled update library loads, since an installed build depends on it.
+      if (smoke) await import("electron-updater");
       if (smoke) {
         setTimeout(() => app.exit(handle?.island.isVisible() ? 0 : 1), 4000);
       }

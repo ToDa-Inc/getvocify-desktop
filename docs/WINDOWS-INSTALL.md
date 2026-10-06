@@ -4,10 +4,13 @@ A Windows build of the Electron app is produced by GitHub Actions on every push 
 
 ## 1. Get the installer
 
-1. Open <https://github.com/ToDa-Inc/getvocify-desktop/actions/workflows/windows-app.yml> and open the latest green run.
-2. Under **Artifacts**, download **Vocify-Windows**. Unzip it: it holds `Vocify-Setup-0.4.0.exe` (about 78 MB).
-3. Run it. Windows shows "Windows protected your PC" because the installer is not signed yet: choose **More info**, then **Run anyway**.
-4. It installs for your user only (no administrator rights) into `%LOCALAPPDATA%\Programs\Vocify` and starts. The island appears at the top centre of the screen.
+Every build that passes the Windows checks is published as a pre-release at <https://github.com/ToDa-Inc/getvocify-desktop/releases>.
+
+1. Open the newest release and download `Vocify-Setup-<version>.exe` (about 78 MB).
+2. Run it. Windows shows "Windows protected your PC" because the installer is not signed yet: choose **More info**, then **Run anyway**.
+3. It installs for your user only (no administrator rights) into `%LOCALAPPDATA%\Programs\Vocify` and starts. The island appears at the top centre of the screen.
+
+**You install once.** After that the app checks GitHub every 30 minutes (and at start), downloads a newer build in the background and restarts into it as soon as no meeting is being recorded and no call update is on screen; if you are busy it waits, and installs when you quit. The log line `update: ...` in `%APPDATA%\Vocify\logs\vocify.log` says what it did. Set the environment variable `VOCIFY_NO_UPDATE=1` to switch it off.
 
 On a company-managed PC an unsigned installer may be blocked by policy; try it on a personal machine first.
 

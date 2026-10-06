@@ -8,6 +8,10 @@ on:
       - "app/**"
       - ".github/workflows/windows-app.yml"
 
+# Publishing a build as a GitHub release needs write access to this repository's contents.
+permissions:
+  contents: write
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -25,6 +29,9 @@ jobs:
           cache-dependency-path: app/package-lock.json
 
       - run: npm ci --no-audit --no-fund
+      # Every build gets a higher version than the last, which is how installed apps know there is something newer.
+      - name: Version this build
+        run: npm version "0.4.${{ github.run_number }}" --no-git-tag-version
       - run: npm run build
       - run: npm run typecheck
 
@@ -72,6 +79,13 @@ jobs:
           $p = Start-Process -FilePath $exe -ArgumentList '--demo', '--smoke-test' -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "smoke test exit code $($p.ExitCode)" }
           "the installed app started, showed its island and quit cleanly"
+
+      # Only a build that passed everything above, installed and started, is offered to installed apps.
+      - name: Publish the build for auto-update (GitHub pre-release)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --prepackaged release/win-unpacked --win nsis --x64 --publish always
 
       - uses: actions/upload-artifact@v4
         with:

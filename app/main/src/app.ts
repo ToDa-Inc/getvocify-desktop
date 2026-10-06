@@ -50,6 +50,10 @@ export type AppHandle = {
   iconFor(path: string): Promise<string | null>;
   /** Test hook: what the dashboard would be told about permissions. */
   permissions(): Promise<unknown>;
+  /** True when a restart would interrupt nothing: no recording and no call update on screen. */
+  canInstallUpdate(): boolean;
+  /** Writes a line to the app's log file. */
+  log(message: string): void;
   quit(): void;
 };
 
@@ -195,7 +199,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (releaseTimer) clearTimeout(releaseTimer);
     releaseTimer = setTimeout(() => dashboard.releaseIfIdle(), releaseGrace + 50);
   };
+  // Once the app is quitting (a tray quit, an update restart) the dashboard window must close, not hide.
+  let quitting = false;
   const canDestroy = () =>
+    quitting ||
     Date.now() >= busyUntil && !controller.isListening && controller.state.mode.kind !== "recording" && controller.state.mode.kind !== "stopped" && controller.state.postCall === null && drafts.count() === 0;
   const dashboard = new DashboardHost({
     url: options.dashboardUrl,
@@ -372,7 +379,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   screen.on("display-removed", reposition);
 
   app.on("before-quit", (event) => {
-    if (!controller.isListening) return;
+    if (!controller.isListening) {
+      quitting = true;
+      return;
+    }
     const choice = dialog.showMessageBoxSync({
       type: "warning",
       message: "A meeting is still recording",
@@ -382,6 +392,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       cancelId: 0,
     });
     if (choice === 0) event.preventDefault();
+    else quitting = true;
   });
 
   let controlsWindow: BrowserWindow | null = null;
@@ -418,6 +429,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     detectCall: (caller) => controller.callChanged(caller),
     iconFor,
     permissions: () => bridge("permissions:status", {}),
+    canInstallUpdate: () => !controller.isListening && controller.state.mode.kind !== "recording" && controller.state.mode.kind !== "stopped" && controller.state.postCall === null,
+    log,
     quit: () => app.quit(),
   };
 

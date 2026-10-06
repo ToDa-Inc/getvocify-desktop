@@ -1,6 +1,6 @@
 # Vocify for Mac
 
-Native macOS app with the Vocify dashboard embedded — records Zoom, Meet, and Teams without a bot. Your mic is **You**, system audio is **Them**. Talks to **https://api.getvocify.com/api/v1**.
+Native macOS app with the Vocify dashboard embedded — records Zoom, Meet, and Teams without a bot. Your mic is **You**, system audio is **Them**. Talks to **https://getvocify-staging.up.railway.app/api/v1** (staging).
 
 **Requires macOS 14+.**
 

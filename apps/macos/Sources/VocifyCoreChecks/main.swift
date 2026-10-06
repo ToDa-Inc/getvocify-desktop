@@ -302,4 +302,12 @@ check(liveDial.muted && liveDial.answeredAt == Date(timeIntervalSince1970: 1_700
 check(DialIslandState.decode(["phase": "active"]) == nil, "a dial needs its phone")
 check(DialIslandState.isCallUp(liveDial) && !DialIslandState.isCallUp(missed), "an ended dial is not a call")
 
+// The island's call offer follows the front window's active tab only (as the Chrome extension follows the focused tab).
+let hubspotA = "https://app.hubspot.com/contacts/1/record/0-1/2"
+let hubspotB = "https://app.hubspot.com/contacts/1/record/0-1/3"
+check(CrmPages.frontRecordURLs(fromScriptOutput: "\(hubspotA)\n\(hubspotB)\n") == [hubspotA], "front window's tab only")
+check(CrmPages.frontRecordURLs(fromScriptOutput: "https://mail.google.com/mail/u/0/\n\(hubspotB)\n").isEmpty, "a non-CRM front tab offers nobody, even with a CRM tab behind it")
+check(CrmPages.frontRecordURLs(fromScriptOutput: "\n\(hubspotA)\n") == [hubspotA], "blank lines are skipped")
+check(CrmPages.frontRecordURLs(fromScriptOutput: "").isEmpty, "no window")
+
 print("ok")

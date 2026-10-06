@@ -41,7 +41,8 @@ enum CrmPageReader {
         return (["urls": urls, "browsers": browsers], CallSource.page(in: pages))
     }
 
-    /// The CRM URLs in the frontmost app, when it is a supported browser Vocify may read; nil otherwise.
+    /// The front window's active tab as a CRM URL (or none), when the frontmost app is a supported browser
+    /// Vocify may read; nil otherwise.
     /// Never asks for consent (that happens once, from first-run setup), so it never blocks on a prompt.
     static func readFrontmost() -> [String]? {
         guard let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
@@ -49,7 +50,7 @@ enum CrmPageReader {
               determineAccess(bundleID: bundleID, ask: false) == .granted,
               let output = runCompiled(browser)
         else { return nil }
-        return CrmPages.crmURLs(fromScriptOutput: output)
+        return CrmPages.frontRecordURLs(fromScriptOutput: output)
     }
 
     /// Each running supported browser's Automation consent; `ask` shows macOS's prompt for the ones not asked yet.

@@ -1948,6 +1948,13 @@ private struct CallBar: View {
                 action: controller.toggleKeypad
             )
             HangUpButton(title: "Hang up", action: controller.hangUpCall)
+            // Who the call is with, whatever tab the rep has moved to since.
+            Text(dial.name ?? PhoneFormat.grouped(dial.phone))
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(IslandStyle.text)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(PhoneFormat.grouped(dial.phone))
         }
     }
 }

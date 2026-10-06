@@ -47,7 +47,7 @@ export function createMacPageReader(exec: Exec) {
       if (!browser) return { urls: null, access: "never_requested" };
       try {
         const out = await exec("/usr/bin/osascript", ["-e", browser.script], 10_000);
-        return { urls: CrmPages.crmURLs(out), access: "authorized" };
+        return { urls: CrmPages.frontRecordURLs(out), access: "authorized" };
       } catch (error) {
         return { urls: null, access: NOT_ALLOWED.test(String((error as Error)?.message ?? error)) ? "denied" : "never_requested" };
       }

@@ -57,3 +57,14 @@ test("the call in progress", () => {
   assert.equal(isVocifyCallUp(missed), false);
   assert.equal(isVocifyCallUp(null), false);
 });
+
+import { CrmPages } from "./crmPages.ts";
+
+test("the call offer follows the front window's active tab only", () => {
+  const a = "https://app.hubspot.com/contacts/1/record/0-1/2";
+  const b = "https://app.hubspot.com/contacts/1/record/0-1/3";
+  assert.deepEqual(CrmPages.frontRecordURLs(`${a}\n${b}\n`), [a]);
+  assert.deepEqual(CrmPages.frontRecordURLs(`https://mail.google.com/mail/u/0/\n${b}\n`), []);
+  assert.deepEqual(CrmPages.frontRecordURLs(`\n${a}\n`), [a]);
+  assert.deepEqual(CrmPages.frontRecordURLs(""), []);
+});

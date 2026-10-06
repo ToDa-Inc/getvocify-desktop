@@ -3,7 +3,7 @@ import { cornerRadius, earWidth, islandSize } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
 import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Keypad, Mic, MicSlash, Pause, Phone, PhoneDown, Play, Sparkle, Waveform } from "./icons.tsx";
-import { CallWording, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
+import { CallWording, PhoneFormat, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
 import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuView } from "./types.ts";
@@ -412,6 +412,8 @@ function CallBar({ dial, keypadOpen, act }: { dial: DialIslandState; keypadOpen:
         <Keypad size={10} />
       </CircleButton>
       <HangUpButton title="Hang up" onClick={() => act({ name: "hangup" })} />
+      {/* Who the call is with, whatever tab the rep has moved to since. */}
+      <span className="menu-title call-name" title={PhoneFormat.grouped(dial.phone)}>{dial.name ?? PhoneFormat.grouped(dial.phone)}</span>
     </>
   );
 }

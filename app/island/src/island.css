@@ -288,3 +288,4 @@ button.type-tag:hover { color: var(--text); }
 .hangup-dot:hover { background: rgba(219, 75, 75, 0.85); }
 .keypad { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; width: 180px; padding: 0 14px 8px; box-sizing: content-box; }
 .keypad-key { justify-self: center; justify-content: center; width: 26px; padding: 0; }
+.call-name { min-width: 0; max-width: 130px; }

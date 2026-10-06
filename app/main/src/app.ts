@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage,
 import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { CallSource } from "../../core/callSource.ts";
+import { CrmPages } from "../../core/crmPages.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { islandSize } from "../../island/src/geometry.ts";
@@ -267,7 +268,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     // On a Mac only once the rep allowed it from first-run setup: reading a browser is what makes macOS ask.
     isBrowser: (app) => (screenReader ? WATCHED_BROWSERS.has(app) : macReader.isBrowser(app) && macAccess() === "authorized"),
     read: async (app) => {
-      if (screenReader) return crmUrlsOf(await screenReader.read());
+      if (screenReader) {
+        // The active tab of the window in front only, as the Chrome extension follows the focused tab.
+        const page = await screenReader.frontPage();
+        return page ? CrmPages.frontRecordURLs(page.url) : [];
+      }
       const { urls, access } = await macReader.read(app);
       if (access === "denied") settings.set("crmTabs", "denied");
       return urls;

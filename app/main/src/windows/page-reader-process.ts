@@ -49,7 +49,7 @@ export function createPageReaderProcess(spawn: () => ReaderChild, now: () => num
     return started;
   };
 
-  const ask = (command: "front" | "read") =>
+  const ask = (command: "front" | "page" | "read") =>
     new Promise<string | null>((resolve) => {
       const reader = ensure();
       if (!reader) return resolve(null);
@@ -72,6 +72,11 @@ export function createPageReaderProcess(spawn: () => ReaderChild, now: () => num
     async front(): Promise<string | null> {
       const name = (await ask("front"))?.trim().toLowerCase();
       return name || null;
+    },
+    /** The active tab of the window in front, or null. */
+    async frontPage(): Promise<BrowserPage | null> {
+      const output = await ask("page");
+      return output === null ? null : parsePageOutput(output)[0] ?? null;
     },
     async read(): Promise<BrowserPage[]> {
       const output = await ask("read");

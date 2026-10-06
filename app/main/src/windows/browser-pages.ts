@@ -12,22 +12,16 @@ import { CrmPages } from "../../../core/crmPages.ts";
  * page (Document controls), so reading the address bar never touches page content. The address bar is the text field in
  * the top band of the window, not found by its (translated) name.
  */
-export const READ_PAGES_SCRIPT = String.raw`
+/** Shared by both scripts: UI Automation set-up, and the address bar of one browser window (the walk skips the page). */
+const UIA_SETUP = String.raw`
 $ErrorActionPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 $AE = [System.Windows.Automation.AutomationElement]
 $CT = [System.Windows.Automation.ControlType]
-$browsers = @{}
-Get-Process -Name chrome,msedge,brave,opera,vivaldi,firefox,arc | ForEach-Object { $browsers[$_.Id] = $_.ProcessName }
-$chromium = New-Object System.Windows.Automation.PropertyCondition($AE::ClassNameProperty, 'Chrome_WidgetWin_1')
-$firefox = New-Object System.Windows.Automation.PropertyCondition($AE::ClassNameProperty, 'MozillaWindowClass')
-$either = New-Object System.Windows.Automation.OrCondition($chromium, $firefox)
-$windows = $AE::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $either)
 $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
-foreach ($w in $windows) {
-  if (-not $browsers.ContainsKey($w.Current.ProcessId)) { continue }
+function Find-Address($w) {
   $top = $w.Current.BoundingRectangle.Top
   $stack = New-Object System.Collections.Stack
   $stack.Push(@($w, 0))
@@ -50,6 +44,21 @@ foreach ($w in $windows) {
     $child = $walker.GetFirstChild($el)
     while ($child) { $stack.Push(@($child, ($depth + 1))); $child = $walker.GetNextSibling($child) }
   }
+  return $found
+}
+`;
+
+export const READ_PAGES_SCRIPT = String.raw`
+${UIA_SETUP}
+$browsers = @{}
+Get-Process -Name chrome,msedge,brave,opera,vivaldi,firefox,arc | ForEach-Object { $browsers[$_.Id] = $_.ProcessName }
+$chromium = New-Object System.Windows.Automation.PropertyCondition($AE::ClassNameProperty, 'Chrome_WidgetWin_1')
+$firefox = New-Object System.Windows.Automation.PropertyCondition($AE::ClassNameProperty, 'MozillaWindowClass')
+$either = New-Object System.Windows.Automation.OrCondition($chromium, $firefox)
+$windows = $AE::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $either)
+foreach ($w in $windows) {
+  if (-not $browsers.ContainsKey($w.Current.ProcessId)) { continue }
+  $found = Find-Address $w
   if ($found) { Write-Output ($browsers[$w.Current.ProcessId] + [char]9 + $found) }
 }
 `;
@@ -117,11 +126,11 @@ export const WATCHED_BROWSERS = new Set(["chrome", "msedge", "brave", "opera", "
 
 /**
  * The long-lived reader behind the CRM watcher (see page-reader-process.ts): `front` answers the foreground window's
- * process name, `read` the same lines as READ_PAGES_SCRIPT, each followed by an `<<END>>` line.
+ * process name, `page` its `browser<TAB>address` (the active tab of the window in front, as the Chrome extension follows
+ * the focused tab), `read` the same lines as READ_PAGES_SCRIPT; each answer ends with an `<<END>>` line.
  */
 export const READER_LOOP_SCRIPT = String.raw`
-$ErrorActionPreference = 'SilentlyContinue'
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+${UIA_SETUP}
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -136,11 +145,16 @@ ${READ_PAGES_SCRIPT}
 while ($true) {
   $line = [Console]::In.ReadLine()
   if ($line -eq $null) { break }
-  if ($line -eq 'front') {
+  if ($line -eq 'front' -or $line -eq 'page') {
+    $window = [VocifyForeground]::GetForegroundWindow()
     [uint32]$owner = 0
-    [void][VocifyForeground]::GetWindowThreadProcessId([VocifyForeground]::GetForegroundWindow(), [ref]$owner)
+    [void][VocifyForeground]::GetWindowThreadProcessId($window, [ref]$owner)
     $process = Get-Process -Id $owner
-    if ($process) { Write-Output $process.ProcessName }
+    if ($process -and $line -eq 'front') { Write-Output $process.ProcessName }
+    if ($process -and $line -eq 'page') {
+      $address = Find-Address ($AE::FromHandle($window))
+      if ($address) { Write-Output ($process.ProcessName + [char]9 + $address) }
+    }
   } elseif ($line -eq 'read') {
     Read-Pages
   }

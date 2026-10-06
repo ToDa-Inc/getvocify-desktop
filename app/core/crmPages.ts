@@ -97,4 +97,16 @@ export const CrmPages = {
   isCrmURL(url: string): boolean {
     return isCrmURL(url);
   },
+
+  /**
+   * The front window's active tab, when it is a CRM page (the island's call offer). Script output lists windows front
+   * first; like the Chrome extension, a tab behind it or in another window never counts. Same as CrmPages.swift.
+   */
+  frontRecordURLs(fromScriptOutput: string): string[] {
+    const front = fromScriptOutput
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line !== "");
+    return front && isCrmURL(front) ? [front] : [];
+  },
 };

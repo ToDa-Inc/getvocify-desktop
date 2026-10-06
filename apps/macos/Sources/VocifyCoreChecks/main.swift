@@ -282,7 +282,7 @@ let ana = OnScreenCall.decode(["provider": "hubspot", "crmLabel": "HubSpot", "na
 check(ana?.state == .callable && ana?.name == "Ana Ruiz", "decodes the callable contact")
 check(OnScreenCall.decode(nil) == nil && OnScreenCall.decode(["state": "weird"]) == nil, "rejects anything else")
 let anaConfirm = CallWording.confirm(ana!)
-check(anaConfirm.title == "Ana Ruiz" && anaConfirm.line == "+34 600 11 12 22 · from +34 910 00 00 00" && anaConfirm.button == "Call", "confirm row")
+check(anaConfirm.title == "Ana Ruiz" && anaConfirm.line == "+34 600 11 12 22" && anaConfirm.button == "Call", "confirm row: who and their number")
 check(CallWording.glyphHelp(ana!) == "Call Ana Ruiz", "glyph help")
 let noPhone = OnScreenCall.decode(["provider": "hubspot", "crmLabel": "HubSpot", "name": "Ana Ruiz", "state": "no_phone"])!
 check(CallWording.glyphHelp(noPhone) == "No phone in HubSpot" && CallWording.confirm(noPhone).button == nil, "no phone")

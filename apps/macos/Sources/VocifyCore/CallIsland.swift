@@ -97,8 +97,7 @@ public enum CallWording {
         let title = s.name ?? s.phone.map(PhoneFormat.grouped) ?? s.crmLabel
         switch s.state {
         case .callable:
-            let from = s.callerId.map { " · from \(PhoneFormat.grouped($0))" } ?? ""
-            return (title, PhoneFormat.grouped(s.phone ?? "") + from, "Call")
+            return (title, PhoneFormat.grouped(s.phone ?? ""), "Call")
         case .noPhone: return (title, "No phone in \(s.crmLabel)", nil)
         case .noCallerId: return (title, "Add a caller ID to call", "Add caller ID")
         case .needsContact: return ("\(s.crmLabel) record with several contacts", "Open the contact to call", nil)

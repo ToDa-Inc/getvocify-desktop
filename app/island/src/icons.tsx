@@ -76,3 +76,39 @@ export const Users = ({ size = 10.5, stroke = 2.2, style, className }: IconProps
 export const ExclamationCircle = ({ size = 10.5, stroke = 2.2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5.5M12 16.5v.01" /></svg>
 );
+
+/* Calling (the Mac app draws these with SF Symbols: phone.fill, phone.down.fill, mic.fill, mic.slash.fill, circle.grid.3x3.fill). */
+const HANDSET =
+  "M20.5 15.6v3.1a2 2 0 0 1-2.2 2A18.6 18.6 0 0 1 3.3 5.7 2 2 0 0 1 5.3 3.5h3.1a2 2 0 0 1 2 1.7c.13.95.37 1.88.7 2.77a2 2 0 0 1-.45 2.11L9.33 11.4a15 15 0 0 0 3.27 3.27l1.32-1.32a2 2 0 0 1 2.1-.45c.9.33 1.83.57 2.78.7a2 2 0 0 1 1.7 2z";
+const filled = (size: number, style?: CSSProperties, className?: string) => ({
+  width: size,
+  height: size,
+  viewBox: "0 0 24 24",
+  fill: "currentColor",
+  style,
+  className,
+  "aria-hidden": true,
+});
+export const Phone = ({ size = 11, style, className }: IconProps) => (
+  <svg {...filled(size, style, className)}><path d={HANDSET} /></svg>
+);
+export const PhoneDown = ({ size = 11, style, className }: IconProps) => (
+  <svg {...filled(size, style, className)}><path d={HANDSET} transform="rotate(135 12 12)" /></svg>
+);
+export const Mic = ({ size = 10, style, className }: IconProps) => (
+  <svg {...filled(size, style, className)}>
+    <rect x="8.5" y="2" width="7" height="12.5" rx="3.5" />
+    <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+  </svg>
+);
+export const MicSlash = ({ size = 10, style, className }: IconProps) => (
+  <svg {...filled(size, style, className)}>
+    <rect x="8.5" y="2" width="7" height="12.5" rx="3.5" />
+    <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V22M4 3l16 18" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+  </svg>
+);
+export const Keypad = ({ size = 10, style, className }: IconProps) => (
+  <svg {...filled(size, style, className)}>
+    {[5, 12, 19].flatMap((y) => [5, 12, 19].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="2.3" />))}
+  </svg>
+);

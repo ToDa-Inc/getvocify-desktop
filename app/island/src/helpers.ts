@@ -55,6 +55,8 @@ export function helpText(args: {
   crmName: string | null;
   pending: number;
   finishLine?: string;
+  /** Who is being called, or why the missed call ended. */
+  dialLine?: string;
 }): string {
   const { kind, open, stage, crmName, pending } = args;
   switch (kind) {
@@ -66,6 +68,10 @@ export function helpText(args: {
       return open ? "Close" : "Record a meeting";
     case "call":
       return open ? "Close" : "";
+    case "dialConfirm":
+      return "Close";
+    case "dialing":
+      return args.dialLine ?? "";
     case "postCall":
       if (stage === "writing") return "Writing the update";
       if (stage === "applying") return `Updating ${crmName ?? "the CRM"}`;

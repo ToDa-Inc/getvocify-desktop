@@ -23,6 +23,9 @@ const base = {
   geometry: NOTCH,
   postCall: null,
   finish: null,
+  onScreen: null,
+  dial: null,
+  keypadOpen: false,
   material: "vibrancy",
   reduceMotion: true,
 };
@@ -37,6 +40,22 @@ const turns = [
   { id: "t5", you: true, label: null, text: "Understood.", pending: "we can cover migration for you and" },
   { id: "t6", you: false, label: "Marta Ruiz", text: "", pending: "and how long would that" },
 ];
+
+const ana = { provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", phone: "+34600111222", callerId: "+34910000000", state: "callable" };
+const dial = (phase, extra = {}) => ({ phase, name: "Ana Ruiz", phone: "+34600111222", answeredAt: null, muted: false, message: null, ...extra });
+const inCall = {
+  mode: { kind: "recording" },
+  expanded: true,
+  onScreen: ana,
+  liveHelp: true,
+  dial: dial("active", { answeredAt: NOW - 65_000 }),
+  clock: { startedAt: NOW - 65_000, pausedMs: 0, pausedAt: null },
+  assist: { label: "Price", isQuestion: false, drafting: false, bridge: "Fair question.", sayThis: "Most teams make it back in the first month of calls.", thenAsk: "" },
+  turns: [
+    { id: "c1", you: true, label: null, text: "Hi Ana, it's Dani from Vocify.", pending: "" },
+    { id: "c2", you: false, label: "Ana", text: "Hi! Yes, I saw your email. How much is it?", pending: "" },
+  ],
+};
 
 const typeMenu = {
   title: "Discovery call",
@@ -196,6 +215,16 @@ export const fixtures = [
   { name: "postcall-open-meeting-check", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, meeting: { state: "check", when: "Thursday 10:00" } }) }, expect: { width: 420 }, fit: true },
   { name: "postcall-open-notes-tab", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, summary: "Discussed CRM migration timeline. Team concerned about data migration and costs. Marta interested in pilot next quarter.", notes: true }) }, expect: { width: 420 }, fit: true, steps: [".postcall-tab:nth-child(2)"] },
   { name: "postcall-open-nothing-sure", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [], canApprove: false }) }, expect: { width: 420 }, fit: true },
+  // calling the CRM contact on screen: same names and values as the Mac app's IslandFixtures.swift
+  { name: "idle-callable", state: { onScreen: ana }, expect: { width: 257, height: 32 } },
+  { name: "idle-no-phone", state: { onScreen: { ...ana, phone: null, state: "no_phone" } }, expect: { width: 257, height: 32 } },
+  { name: "confirm-callable", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: ana }, expect: { width: 380, height: 88 } },
+  { name: "confirm-no-caller-id", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, callerId: null, state: "no_caller_id" } }, expect: { width: 380, height: 88 } },
+  { name: "confirm-needs-contact", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, name: null, phone: null, state: "needs_contact" } }, expect: { width: 380, height: 88 } },
+  { name: "dialing-ringing", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ringing") }, expect: { width: 380, height: 88 } },
+  { name: "in-call", state: inCall, expect: { width: 460, height: 400 } },
+  { name: "in-call-muted-keypad", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, muted: true }), keypadOpen: true }, expect: { width: 460, height: 400 } },
+  { name: "dial-ended-no-answer", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ended", { message: "No answer" }) }, expect: { width: 380, height: 88 } },
 ].map((fixture) => ({ ...fixture, state: { ...base, ...fixture.state } }));
 
 // Interactions: a click must send exactly this action, and a button inside the top bar must not also toggle it.
@@ -215,5 +244,12 @@ export const interactions = [
   // Save writes what is ticked: an unticked change, and one the call wasn't clear on, are left out (as the Mac app sends it).
   { name: "save-leaves-out-unticked", fixture: "postcall-open-ready", before: [".change-row .change-toggle"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: ["contact:title", "contact:needs_review"], edits: {} } }] },
   { name: "save-sends-a-picked-value", fixture: "postcall-open-ready", before: [".change-row .change-value", ".option-row:nth-child(2)"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: ["contact:needs_review"], edits: { "contact:title": "manager" } } }] },
+  { name: "call-glyph-opens-confirm", fixture: "idle-callable", click: ".call-glyph", expect: [{ name: "openDialConfirm" }] },
+  { name: "confirm-calls", fixture: "confirm-callable", click: ".primary-action", expect: [{ name: "dial" }] },
+  { name: "no-caller-id-opens-settings", fixture: "confirm-no-caller-id", click: ".primary-action", expect: [{ name: "openCalling" }] },
+  { name: "ringing-cancels", fixture: "dialing-ringing", click: ".stop-button", expect: [{ name: "hangup" }] },
+  { name: "in-call-mutes", fixture: "in-call", click: ".controls .circle-button", expect: [{ name: "toggleMute" }] },
+  { name: "in-call-hangs-up", fixture: "in-call", click: ".controls .stop-button", expect: [{ name: "hangup" }] },
+  { name: "keypad-sends-digit", fixture: "in-call-muted-keypad", click: ".keypad-key", expect: [{ name: "digit", digit: "1" }] },
   { name: "pick-type", fixture: "recording-open-type-list", click: ".option-row:nth-child(3)", expect: [{ name: "pickCallType", key: "demo" }], after: true },
 ];

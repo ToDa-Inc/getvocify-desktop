@@ -277,3 +277,14 @@ button.type-tag:hover { color: var(--text); }
 .option-row[data-selected="true"] > svg:first-child { opacity: 1; }
 .option-row[data-dim="true"]:not(:hover) { color: var(--secondary); opacity: 0.85; }
 .option-row span { flex: 1; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+
+/* calling the CRM contact on screen */
+.call-glyph { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.43); transition: background 120ms; }
+.call-glyph[data-callable="true"] { color: var(--beige); }
+.call-glyph:hover { background: rgba(255, 255, 255, 0.18); }
+.menu-stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.menu-line { font-size: 11.5px; color: var(--secondary); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hangup-dot { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--danger); color: #fff; transition: background 120ms; }
+.hangup-dot:hover { background: rgba(219, 75, 75, 0.85); }
+.keypad { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; width: 180px; padding: 0 14px 8px; box-sizing: content-box; }
+.keypad-key { justify-self: center; justify-content: center; width: 26px; padding: 0; }

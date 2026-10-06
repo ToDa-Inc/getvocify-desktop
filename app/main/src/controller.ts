@@ -1,3 +1,4 @@
+import { decodeDial, decodeOnScreen, isVocifyCallUp } from "../../core/callIsland.ts";
 import { LostAudio } from "../../core/islandWording.ts";
 import { StopGrace, type StopStep } from "../../core/stopGrace.ts";
 import { TypeMenu } from "../../core/typeMenu.ts";
@@ -22,6 +23,9 @@ const HANG_UP_GRACE = 3;
 const START_TIMEOUT = 8;
 const MIN_HOLD_AFTER_LEAVE = 1.5;
 const LEVEL_FADE_SECONDS = 0.5;
+/** Waiting for the dashboard to report the call the rep just placed from the island. */
+const DIAL_TIMEOUT = 8;
+const DIGIT = /^[0-9*#]$/;
 /** Waiting on a memo that never came (nothing was said, the upload failed): the dashboard says why in its window, and the island goes back to rest. */
 const FINISH_GIVE_UP = 30;
 
@@ -47,7 +51,7 @@ export type Effects = {
   lookUpCallContact?(caller: Caller | null): void;
 };
 
-type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout";
+type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout";
 
 export class IslandController {
   private effects: Effects;
@@ -95,6 +99,9 @@ export class IslandController {
       geometry,
       postCall: null,
       finish: null,
+      onScreen: null,
+      dial: null,
+      keypadOpen: false,
       material: options.material,
       reduceMotion: options.reduceMotion,
     };
@@ -129,6 +136,11 @@ export class IslandController {
 
   private get mode(): Mode["kind"] {
     return this.current.mode.kind;
+  }
+
+  /** A Vocify call is connecting, ringing or answered: nothing else may offer or start a recording. */
+  private get vocifyCallUp(): boolean {
+    return isVocifyCallUp(this.current.dial);
   }
 
   /* ---------- what the dashboard says (MeetingPillState.apply) ---------- */
@@ -173,6 +185,19 @@ export class IslandController {
         patch.typeMenu = this.typeMenuView();
       }
     }
+    if (has("onScreen")) {
+      const next = decodeOnScreen(update.onScreen);
+      if (JSON.stringify(next) !== JSON.stringify(this.current.onScreen)) patch.onScreen = next;
+    }
+    let dialChanged = false;
+    if (has("dial")) {
+      const next = decodeDial(update.dial);
+      if (JSON.stringify(next) !== JSON.stringify(this.current.dial)) {
+        patch.dial = next;
+        if (next?.phase !== "active") patch.keypadOpen = false;
+        dialChanged = true;
+      }
+    }
     if (has("callContact")) {
       const next = parseContact(update.callContact);
       if (next !== this.current.callContact) patch.callContact = next;
@@ -200,6 +225,7 @@ export class IslandController {
     }
     if (postCallChanged) this.postCallChanged();
     if (finishChanged) this.finishChanged();
+    if (dialChanged) this.dialChanged();
   }
 
   private typeMenuView(): IslandState["typeMenu"] {
@@ -251,11 +277,82 @@ export class IslandController {
         return this.effects.emit("shell:command", this.current.liveHelp === false ? "assist-on" : "assist-off");
       case "postCall":
         return this.postCallAction(action.type, action.details ?? {});
+      case "openDialConfirm":
+        return this.openDialConfirm();
+      case "dial":
+        return this.dial();
+      case "hangup":
+        return this.hangUpCall();
+      case "toggleMute":
+        if (this.current.dial?.phase === "active") this.effects.emit("shell:command", this.current.dial.muted ? "unmute" : "mute");
+        return;
+      case "keypad":
+        return this.set({ keypadOpen: action.open });
+      case "digit":
+        if (DIGIT.test(action.digit)) this.effects.emit("shell:command", `digit:${action.digit}`);
+        return;
+      case "openCalling":
+        this.transition({ kind: "idle" }, false);
+        return this.effects.emit("shell:command", "open-calling");
+    }
+  }
+
+  /* ---------- calling the CRM contact on screen ---------- */
+
+  /** The phone beside the mark: who would be called, and from which number. */
+  private openDialConfirm(): void {
+    if (this.mode !== "idle" || !this.current.onScreen) return;
+    this.transition({ kind: "dialConfirm" }, true);
+    this.startCountdown(CALL_LINGER);
+  }
+
+  /** Places the call through the dashboard; the island follows its `dial` state. */
+  private dial(): void {
+    if (this.mode !== "dialConfirm" || this.current.onScreen?.state !== "callable") return;
+    if (!this.current.recorderReady) return this.effects.showMainWindow();
+    this.transition({ kind: "dialing" }, true);
+    this.effects.emit("shell:command", "dial");
+    this.start("dialTimeout", DIAL_TIMEOUT, () => {
+      if (this.mode !== "dialing" || this.current.dial !== null) return;
+      this.transition({ kind: "idle" }, false);
+      this.effects.showMainWindow();
+    });
+  }
+
+  /** Hangs up, or cancels while it rings. Answered, the island waits for the call's memo. */
+  private hangUpCall(): void {
+    if (this.mode === "recording") this.hide(true);
+    this.effects.emit("shell:command", "hangup");
+  }
+
+  /** The dashboard moved the call on (from the island or its own dialer). */
+  private dialChanged(): void {
+    const dial = this.current.dial;
+    if (dial) this.stopTimer("dialTimeout");
+    switch (this.mode) {
+      case "idle":
+      case "dialConfirm":
+      case "call":
+      case "postCall":
+        if (dial && dial.phase !== "ended") this.transition({ kind: "dialing" }, true);
+        return;
+      case "dialing":
+        if (!dial) return this.rest();
+        // Missed: open to say why until the dashboard clears it.
+        if (dial.phase === "ended" && !this.current.expanded) this.transition({ kind: "dialing" }, true);
+        return;
+      case "recording":
+        // Answered and now over (either side hung up): hold the island until its memo arrives.
+        if (!dial) this.hide(true);
+        return;
+      default:
+        return;
     }
   }
 
   /** The record shortcut: the same as pressing Record, or Stop while recording. */
   shortcutPressed(): void {
+    if (this.vocifyCallUp) return;
     switch (this.mode) {
       case "recording":
         return this.stop(false);
@@ -294,6 +391,10 @@ export class IslandController {
           return this.rest();
         }
         return this.transition(mode, !expanded);
+      case "dialConfirm":
+        return this.transition({ kind: "idle" }, false);
+      case "dialing":
+        return this.transition(mode, !expanded);
       case "starting":
       case "stopped":
         return;
@@ -301,7 +402,9 @@ export class IslandController {
   }
 
   collapse(): void {
-    if (this.current.expanded) this.transition(this.current.mode, false);
+    // The confirm row is only ever open: closing it is going back to rest.
+    if (this.mode === "dialConfirm") this.transition({ kind: "idle" }, false);
+    else if (this.current.expanded) this.transition(this.current.mode, false);
   }
 
   /** The pointer holds a self-closing card open; leaving lets the line run out again, never snapping it shut. */
@@ -384,6 +487,7 @@ export class IslandController {
   /** Starts in the background so the call keeps focus; errors bring Vocify forward. Signed out, it opens Vocify to sign in. */
   record(): void {
     const previous = this.current.mode;
+    if (this.vocifyCallUp) return;
     if (previous.kind !== "idle" && previous.kind !== "call") return;
     if (!this.current.recorderReady) return this.effects.showMainWindow();
     if (previous.kind === "call") this.recordingCaller = this.shownCaller;
@@ -401,7 +505,9 @@ export class IslandController {
   show(): void {
     this.callHandled = true;
     this.stopTimer("startTimeout");
-    if (this.current.mode.kind === "call") this.recordingCaller = this.shownCaller;
+    // The dashboard ends a Vocify call; another app letting go of the mic says nothing about it.
+    if (this.vocifyCallUp) this.recordingCaller = null;
+    else if (this.current.mode.kind === "call") this.recordingCaller = this.shownCaller;
     else if (this.mode !== "recording") this.recordingCaller = this.currentCaller;
     this.transition({ kind: "recording" }, this.mode === "recording" && this.current.expanded);
   }
@@ -481,6 +587,8 @@ export class IslandController {
       case "starting":
       case "call":
       case "stopped":
+      case "dialConfirm":
+      case "dialing":
         return; // shown once the island is back at rest
       case "finishing": {
         // The card just cleared, or is still the last call's: keep waiting for this one.
@@ -522,6 +630,8 @@ export class IslandController {
   /** The app now holding the mic, or null when none does. */
   callChanged(caller: Caller | null): void {
     this.currentCaller = caller;
+    // Our own call holds the mic: never offer to record it, or anything else, on top of it.
+    if (this.vocifyCallUp) return;
     if (caller === null) {
       this.callHandled = false;
       if (this.mode !== "recording" && this.mode !== "starting" && this.mode !== "stopped") this.effects.emit("call:ended", {});
@@ -532,6 +642,7 @@ export class IslandController {
       case "starting":
       case "stopped":
       case "finishing":
+      case "dialing":
         return;
       default: {
         const detected = caller !== null && !this.callHandled && !this.isListening && !this.isQuiet(caller);

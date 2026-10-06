@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { cornerRadius, earWidth, islandSize } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
-import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Pause, Play, Sparkle, Waveform } from "./icons.tsx";
+import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Keypad, Mic, MicSlash, Pause, Phone, PhoneDown, Play, Sparkle, Waveform } from "./icons.tsx";
+import { CallWording, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
 import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuView } from "./types.ts";
@@ -87,7 +88,7 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
         <div
           className="topbar"
           style={{ height: bar, padding: open ? "0 6px" : 0 }}
-          title={helpText({ kind, open, stage: state.postCall?.stage ?? null, crmName: state.postCall ? postCallCrmName(state.postCall) : null, pending: state.postCall ? postCallPending(state.postCall) : 0, finishLine: finishLine(state.finish) })}
+          title={helpText({ kind, open, stage: state.postCall?.stage ?? null, crmName: state.postCall ? postCallCrmName(state.postCall) : null, pending: state.postCall ? postCallPending(state.postCall) : 0, finishLine: finishLine(state.finish), dialLine: dialLine(state.dial) })}
           onClick={() => act({ name: "toggle" })}
         >
           <div className="ear ear-left" style={{ width: ear, paddingLeft: !open && kind !== "recording" ? 12 : 14 }}>
@@ -174,6 +175,9 @@ function LeftEar({ state, open, lifted }: { state: IslandState; open: boolean; l
       return <Spinner />;
     case "idle":
       return <VocifyMark style={{ opacity: lifted || open ? 1 : 0.85 }} />;
+    case "dialConfirm":
+    case "dialing":
+      return <Phone size={11} style={{ color: state.dial?.phase === "ended" ? "var(--secondary)" : "var(--beige)" }} />;
     case "postCall": {
       if (open) return <VocifyMark />;
       const stage = state.postCall?.stage;
@@ -227,7 +231,16 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
     case "starting":
       return <span className="starting">Starting</span>;
     case "idle":
-      return <OpenArrow open={open} style={{ opacity: lifted || open ? 1 : 0.8 }} />;
+      return state.onScreen && !open ? (
+        <CallGlyph onScreen={state.onScreen} onClick={() => act({ name: "openDialConfirm" })} />
+      ) : (
+        <OpenArrow open={open} style={{ opacity: lifted || open ? 1 : 0.8 }} />
+      );
+    case "dialConfirm":
+      return <OpenArrow open />;
+    case "dialing":
+      if (open) return <OpenArrow open />;
+      return state.dial?.phase !== "ended" ? <HangUpDot onClick={() => act({ name: "hangup" })} /> : null;
     case "postCall":
       if (open) return <OpenArrow open />;
       return state.postCall && postCallPending(state.postCall) > 0 ? <PendingBadge count={postCallPending(state.postCall)} /> : null;
@@ -247,6 +260,10 @@ function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onP
       return <FinishingMenu finish={state.finish} act={act} />;
     case "postCall":
       return state.postCall ? <PostCallCard postCall={state.postCall} act={act} onPopupExtent={onPopupExtent} /> : null;
+    case "dialConfirm":
+      return state.onScreen ? <DialConfirmMenu onScreen={state.onScreen} act={act} /> : null;
+    case "dialing":
+      return state.dial ? <DialingMenu dial={state.dial} act={act} /> : null;
     default:
       return <IdleMenu ready={state.recorderReady} act={act} />;
   }
@@ -311,6 +328,145 @@ function FinishingMenu({ finish, act }: { finish: IslandState["finish"]; act: Ac
   );
 }
 
+/* ---------- calling the CRM contact on screen ---------- */
+
+function dialLine(dial: DialIslandState | null): string | undefined {
+  if (!dial) return undefined;
+  return dial.phase === "ended" ? CallWording.ended(dial) : CallWording.dialing(dial);
+}
+
+/** The phone beside the mark: the CRM contact on screen can be called. Dimmed when it can't; the confirm row says why. */
+function CallGlyph({ onScreen, onClick }: { onScreen: OnScreenCall; onClick: () => void }) {
+  const help = CallWording.glyphHelp(onScreen);
+  return (
+    <button
+      type="button"
+      className="call-glyph"
+      data-callable={onScreen.state === "callable"}
+      title={help}
+      aria-label={help}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+    >
+      <Phone size={10} />
+    </button>
+  );
+}
+
+/** Who would be called and from which number; one click calls. */
+function DialConfirmMenu({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) {
+  const copy = CallWording.confirm(onScreen);
+  return (
+    <div className="menu">
+      <div className="menu-stack">
+        <span className="menu-title">{copy.title}</span>
+        <span className="menu-line">{copy.line}</span>
+      </div>
+      <div className="grow" />
+      {copy.button &&
+        (onScreen.state === "no_caller_id" ? (
+          <PrimaryActionButton title={copy.button} help="Verify a number in Vocify" onClick={() => act({ name: "openCalling" })}>
+            <ArrowUpRight size={9} />
+          </PrimaryActionButton>
+        ) : (
+          <PrimaryActionButton title={copy.button} help="Call through Vocify" onClick={() => act({ name: "dial" })}>
+            <Phone size={9} />
+          </PrimaryActionButton>
+        ))}
+      <IconButton help="Close" onClick={() => act({ name: "toggle" })}>
+        <Close size={11} />
+      </IconButton>
+    </div>
+  );
+}
+
+/** Connecting or ringing: who, and Cancel. Missed: why it ended. Answered without a live transcript, the call bar alone. */
+function DialingMenu({ dial, act }: { dial: DialIslandState; act: Act }) {
+  if (dial.phase === "active") {
+    return (
+      <div className="menu">
+        <CallBar dial={dial} keypadOpen={false} act={act} />
+      </div>
+    );
+  }
+  const ended = dial.phase === "ended";
+  return (
+    <div className="menu">
+      <span className="menu-title" data-dim={ended}>{ended ? CallWording.ended(dial) : CallWording.dialing(dial)}</span>
+      <div className="grow" />
+      {!ended && <HangUpButton title="Cancel" onClick={() => act({ name: "hangup" })} />}
+    </div>
+  );
+}
+
+/** An answered Vocify call: mute, keypad, hang up (in place of Pause and Stop). */
+function CallBar({ dial, keypadOpen, act }: { dial: DialIslandState; keypadOpen: boolean; act: Act }) {
+  return (
+    <>
+      <CircleButton help={dial.muted ? "Unmute" : "Mute"} onClick={() => act({ name: "toggleMute" })}>
+        {dial.muted ? <MicSlash size={11} /> : <Mic size={11} />}
+      </CircleButton>
+      <CircleButton help={keypadOpen ? "Hide keypad" : "Keypad"} onClick={() => act({ name: "keypad", open: !keypadOpen })}>
+        <Keypad size={10} />
+      </CircleButton>
+      <HangUpButton title="Hang up" onClick={() => act({ name: "hangup" })} />
+    </>
+  );
+}
+
+function HangUpButton({ title, onClick }: { title: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="stop-button"
+      title={title}
+      aria-label={title}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+    >
+      <PhoneDown size={11} />
+      <span>{title}</span>
+    </button>
+  );
+}
+
+/** The closed island while it rings: hang up without opening it. */
+function HangUpDot({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="hangup-dot"
+      title="Cancel the call"
+      aria-label="Cancel the call"
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+    >
+      <PhoneDown size={10} />
+    </button>
+  );
+}
+
+const KEYPAD_ROWS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]];
+
+/** Digits for phone menus (press 1 for sales…), sent as the call's tones. */
+function KeypadGrid({ onDigit }: { onDigit: (digit: string) => void }) {
+  return (
+    <div className="keypad">
+      {KEYPAD_ROWS.flat().map((digit) => (
+        <button key={digit} type="button" className="small-action keypad-key" onClick={() => onDigit(digit)}>
+          {digit}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /* ---------- open recording ---------- */
 
 function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
@@ -320,13 +476,19 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
   return (
     <div className="open-island">
       <div className="controls">
-        <CircleButton
-          help={state.paused ? "Resume recording" : "Pause recording"}
-          onClick={() => act({ name: "togglePause" })}
-        >
-          {state.paused ? <Play size={10} /> : <Pause size={10} />}
-        </CircleButton>
-        <StopButton onClick={() => act({ name: "stop" })} />
+        {state.dial ? (
+          <CallBar dial={state.dial} keypadOpen={state.keypadOpen} act={act} />
+        ) : (
+          <>
+            <CircleButton
+              help={state.paused ? "Resume recording" : "Pause recording"}
+              onClick={() => act({ name: "togglePause" })}
+            >
+              {state.paused ? <Play size={10} /> : <Pause size={10} />}
+            </CircleButton>
+            <StopButton onClick={() => act({ name: "stop" })} />
+          </>
+        )}
         {menu && (
           <button
             type="button"
@@ -364,6 +526,7 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
           ))}
         </FloatMenu>
       )}
+      {state.keypadOpen && state.dial && <KeypadGrid onDigit={(digit) => act({ name: "digit", digit })} />}
       {state.callAudioLost && !state.paused && <CallAudioLostLine />}
       {state.liveHelp !== false && <HelpSection current={state.assist} earlier={state.lastHelp} />}
       <div className="hairline" />

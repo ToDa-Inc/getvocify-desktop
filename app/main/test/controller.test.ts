@@ -569,3 +569,104 @@ test("malformed post-call data is dropped, not guessed", () => {
   assert.equal(t.controller.state.postCall?.email, null);
   assert.equal(t.controller.state.postCall?.changes[0].label, "deal:amount", "label falls back to the key");
 });
+
+/* ---------- calling the CRM contact on screen ---------- */
+
+const ana = { provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", phone: "+34600111222", callerId: "+34910000000", state: "callable" };
+const dialState = (phase: string, extra: Record<string, unknown> = {}) => ({ phase, name: "Ana Ruiz", phone: "+34600111222", muted: false, ...extra });
+
+test("the contact on screen opens the confirm row, and Call sends one dial", () => {
+  const t = setup();
+  t.controller.applyShellState({ onScreen: ana });
+  assert.equal(t.controller.state.onScreen?.name, "Ana Ruiz");
+  t.controller.act({ name: "openDialConfirm" });
+  assert.equal(t.mode(), "dialConfirm");
+  assert.equal(t.controller.state.expanded, true);
+  t.controller.act({ name: "dial" });
+  t.controller.act({ name: "dial" });
+  assert.deepEqual(t.commands(), ["dial"]);
+  assert.equal(t.mode(), "dialing");
+});
+
+test("a dial the dashboard never reports returns to idle after 8 s", () => {
+  const t = setup();
+  t.controller.applyShellState({ onScreen: ana });
+  t.controller.act({ name: "openDialConfirm" });
+  t.controller.act({ name: "dial" });
+  t.advance(8.1);
+  assert.equal(t.mode(), "idle");
+  assert.equal(t.log.mainWindow, 1);
+});
+
+test("closing the confirm row goes back to rest", () => {
+  const t = setup();
+  t.controller.applyShellState({ onScreen: ana });
+  t.controller.act({ name: "openDialConfirm" });
+  t.controller.collapse();
+  assert.equal(t.mode(), "idle");
+});
+
+test("a contact without a caller ID sends the rep to the calling settings, not a dial", () => {
+  const t = setup();
+  t.controller.applyShellState({ onScreen: { ...ana, callerId: null, state: "no_caller_id" } });
+  t.controller.act({ name: "openDialConfirm" });
+  t.controller.act({ name: "dial" });
+  t.controller.act({ name: "openCalling" });
+  assert.deepEqual(t.commands(), ["open-calling"]);
+  assert.equal(t.mode(), "idle");
+});
+
+test("a call placed anywhere shows as dialing, and a missed one says why until the dashboard clears it", () => {
+  const t = setup();
+  t.controller.applyShellState({ dial: dialState("ringing") });
+  assert.equal(t.mode(), "dialing");
+  t.controller.applyShellState({ dial: dialState("ended", { message: "Busy" }) });
+  assert.equal(t.mode(), "dialing");
+  assert.equal(t.controller.state.dial?.message, "Busy");
+  t.controller.applyShellState({ dial: null });
+  assert.equal(t.mode(), "idle");
+});
+
+test("while a Vocify call is up: no call offer, no Record, no shortcut", () => {
+  const t = setup();
+  t.controller.applyShellState({ dial: dialState("ringing") });
+  t.controller.callChanged(zoom);
+  t.controller.act({ name: "record" });
+  t.controller.shortcutPressed();
+  assert.equal(t.mode(), "dialing");
+  assert.deepEqual(t.commands(), []);
+});
+
+test("in the call: mute, keypad digits and hang up are the dashboard's commands", () => {
+  const t = setup();
+  t.controller.applyShellState({ dial: dialState("active", { answeredAt: 1_700_000_000_000 }) });
+  t.controller.show();
+  assert.equal(t.mode(), "recording");
+  t.controller.act({ name: "toggleMute" });
+  t.controller.act({ name: "keypad", open: true });
+  assert.equal(t.controller.state.keypadOpen, true);
+  t.controller.act({ name: "digit", digit: "5" });
+  t.controller.act({ name: "hangup" });
+  assert.deepEqual(t.commands(), ["mute", "digit:5", "hangup"]);
+  assert.equal(t.mode(), "finishing");
+});
+
+test("a call the prospect hung up holds the island until its memo arrives", () => {
+  const t = setup();
+  t.controller.applyShellState({ dial: dialState("active") });
+  t.controller.show();
+  t.controller.applyShellState({ dial: null });
+  assert.equal(t.mode(), "finishing");
+  t.controller.applyShellState({ postCall: postCall("ready") });
+  assert.equal(t.mode(), "postCall");
+});
+
+test("recording a Vocify call ignores other apps letting go of the mic", () => {
+  const t = setup();
+  t.controller.callChanged(zoom);
+  t.controller.applyShellState({ dial: dialState("active") });
+  t.controller.show();
+  t.controller.callChanged(null);
+  t.advance(5);
+  assert.equal(t.mode(), "recording");
+});

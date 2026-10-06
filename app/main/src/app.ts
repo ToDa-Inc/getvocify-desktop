@@ -255,6 +255,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     frame: false,
     transparent: true,
     hasShadow: false,
+    // macOS keeps ordinary windows under the menu bar; the island belongs up in it, around the camera, like the Mac app's.
+    enableLargerThanScreen: true,
     resizable: false,
     movable: false,
     // Never takes focus from the call: a click acts on the first press without activating the app.

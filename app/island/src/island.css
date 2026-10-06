@@ -42,7 +42,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .bg > div { position: absolute; left: 0; right: 0; top: 0; }
 .bg-tint { bottom: 0; background: #000; transition: background-color 300ms ease; }
 .island[data-open="true"][data-material="vibrancy"] .bg-tint { background: rgba(0, 0, 0, 0.28); }
-.island[data-open="true"][data-material="opaque"] .bg-tint { background: rgba(20, 20, 22, 0.9); }
+/* No blur behind the window here (see ELECTRON-PARITY): the glass is solid, so nothing behind it shows through the text. */
+.island[data-open="true"][data-material="opaque"] .bg-tint { background: rgb(24, 24, 27); }
 .bg-sheen { bottom: 0; background: linear-gradient(to bottom, rgba(255, 255, 255, 0), transparent 50%); transition: opacity 300ms ease; opacity: 0; }
 .island[data-open="true"] .bg-sheen { opacity: 1; background: linear-gradient(to bottom, rgba(255, 255, 255, 0.07), transparent 50%); }
 .bg-strip { height: var(--bar); background: #000; }
@@ -119,7 +120,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 
 button:active:not(:disabled) { transform: scale(0.93); }
 button { transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1); }
-button:focus-visible { outline: 1.5px solid var(--beige); outline-offset: 2px; }
+button:focus, button:focus-visible, textarea:focus { outline: none; }
 
 /* closed-state menus (idle, call, stopped) */
 .menu { flex: 1; display: flex; align-items: center; gap: 8px; padding: 0 14px; min-height: 0; }
@@ -183,67 +184,72 @@ button:focus-visible { outline: 1.5px solid var(--beige); outline-offset: 2px; }
 .countdown { position: absolute; left: 22px; right: 22px; bottom: 5px; height: 2px; }
 .countdown-bar { height: 2px; border-radius: 1px; background: rgba(255, 255, 255, 0.32); transform-origin: center; }
 
-/* post-call card */
-.postcall-card { display: flex; flex-direction: column; padding: 12px; gap: 8px; width: 100%; }
-.postcall-header { display: flex; align-items: center; gap: 8px; height: 34px; position: relative; }
-.postcall-title { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
-.type-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; color: var(--secondary); background: transparent; border: 0; cursor: pointer; padding: 0; white-space: nowrap; transition: color 120ms; }
-.type-tag:hover { color: var(--text); }
-.type-tag svg { transition: transform 120ms; }
-.postcall-tabs { display: flex; gap: 2px; padding: 2px; background: rgba(255, 255, 255, 0.06); border-radius: 8px; height: 24px; }
-.postcall-tab { display: flex; align-items: center; gap: 5px; flex: 1; padding: 0 12px; background: transparent; border: 0; cursor: pointer; border-radius: 6px; font-size: 11.5px; font-weight: 500; color: var(--secondary); transition: background 100ms, color 100ms; }
-.postcall-tab:hover { background: rgba(255, 255, 255, 0.08); }
+/* post-call card: PostCallMenu and PostCallLayout in MeetingPill.swift */
+.postcall-card { display: flex; flex-direction: column; width: 100%; }
+.postcall-header { flex: none; display: flex; align-items: center; gap: 6px; }
+.postcall-title { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.type-tag { flex: none; display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; color: var(--secondary); background: transparent; border: 0; padding: 0; white-space: nowrap; transition: color 120ms; }
+button.type-tag:hover { color: var(--text); }
+.postcall-tabs { flex: none; display: flex; gap: 2px; padding: 2px; background: rgba(255, 255, 255, 0.06); border-radius: 13px; }
+.postcall-tab { flex: 1; height: 22px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0; background: transparent; border: 0; border-radius: 11px; font-size: 11.5px; font-weight: 500; color: var(--secondary); transition: background 100ms, color 100ms; }
+.postcall-tab:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
 .postcall-tab[data-active="true"] { background: rgba(255, 255, 255, 0.14); color: var(--text); }
-.tab-label { white-space: nowrap; }
-.tab-badge { font-size: 10px; font-weight: 600; color: black; background: var(--beige); border-radius: 9px; padding: 0 5px; min-width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; }
-.postcall-tab[data-active="true"] .tab-badge { color: white; background: var(--secondary); }
+.tab-badge { min-width: 16px; height: 16px; padding: 0 3px; box-sizing: border-box; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); background: rgba(255, 255, 255, 0.14); }
+.postcall-tab[data-active="true"] .tab-badge { color: rgba(0, 0, 0, 0.85); background: var(--beige); }
+.spinner-small { width: 10px; height: 10px; border-width: 1.2px; }
 
-.postcall-body { display: flex; flex-direction: column; gap: 8px; }
-.postcall-line { display: flex; align-items: center; gap: 8px; height: 32px; font-size: 12px; }
-.postcall-line span { color: var(--text); }
+.postcall-line { flex: none; display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text); }
+.line-icon { width: 14px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--beige); }
+.line-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dim { color: var(--secondary); }
 
-.changes-list { overflow-y: auto; border: 0.5px solid rgba(255, 255, 255, 0.07); border-radius: 8px; padding: 0; margin: 0; }
-.group-label { font-size: 9.5px; font-weight: 600; letter-spacing: 0.6px; color: var(--secondary); padding: 0 6px 3px; padding-top: 8px; text-transform: uppercase; }
+/* The changes: no box, grouped under small captions; a long list scrolls and fades at its bottom edge. */
+.changes-list { flex: none; overflow-y: auto; scrollbar-width: none; }
+.changes-list[data-scrolls="true"] { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 14px), transparent); }
+.group-label { display: flex; align-items: flex-end; padding: 0 0 3px 6px; box-sizing: border-box; font-size: 9.5px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: var(--secondary); }
+.change-row { display: flex; align-items: flex-start; gap: 8px; padding: 4px 6px; }
+.change-toggle { flex: none; display: flex; align-items: flex-start; gap: 8px; background: transparent; border: 0; padding: 0; text-align: left; }
+.tick { width: 14px; height: 14px; margin-top: 1.5px; flex: none; box-sizing: border-box; border-radius: 50%; border: 1.2px solid var(--secondary); display: inline-flex; align-items: center; justify-content: center; }
+.tick[data-check="true"]:not([data-kept="true"]) { border-color: var(--warning); }
+.tick[data-kept="true"] { background: var(--beige); border: 0; color: rgba(0, 0, 0, 0.85); }
+.change-label { font-size: 11.5px; line-height: 17px; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.change-value { flex: 1; min-width: 0; display: flex; align-items: flex-start; }
+.value-text { flex: 1; min-width: 0; font-size: 12px; line-height: 17px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; }
+.value-text [data-kept="true"] { color: var(--text); }
+.value-text [data-kept="false"] { color: var(--secondary); }
+.was-text { font-size: 11px; color: var(--secondary); }
+.value-chevron { width: 14px; height: 17px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--secondary); transition: color 120ms, transform 120ms; }
+.change-value:hover .value-chevron, .change-value[data-open="true"] .value-chevron { color: var(--text); }
+.change-value[data-open="true"] .value-chevron svg { transform: rotate(180deg); }
 
-.change-row { display: flex; align-items: flex-start; padding: 4px 6px; gap: 8px; border: 0; background: transparent; cursor: pointer; }
-.change-toggle { display: flex; align-items: flex-start; gap: 8px; background: transparent; border: 0; cursor: pointer; padding: 0; }
-.tick { width: 14px; height: 14px; border-radius: 50%; border: 1.2px solid var(--secondary); display: inline-flex; align-items: center; justify-content: center; margin-top: 1px; transition: background 120ms, border-color 120ms; }
-.tick[data-kept="true"] { background: var(--beige); border-color: var(--beige); }
-.tick svg { color: black; }
-
-.change-label { font-size: 11.5px; color: var(--secondary); width: 104px; text-align: left; line-height: 1.4; }
-.change-value { display: flex; align-items: flex-start; gap: 0; flex: 1; font-size: 12px; line-height: 1.4; padding: 1px 0; }
-.change-value span { color: var(--text); }
-.change-value span[data-kept="false"] { color: var(--secondary); }
-.was-text { font-size: 11px; color: var(--secondary); margin-left: 4px; }
-.change-value svg { color: var(--secondary); margin-left: 8px; transition: color 120ms, transform 120ms; }
-.change-value:hover svg { color: var(--text); }
-.change-value svg[data-open="true"] { transform: rotate(180deg); }
-
-.postcall-actions { display: flex; align-items: center; gap: 8px; height: 40px; }
-.primary-action { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 11px; border-radius: 13px; color: var(--beige); font-size: 12px; font-weight: 500; background: rgba(219, 192, 154, 0.13); border: 0.5px solid rgba(219, 192, 154, 0.3); cursor: pointer; transition: background 120ms; white-space: nowrap; }
+.postcall-actions { flex: none; display: flex; align-items: center; gap: 8px; }
+.primary-action { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 11px; border-radius: 13px; color: var(--beige); font-size: 12px; font-weight: 500; background: rgba(219, 192, 154, 0.13); border: 0.5px solid rgba(219, 192, 154, 0.3); transition: background 120ms; white-space: nowrap; }
 .primary-action:hover:not(:disabled) { background: rgba(219, 192, 154, 0.2); }
-.primary-action:disabled { opacity: 0.5; cursor: default; }
-
-.text-action { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 6px; font-size: 11.5px; font-weight: 500; color: var(--secondary); background: transparent; border: 0; cursor: pointer; transition: color 120ms; white-space: nowrap; }
+.primary-action:disabled { opacity: 0.5; }
+.text-action { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 6px; font-size: 11.5px; font-weight: 500; color: var(--secondary); background: transparent; border: 0; transition: color 120ms; white-space: nowrap; }
 .text-action:hover { color: var(--text); }
-
-.small-action { display: inline-flex; align-items: center; gap: 0; height: 24px; padding: 0 9px; font-size: 11.5px; font-weight: 500; color: var(--text); background: rgba(255, 255, 255, 0.09); border-radius: 12px; border: 0; cursor: pointer; transition: background 120ms; white-space: nowrap; }
+.small-action { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; font-size: 11.5px; font-weight: 500; color: var(--text); background: rgba(255, 255, 255, 0.09); border-radius: 12px; border: 0; transition: background 120ms; white-space: nowrap; }
 .small-action:hover { background: rgba(255, 255, 255, 0.17); }
+.postcall-line .small-action + .small-action { margin-left: -2px; }
 
-.undo-line { height: 2px; background: rgba(255, 255, 255, 0.32); border-radius: 1px; width: 100%; margin: 4px 0 0; }
+.applying { display: flex; flex-direction: column; gap: 4px; padding-bottom: 2px; }
+.undo-line { height: 2px; border-radius: 1px; background: rgba(255, 255, 255, 0.32); }
 
-.meeting-row { display: flex; align-items: center; gap: 8px; height: 26px; font-size: 11.5px; color: var(--secondary); padding: 0 6px; }
-.meeting-row button { margin-left: auto; }
+.meeting-row { flex: none; display: flex; align-items: center; gap: 6px; padding: 0 6px; font-size: 11.5px; color: var(--secondary); }
+.meeting-icon { width: 14px; flex: none; display: inline-flex; justify-content: center; }
+.meeting-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.email-box { padding: 10px 12px; background: rgba(255, 255, 255, 0.06); border-radius: 10px; display: flex; flex-direction: column; gap: 4px; }
-.email-to { font-size: 11px; color: var(--secondary); line-height: 1.4; }
-.email-subject { font-size: 12.5px; font-weight: 600; color: var(--text); line-height: 1.4; }
-.email-preview { font-size: 12px; color: var(--secondary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.email-box { flex: none; padding: 10px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); display: flex; flex-direction: column; }
+.email-to { font-size: 11px; line-height: 15px; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.email-subject { font-size: 12.5px; line-height: 17px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.email-preview { margin-top: 4px; font-size: 12px; line-height: 17px; color: var(--secondary); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 
-.notes-summary { font-size: 12px; color: var(--text); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; padding: 8px 0; }
-.note-draft { flex: 1; padding: 8px; background: rgba(255, 255, 255, 0.06); border: 0.5px solid rgba(255, 255, 255, 0.07); border-radius: 8px; color: var(--text); font-size: 12px; font-family: inherit; resize: none; max-height: 100px; }
-.note-draft::placeholder { color: var(--secondary); }
+/* The note: a quiet box, no border and no focus ring, like the Mac card's text editor. */
+.note-box { flex: none; padding: 8px 7px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); }
+.note-text { display: block; width: 100%; box-sizing: border-box; padding: 0 5px; border: 0; outline: none; resize: none; background: transparent; color: var(--text); font: inherit; font-size: 12px; line-height: 17px; overflow-y: auto; scrollbar-width: none; }
+.note-text::placeholder { color: var(--secondary); }
+.note-text[readonly] { cursor: text; }
+.note-hint { font-size: 11px; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Dropdowns float over the island in its glass (the Swift OptionPopup: blur, black 0.28, a 0.07 fill with a sheen, the rim). */
 .float-menu {
@@ -251,7 +257,7 @@ button:focus-visible { outline: 1.5px solid var(--beige); outline-offset: 2px; }
   background:
     linear-gradient(to bottom, rgba(255, 255, 255, 0.06), transparent 50%),
     linear-gradient(rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.07)),
-    rgba(24, 24, 27, 0.86);
+    rgba(24, 24, 27, 0.94);
   -webkit-backdrop-filter: blur(24px) saturate(1.6);
   backdrop-filter: blur(24px) saturate(1.6);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);

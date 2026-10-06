@@ -67,3 +67,18 @@ The port was made from the Mac code at `add3bef`. Four Mac commits landed after 
 - A CRM page read that outlasts the click on Record still counts.
 - `shell.relaunch` exists in the bridge.
 - The island remembering it is signed in across launches was already ported.
+
+
+## Glass, card and placement (2026-10-06, second pass)
+
+- The island sits at the very top of the screen around the camera on a Mac (`enableLargerThanScreen`), as the Swift one does.
+- The after-call card was rewritten from `PostCallMenu`: capsule tabs with icons and counts, changes grouped under captions
+  with no box, the email draft box (and its "writing" state), the editable note box, the Swift wording for every stage, and
+  the approve payload the Mac sends (unticked changes in `omit`, only changed picks in `edits`, the note when touched).
+- Free-text values (a deal description) are not editable in the card: the dashboard applies only picks from a field's
+  options (`withEdits` in getvocify `src/lib/post-call.ts`), so typed text would be dropped. The Swift card sends them to
+  Vocify too ("Edit it in Vocify").
+- No focus rings and no pointing-hand cursor, as on the Mac.
+- Blur behind the island is not available: Electron's vibrancy (Mac) and acrylic (Windows 11) fill the whole rectangular
+  window, which also grows for dropdowns, so it would show square frosted corners and blocks. The open island is solid dark
+  instead, so nothing behind it shows through the text. The dropdowns blur the island content under them.

@@ -56,3 +56,23 @@ export const AlertCircle = ({ size = 12, style, className }: IconProps) => (
 export const Waveform = ({ size = 12, stroke = 2.2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2" /></svg>
 );
+
+/* The after-call card's symbols (SF Symbols in the Mac app), drawn with the same stroke as the others. */
+export const IdCard = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="9" cy="11" r="2" /><path d="M6 16c.6-1.4 1.7-2 3-2s2.4.6 3 2M14.5 10h3.5M14.5 13.5h3.5" /></svg>
+);
+export const Mail = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="m3.5 7 8.5 6 8.5-6" /></svg>
+);
+export const FileText = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5M9 13h6M9 17h6" /></svg>
+);
+export const Calendar = ({ size = 10, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" /><path d="M8 3v4M16 3v4M3.5 10h17" /></svg>
+);
+export const Users = ({ size = 10.5, stroke = 2.2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><circle cx="9" cy="8" r="3.2" /><path d="M3 19.5c.8-3 3.2-4.6 6-4.6s5.2 1.6 6 4.6M15.5 5.2a3 3 0 0 1 0 5.6M18 14.6c1.6.6 2.6 2.2 3 4.9" /></svg>
+);
+export const ExclamationCircle = ({ size = 10.5, stroke = 2.2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5.5M12 16.5v.01" /></svg>
+);

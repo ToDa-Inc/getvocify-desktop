@@ -142,6 +142,11 @@ for (const test of interactions) {
     await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).click(); true`);
     await frame();
   }
+  // Clicks that set the scene first (untick a change...), then the click whose action is checked.
+  for (const selector of test.before ?? []) {
+    await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).click(); true`);
+    await frame();
+  }
   await win.webContents.executeJavaScript(`window.__islandActions.length = 0; document.querySelector(${JSON.stringify(test.click)}).click(); true`);
   await frame();
   const actions = await win.webContents.executeJavaScript(`JSON.parse(JSON.stringify(window.__islandActions))`);

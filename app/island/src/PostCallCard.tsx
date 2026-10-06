@@ -1,215 +1,311 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Close } from "./icons.tsx";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
-import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallData } from "./types.ts";
+import { ArrowUpRight, Calendar, Check, ChevronDown, Close, ExclamationCircle, FileText, IdCard, Mail, Users } from "./icons.tsx";
+import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallData, type PostCallMeeting } from "./types.ts";
+
+/**
+ * The after-call card: a port of `PostCallMenu` (MeetingPill.swift) with its layout numbers (`PostCallLayout`).
+ * CRM / Email / Notes tabs; the changes grouped by record with a tick each; a value with options opens a floating list,
+ * free text is edited in Vocify (the dashboard only takes values from a field's options); the note is edited here and
+ * saved with the update.
+ */
 
 type Act = (action: IslandAction) => void;
+type Tab = "crm" | "email" | "notes";
 
-const L = { header: 34, tabs: 24, gap: 8, top: 12, inset: 12, rowInset: 6, rowPadding: 8, groupLabel: 18, line: 32, listMax: 236, actions: 40, meeting: 26, bottom: 10, tick: 14, label: 104, chevron: 14, option: 26, optionsVisible: 7, optionsPadding: 4, valueSize: 12, emailLines: 3, noteLines: 5 } as const;
-const lineHeight = (sz: number) => Math.ceil(sz * 1.35);
-
-const GROUPS: Array<{ object: string; title: string }> = [
-  { object: "contact", title: "Contact" }, { object: "company", title: "Company" }, { object: "deal", title: "Deal" }, { object: "other", title: "Other" },
+const L = { inset: 16, top: 6, header: 26, tabs: 26, gap: 8, line: 30, groupLabel: 20, listMax: 236, actions: 40, meeting: 26, bottom: 10, label: 104, noteLines: 8, noteMinLines: 3 } as const;
+const GROUPS = [
+  { object: "contact", title: "Contact" },
+  { object: "company", title: "Company" },
+  { object: "deal", title: "Deal" },
+  { object: "other", title: "Other" },
 ];
 
-function rowHeight(change: PostCallChange, shown: string): number {
-  const valueWidth = 420 - L.inset * 2 - L.rowInset * 2 - L.tick - L.label - L.chevron - 16;
-  const text = change.from ? `${shown}  was ${change.from}` : shown;
-  const lines = Math.min(2, Math.max(1, Math.ceil(text.length * L.valueSize / valueWidth / 3)));
-  return lines * lineHeight(L.valueSize) + L.rowPadding;
+/** The changes the card lists, by record. One the call wasn't clear on is left to the review in Vocify. */
+function groupedChanges(postCall: PostCallData) {
+  const sure = postCall.changes.filter((c) => !c.check);
+  return GROUPS.flatMap((group) => {
+    const changes = sure.filter((c) => c.object === group.object || (group.object === "other" && !["contact", "company", "deal"].includes(c.object)));
+    return changes.length ? [{ title: group.title, changes }] : [];
+  });
 }
 
-function groupedChanges(pc: PostCallData, e: Record<string, string>) {
-  const sure = pc.changes.filter(c => !c.check);
-  return GROUPS.map(g => {
-    const ch = sure.filter(c => c.object === g.object || (g.object === "other" && !["contact", "company", "deal"].includes(c.object)));
-    return ch.length ? { title: g.title, changes: ch } : null;
-  }).filter((x): x is { title: string; changes: PostCallChange[] } => x !== null);
+function pickedValues(change: PostCallChange, edited: string | undefined): string[] {
+  const raw = edited ?? change.value;
+  return change.multiple ? raw.split(";").map((v) => v.trim()).filter(Boolean) : [raw];
 }
 
-function shown(change: PostCallChange, e: Record<string, string>): string {
-  const ed = e[change.key];
-  if (!ed || !change.options.length) return change.to;
-  const vals = change.multiple ? ed.split(";").map(v => v.trim()).filter(Boolean) : [ed];
-  const lbls = vals.map(v => change.options.find(o => o.value === v)?.label ?? v);
-  return lbls.length ? lbls.join(", ") : "—";
+/** What the value reads as: the picked options' labels, or the proposed text. */
+function shownValue(change: PostCallChange, edited: string | undefined): string {
+  if (edited === undefined || change.options.length === 0) return change.to;
+  const labels = pickedValues(change, edited).map((v) => change.options.find((o) => o.value === v)?.label ?? v);
+  return labels.length ? labels.join(", ") : "—";
 }
 
 export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostCallData; act: Act; /** Where an open dropdown ends (px from the window's top), or null: the window grows to include it. */ onPopupExtent: (bottom: number | null) => void }) {
-  const [keptChanges, setKeptChanges] = useState<Set<string>>(() => new Set(postCall.changes.filter(c => !c.check).map(c => c.key)));
-  const [editedValues, setEditedValues] = useState<Record<string, string>>({});
+  const [kept, setKept] = useState<Set<string>>(() => new Set(postCall.changes.filter((c) => !c.check).map((c) => c.key)));
+  const [edited, setEdited] = useState<Record<string, string>>({});
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"crm" | "email" | "notes">("crm");
-  const [openOptions, setOpenOptions] = useState<string | null>(null);
-  const [optionsAnchor, setOptionsAnchor] = useState<Anchor | null>(null);
-  const [typeListOpen, setTypeListOpen] = useState(false);
-  const [typeAnchor, setTypeAnchor] = useState<Anchor | null>(null);
+  const [activeTab, setActiveTab] = useState<Tab>("crm");
+  const [options, setOptions] = useState<{ key: string; anchor: Anchor } | null>(null);
+  const [typeMenu, setTypeMenu] = useState<Anchor | null>(null);
 
+  // A new call: its own ticks, picks and note.
   useEffect(() => {
-    setKeptChanges(new Set(postCall.changes.filter(c => !c.check).map(c => c.key)));
-    setEditedValues({});
-    setOpenOptions(null);
+    setKept(new Set(postCall.changes.filter((c) => !c.check).map((c) => c.key)));
+    setEdited({});
     setNoteDraft(null);
     setActiveTab("crm");
-    setTypeListOpen(false);
+    setOptions(null);
+    setTypeMenu(null);
   }, [postCall.memoId]);
 
-  const tabs: Array<"crm" | "email" | "notes"> = ["crm"];
-  if (postCall.email) tabs.push("email");
-  if (postCall.notes || postCall.summary) tabs.push("notes");
-  const tab = tabs.includes(activeTab) ? activeTab : "crm";
+  // Past its changes (applying, done...), a value's options no longer apply.
+  useEffect(() => {
+    if (postCall.stage !== "ready") setOptions(null);
+  }, [postCall.stage]);
 
-  const groups = groupedChanges(postCall, editedValues);
+  const groups = groupedChanges(postCall);
   const nothingSure = groups.length === 0;
-
-  const toggleChange = (key: string) => setKeptChanges(p => { const n = new Set(p); n.has(key) ? n.delete(key) : n.add(key); return n; });
-  const pick = (val: string, change: PostCallChange) => {
-    let next = val;
-    if (change.multiple) {
-      const vals = (editedValues[change.key] || "").split(";").map(v => v.trim()).filter(Boolean);
-      const idx = vals.indexOf(val);
-      idx >= 0 ? vals.splice(idx, 1) : vals.push(val);
-      next = vals.join(";");
-    }
-    const ne = { ...editedValues };
-    next === change.value ? delete ne[change.key] : ne[change.key] = next;
-    setEditedValues(ne);
-    setKeptChanges(p => new Set([...p, change.key]));
-    if (!change.multiple) setOpenOptions(null);
-  };
-
-  const toggleOpts = (change: PostCallChange, element: Element) => {
-    setTypeListOpen(false);
-    if (openOptions === change.key) {
-      setOpenOptions(null);
-    } else {
-      setOpenOptions(change.key);
-      setOptionsAnchor(anchorOf(element));
-    }
-  };
+  const noteEditable = postCall.stage === "ready" && postCall.canApprove && !nothingSure;
+  const noteText = noteDraft ?? postCall.summary ?? "";
+  const tabs: Tab[] = ["crm"];
+  if (postCall.email) tabs.push("email");
+  if (postCall.notes || postCall.summary !== null || noteEditable) tabs.push("notes");
+  const tab = tabs.includes(activeTab) ? activeTab : "crm";
+  const keptCount = postCall.changes.filter((c) => kept.has(c.key)).length;
+  const crm = postCallCrmName(postCall);
 
   const closeMenus = useCallback(() => {
-    setOpenOptions(null);
-    setTypeListOpen(false);
+    setOptions(null);
+    setTypeMenu(null);
   }, []);
 
-  const handleApprove = () => {
-    const kept = postCall.changes.filter(c => keptChanges.has(c.key));
-    const edits: Record<string, string> = {};
-    kept.forEach(c => edits[c.key] = editedValues[c.key] ?? c.value);
-    act({ name: "postCall", type: "approve", details: { omit: [], edits, note: noteDraft && noteDraft !== postCall.note ? noteDraft : undefined } });
+  const toggleChange = (key: string) =>
+    setKept((previous) => {
+      const next = new Set(previous);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
+  /** A checkbox list stays open for more ticks; a list of one closes on the pick. Picking also ticks the change. */
+  const pick = (value: string, change: PostCallChange) => {
+    let next = value;
+    if (change.multiple) {
+      const values = pickedValues(change, edited[change.key]);
+      next = (values.includes(value) ? values.filter((v) => v !== value) : [...values, value]).join(";");
+    }
+    setEdited((previous) => ({ ...previous, [change.key]: next }));
+    setKept((previous) => new Set([...previous, change.key]));
+    if (!change.multiple) setOptions(null);
   };
+
+  /** Like the Mac app: what is not ticked is left out, and only values the rep changed are sent as edits. */
+  const approve = () => {
+    const omit = postCall.changes.map((c) => c.key).filter((key) => !kept.has(key));
+    if (omit.length >= postCall.changes.length) return;
+    const edits = Object.fromEntries(Object.entries(edited).filter(([key, value]) => postCall.changes.some((c) => c.key === key && c.value !== value)));
+    act({ name: "postCall", type: "approve", details: { omit, edits, ...(noteDraft !== null ? { note: noteDraft } : {}) } });
+  };
+
+  const send = (type: string, details?: Record<string, unknown>) => act({ name: "postCall", type, details });
+  const review = <TextAction title="Review in Vocify" arrow onClick={() => send("review")} />;
+
+  const count = (t: Tab) => (t === "crm" ? (postCall.stage === "ready" ? keptCount : postCall.stage === "review" ? 1 : 0) : t === "email" && postCall.email?.state === "ready" ? 1 : 0);
 
   return (
     <>
-      <div className="postcall-card">
-        <div className="postcall-header">
-          <div className="postcall-title">{postCall.contactName ?? "Your call"}</div>
-          {postCall.type && (
-            <button type="button" className="type-tag" onClick={e => { e.stopPropagation(); setOpenOptions(null); setTypeAnchor(anchorOf(e.currentTarget)); setTypeListOpen(!typeListOpen); }}>
-              {postCall.type.label}
-              {postCall.type.options.length > 0 && <ChevronDown size={7} style={{ transform: typeListOpen ? "rotate(180deg)" : "rotate(0deg)" }} />}
-            </button>
-          )}
-          <div style={{ flex: 1 }} />
-          <button type="button" className="icon-button" onClick={() => act({ name: "postCall", type: "dismiss" })}><Close size={11} /></button>
+      <div className="postcall-card" style={{ padding: `${L.top}px ${L.inset}px ${L.bottom}px` }}>
+        <div className="postcall-header" style={{ height: L.header }}>
+          <span className="postcall-title">{postCall.contactName ?? "Your call"}</span>
+          {postCall.type &&
+            (postCall.type.options.length === 0 ? (
+              <span className="type-tag" title="What this call was scored as">{postCall.type.label}</span>
+            ) : (
+              <button
+                type="button"
+                className="type-tag"
+                title="What this call was scored as. Change it to score it again."
+                onClick={(event) => {
+                  event.stopPropagation();
+                  const target = event.currentTarget;
+                  setOptions(null);
+                  setTypeMenu((open) => (open ? null : anchorOf(target)));
+                }}
+              >
+                <span className="type-tag-label">{postCall.type.label}</span>
+                <ChevronDown size={7} stroke={3.6} />
+              </button>
+            ))}
+          <div className="grow" />
+          <button type="button" className="icon-button" title="Done" aria-label="Done" onClick={() => send("dismiss")}>
+            <Close size={11} />
+          </button>
         </div>
 
         {tabs.length > 1 && (
-          <div className="postcall-tabs">
-            {tabs.map(t => {
-              const cnt = t === "crm" && postCall.stage === "ready" ? keptChanges.size : t === "email" && postCall.email?.state === "ready" ? 1 : 0;
-              return (
-                <button key={t} type="button" className="postcall-tab" data-active={t === tab} onClick={() => { setActiveTab(t); setOpenOptions(null); setTypeListOpen(false); }}>
-                  {t === "crm" ? "CRM" : t === "email" ? "Email" : "Notes"}
-                  {cnt > 0 && <span className="tab-badge">{cnt}</span>}
-                </button>
-              );
-            })}
+          <div className="postcall-tabs" role="tablist" style={{ height: L.tabs, margin: `${L.gap}px 0` }}>
+            {tabs.map((t) => (
+              <TabButton key={t} tab={t} active={t === tab} count={count(t)} busy={t === "email" && postCall.email?.state === "writing"} onClick={() => { setActiveTab(t); closeMenus(); }} />
+            ))}
           </div>
         )}
 
-        <div className="postcall-body">
-          {tab === "crm" && (() => {
-            if (postCall.stage === "writing") return <div className="postcall-line"><span className="spinner" /><span>Writing the update…</span></div>;
-            if (postCall.stage === "applying") return <div><div className="postcall-line"><span className="spinner" /><span>Updating {postCall.contactName ?? "the contact"} in {postCallCrmName(postCall)}…</span><div style={{ flex: 1 }} /><button type="button" className="small-action" onClick={() => act({ name: "postCall", type: "undo" })}>Undo</button></div>{postCall.undoUntil && <div className="undo-line" style={{ width: `${Math.max(0, Math.min(1, (postCall.undoUntil - Date.now()) / 5000)) * 100}%` }} />}</div>;
-            if (postCall.stage === "done") return <div className="postcall-line"><Check size={11} /><span>{postCall.applied === 1 ? "1 field updated" : `${postCall.applied} fields updated`} in {postCallCrmName(postCall)}</span></div>;
-            if (postCall.stage === "review") return <div className="postcall-line"><span>Please review in Vocify</span><div style={{ flex: 1 }} /><button type="button" className="text-action" onClick={() => act({ name: "postCall", type: "review" })}>Review</button></div>;
-            if (postCall.stage === "internal") return <div className="postcall-line"><span>Internal call</span></div>;
-            if (nothingSure) return <div className="postcall-line"><span>Nothing clear enough to write from here</span><div style={{ flex: 1 }} /><button type="button" className="text-action" onClick={() => act({ name: "postCall", type: "review" })}>Review in Vocify</button></div>;
-            return (
+        {tab === "crm" && (
+          <>
+            {postCall.stage === "writing" && <Line busy><span className="dim">Writing the update…</span></Line>}
+            {postCall.stage === "ready" && nothingSure && (
+              <Line icon={<ExclamationCircle />} trailing={review}>
+                <span>Nothing clear enough to write from here</span>
+              </Line>
+            )}
+            {postCall.stage === "ready" && !nothingSure && (
               <>
-                <div className="changes-list">
-                  {groups.map(g => (
-                    <div key={g.title}>
-                      <div className="group-label">{g.title.toUpperCase()}</div>
-                      {g.changes.map(c => <ChangeRow key={c.key} change={c} shown={shown(c, editedValues)} kept={keptChanges.has(c.key)} height={rowHeight(c, shown(c, editedValues))} open={openOptions === c.key} toggle={() => toggleChange(c.key)} toggleOptions={r => toggleOpts(c, r)} />)}
+                <ChangesList>
+                  {groups.map((group) => (
+                    <div key={group.title}>
+                      <div className="group-label" style={{ height: L.groupLabel }}>{group.title}</div>
+                      {group.changes.map((change) => (
+                        <ChangeRow
+                          key={change.key}
+                          change={change}
+                          shown={shownValue(change, edited[change.key])}
+                          kept={kept.has(change.key)}
+                          open={options?.key === change.key}
+                          toggle={() => toggleChange(change.key)}
+                          toggleOptions={(element) => {
+                            setTypeMenu(null);
+                            setOptions((open) => (open?.key === change.key ? null : { key: change.key, anchor: anchorOf(element) }));
+                          }}
+                        />
+                      ))}
                     </div>
                   ))}
-                </div>
-                {postCall.meeting && <MeetingRow meeting={postCall.meeting} onAdd={() => act({ name: "postCall", type: "addMeeting" })} onReview={() => act({ name: "postCall", type: "review" })} />}
-                <div className="postcall-actions">
-                  {postCall.canApprove && <button type="button" className="primary-action" disabled={keptChanges.size === 0} onClick={handleApprove}><Check size={9} /><span>Save {keptChanges.size} to {postCall.crm ?? "the CRM"}</span></button>}
-                  <div style={{ flex: 1 }} />
-                  <button type="button" className="text-action" onClick={() => act({ name: "postCall", type: "review" })}>Review in Vocify</button>
+                </ChangesList>
+                <div className="postcall-actions" style={{ height: L.actions }}>
+                  {postCall.canApprove ? (
+                    <>
+                      <button type="button" className="primary-action" disabled={keptCount === 0} title={`Writes the ticked changes to ${crm}`} onClick={approve}>
+                        <Check size={9} />
+                        <span>{keptCount === 0 ? "Nothing ticked" : `Save ${keptCount} to ${postCall.crm ?? "the CRM"}`}</span>
+                      </button>
+                      <div className="grow" />
+                      {review}
+                    </>
+                  ) : (
+                    <>
+                      {review}
+                      <div className="grow" />
+                    </>
+                  )}
                 </div>
               </>
-            );
-          })()}
+            )}
+            {postCall.stage === "applying" && (
+              <div className="applying">
+                <Line busy trailing={<button type="button" className="small-action" onClick={() => send("undo")}>Undo</button>}>
+                  <span>Updating {postCall.contactName ?? "the contact"} in {crm}…</span>
+                </Line>
+                {postCall.undoUntil !== null && <UndoLine until={postCall.undoUntil} />}
+              </div>
+            )}
+            {postCall.stage === "done" && (
+              <Line icon={<Check size={10.5} stroke={3} />}>
+                <span>{postCall.applied === null ? `Updated in ${crm}` : postCall.applied === 1 ? `1 field updated in ${crm}` : `${postCall.applied} fields updated in ${crm}`}</span>
+              </Line>
+            )}
+            {postCall.stage === "internal" && <Line icon={<Users />}><span className="dim">Internal, nothing goes to the CRM</span></Line>}
+            {postCall.stage === "review" && (
+              <Line icon={<ExclamationCircle />} trailing={<TextAction title="Review" arrow onClick={() => send("review")} />}>
+                <span>{postCall.note ?? "Needs a look"}</span>
+              </Line>
+            )}
+            {postCall.meeting && postCall.stage !== "internal" && <MeetingRow meeting={postCall.meeting} onAdd={() => send("addMeeting")} onReview={() => send("review")} />}
+          </>
+        )}
 
-          {tab === "email" && postCall.email && (
-            postCall.email.state === "ready" ? (
-              postCall.email.subject || postCall.email.preview ? (
+        {tab === "email" && postCall.email && (
+          <>
+            {postCall.email.state === "writing" && (
+              <Line busy><span className="dim">{postCall.email.to ? `Writing the email to ${postCall.email.to}…` : "Writing the follow-up email…"}</span></Line>
+            )}
+            {postCall.email.state === "ready" &&
+              (postCall.email.subject !== null || postCall.email.preview !== null ? (
                 <>
-                  <div className="email-box">
+                  <div className="email-box" style={{ marginTop: L.gap }}>
                     {postCall.email.to && <div className="email-to">To {postCall.email.to}</div>}
                     <div className="email-subject">{postCall.email.subject ?? "Follow-up"}</div>
                     {postCall.email.preview && <div className="email-preview">{postCall.email.preview}</div>}
                   </div>
-                  <div className="postcall-actions">
-                    <button type="button" className="primary-action" onClick={() => act({ name: "postCall", type: "openEmail" })}><span>Open draft</span></button>
-                    <button type="button" className="text-action" onClick={() => act({ name: "postCall", type: "skipEmail" })}>Skip</button>
-                    {postCall.offerStopEmails && <button type="button" className="text-action" onClick={() => act({ name: "postCall", type: "stopEmails" })}>Stop emails</button>}
+                  <div className="postcall-actions" style={{ height: L.actions }}>
+                    <button type="button" className="primary-action" title="Opens the email in Vocify to send it" onClick={() => send("openEmail")}>
+                      <ArrowUpRight size={9} stroke={2.6} />
+                      <span>Open draft</span>
+                    </button>
+                    <TextAction title="Skip" onClick={() => send("skipEmail")} />
+                    <div className="grow" />
                   </div>
                 </>
               ) : (
-                <div className="postcall-line"><span>{postCall.email.to ? `Email to ${postCall.email.to} ready` : "Email ready"}</span><div style={{ flex: 1 }} /><button type="button" className="small-action" onClick={() => act({ name: "postCall", type: "openEmail" })}>Open</button><button type="button" className="small-action" onClick={() => act({ name: "postCall", type: "skipEmail" })}>Skip</button>{postCall.offerStopEmails && <button type="button" className="small-action" onClick={() => act({ name: "postCall", type: "stopEmails" })}>Stop</button>}</div>
-              )
-            ) : postCall.email.state === "skipped" ? (
-              <div className="postcall-line"><span>Email skipped</span><div style={{ flex: 1 }} /><button type="button" className="small-action" onClick={() => act({ name: "postCall", type: "unskipEmail" })}>Undo</button>{postCall.offerStopEmails && <button type="button" className="small-action" onClick={() => act({ name: "postCall", type: "keepEmails" })}>Keep emails</button>}</div>
-            ) : postCall.email.state === "sent" ? (
-              <div className="postcall-line"><Check size={11} /><span>Email sent</span></div>
-            ) : null
-          )}
+                <Line
+                  icon={<Mail size={10.5} />}
+                  trailing={
+                    <>
+                      <button type="button" className="small-action" onClick={() => send("openEmail")}>Open</button>
+                      <button type="button" className="small-action" onClick={() => send("skipEmail")}>Skip</button>
+                    </>
+                  }
+                >
+                  <span>{postCall.email.to ? `Email to ${postCall.email.to} ready` : "Email ready"}</span>
+                </Line>
+              ))}
+            {postCall.email.state === "skipped" && (
+              <Line icon={<Mail size={10.5} />} trailing={<button type="button" className="small-action" onClick={() => send("unskipEmail")}>Undo</button>}>
+                <span className="dim">Email skipped</span>
+              </Line>
+            )}
+            {postCall.email.state === "sent" && <Line icon={<Check size={10.5} stroke={3} />}><span className="dim">Email sent</span></Line>}
+          </>
+        )}
 
-          {tab === "notes" && (
-            <>
-              {postCall.summary && <div className="notes-summary">{postCall.summary}</div>}
-              {postCall.notes && <textarea className="note-draft" value={noteDraft ?? ""} onChange={e => setNoteDraft(e.target.value)} placeholder="Add note..." />}
-              <div className="postcall-actions">
-                <button type="button" className="text-action" onClick={() => act({ name: "postCall", type: "openNotes" })}>Open in Vocify</button>
-              </div>
-            </>
-          )}
-        </div>
+        {tab === "notes" && (
+          <>
+            {(noteEditable || noteText !== "") && (
+              <NoteBox editable={noteEditable} text={noteText} placeholder={`Add a note for ${crm}`} onChange={setNoteDraft} />
+            )}
+            <div className="postcall-actions" style={{ height: L.actions }}>
+              <TextAction title="Open in Vocify" arrow onClick={() => send("openNotes")} />
+              <div className="grow" />
+              {noteEditable && <span className="note-hint">Saved to {crm} with the update</span>}
+            </div>
+          </>
+        )}
       </div>
 
-      {openOptions && optionsAnchor && (() => {
-        const change = postCall.changes.find((c) => c.key === openOptions);
+      {options && (() => {
+        const change = postCall.changes.find((c) => c.key === options.key);
         if (!change) return null;
-        const selected = pickedValues(change, editedValues[change.key]);
+        const selected = pickedValues(change, edited[change.key]);
         return (
-          <FloatMenu anchor={optionsAnchor} width={Math.max(160, Math.round(optionsAnchor.width) + 8)} onClose={closeMenus} onExtent={onPopupExtent} label={change.label}>
-            {change.options.map((opt) => (
-              <MenuRow key={opt.value} label={opt.label} selected={selected.includes(opt.value)} onPick={() => pick(opt.value, change)} />
+          <FloatMenu anchor={options.anchor} width={Math.max(160, Math.round(options.anchor.width) + 8)} onClose={closeMenus} onExtent={onPopupExtent} label={change.label}>
+            {change.options.map((option) => (
+              <MenuRow key={option.value} label={option.label} selected={selected.includes(option.value)} onPick={() => pick(option.value, change)} />
             ))}
           </FloatMenu>
         );
       })()}
-      {typeListOpen && typeAnchor && postCall.type && postCall.type.options.length > 0 && (
-        <FloatMenu anchor={typeAnchor} width={190} onClose={closeMenus} onExtent={onPopupExtent} label="Call type">
-          {[{ key: postCall.type.key, label: postCall.type.label }, ...postCall.type.options.filter((o) => o.key !== postCall.type?.key)].map((opt) => (
-            <MenuRow key={opt.key} label={opt.label} selected={postCall.type?.key === opt.key} onPick={() => { act({ name: "postCall", type: "setType", details: { key: opt.key } }); setTypeListOpen(false); }} />
+      {typeMenu && postCall.type && postCall.type.options.length > 0 && (
+        <FloatMenu anchor={typeMenu} width={190} onClose={closeMenus} onExtent={onPopupExtent} label="Call type">
+          {[{ key: postCall.type.key, label: postCall.type.label }, ...postCall.type.options.filter((o) => o.key !== postCall.type?.key)].map((option) => (
+            <MenuRow
+              key={option.key}
+              label={option.label}
+              selected={postCall.type?.key === option.key}
+              onPick={() => {
+                send("setType", { key: option.key });
+                setTypeMenu(null);
+              }}
+            />
           ))}
         </FloatMenu>
       )}
@@ -217,45 +313,126 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   );
 }
 
-function ChangeRow({ change, shown: s, kept, height, open, toggle, toggleOptions }: { change: PostCallChange; shown: string; kept: boolean; height: number; open: boolean; toggle: () => void; toggleOptions: (element: Element) => void }) {
-  const [hoverVal, setHoverVal] = useState(false);
-  const valRef = useRef<HTMLDivElement>(null);
-  const lh = lineHeight(L.valueSize);
-  const tickTop = (lh - L.tick) / 2;
-
+/** CRM / Email / Notes, each with what it still needs from the rep. */
+function TabButton({ tab, active, count, busy, onClick }: { tab: Tab; active: boolean; count: number; busy: boolean; onClick: () => void }) {
+  const title = tab === "crm" ? "CRM" : tab === "email" ? "Email" : "Notes";
   return (
-    <div className="change-row" style={{ height }}>
-      <button type="button" className="change-toggle" onClick={toggle}>
-        <div className="tick" data-kept={kept} style={{ marginTop: `${tickTop}px` }}>
-          {kept && <Check size={7.5} />}
-        </div>
-        <span className="change-label">{change.label}</span>
+    <button type="button" role="tab" aria-selected={active} aria-label={count > 0 ? `${title}, ${count}` : title} className="postcall-tab" data-active={active} onClick={onClick}>
+      {tab === "crm" ? <IdCard /> : tab === "email" ? <Mail /> : <FileText />}
+      <span>{title}</span>
+      {busy ? <span className="spinner spinner-small" /> : count > 0 && <span className="tab-badge">{count}</span>}
+    </button>
+  );
+}
+
+/** One row of the card: an icon (or progress), the text, and its actions on the right. */
+function Line({ icon, busy = false, trailing, children }: { icon?: ReactNode; busy?: boolean; trailing?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="postcall-line" style={{ height: L.line }}>
+      <span className="line-icon">{busy ? <span className="spinner" /> : icon}</span>
+      <span className="line-text">{children}</span>
+      <div className="grow" />
+      {trailing}
+    </div>
+  );
+}
+
+function TextAction({ title, arrow = false, onClick }: { title: string; arrow?: boolean; onClick: () => void }) {
+  return (
+    <button type="button" className="text-action" onClick={onClick}>
+      {arrow && <ArrowUpRight size={10} stroke={2.4} />}
+      <span>{title}</span>
+    </button>
+  );
+}
+
+/** The changes, up to `listMax` tall; a longer list scrolls and fades out at its bottom edge instead of cutting a row. */
+function ChangesList({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scrolls, setScrolls] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) setScrolls(el.scrollHeight > el.clientHeight + 1);
+  });
+  return (
+    <div ref={ref} className="changes-list" data-scrolls={scrolls} style={{ maxHeight: L.listMax }}>
+      {children}
+    </div>
+  );
+}
+
+/** One proposed change: tick to keep, its field, and what it becomes (then what it was). */
+function ChangeRow({ change, shown, kept, open, toggle, toggleOptions }: { change: PostCallChange; shown: string; kept: boolean; open: boolean; toggle: () => void; toggleOptions: (element: Element) => void }) {
+  const value = useRef<HTMLDivElement>(null);
+  const before = change.from !== null && change.from !== shown ? change.from : null;
+  const hasOptions = change.options.length > 0;
+  return (
+    <div className="change-row">
+      <button type="button" className="change-toggle" title={kept ? "Untick to leave it out" : "Tick to write it"} aria-label={change.label} aria-pressed={kept} onClick={toggle}>
+        <span className="tick" data-kept={kept} data-check={change.check}>{kept && <Check size={7.5} stroke={4} />}</span>
+        <span className="change-label" style={{ width: L.label }}>{change.label}</span>
       </button>
-      <div className="change-value" ref={valRef} onMouseEnter={() => setHoverVal(true)} onMouseLeave={() => setHoverVal(false)} onClick={(e) => { if (change.options.length) { e.stopPropagation(); toggleOptions(valRef.current!); } else toggle(); }}>
-        <span data-kept={kept}>{s}</span>
-        {change.from && <span className="was-text">was {change.from}</span>}
-        {change.options.length > 0 && <ChevronDown size={8} style={{ opacity: open || hoverVal ? 1 : 0.5, marginTop: `${tickTop}px` }} />}
+      <div
+        ref={value}
+        className="change-value"
+        data-open={open}
+        title={hasOptions ? (change.multiple ? "Pick one or more" : "Pick another value") : "Edit it in Vocify"}
+        onClick={(event) => {
+          if (!hasOptions) return toggle();
+          event.stopPropagation();
+          if (value.current) toggleOptions(value.current);
+        }}
+      >
+        <span className="value-text">
+          <span data-kept={kept}>{shown}</span>
+          {before !== null && <span className="was-text">{"  was "}{before}</span>}
+        </span>
+        <span className="value-chevron" style={{ opacity: hasOptions ? 1 : 0 }}><ChevronDown size={8} stroke={3.6} /></span>
       </div>
     </div>
   );
 }
 
-function MeetingRow({ meeting, onAdd, onReview }: { meeting: { state: string; when: string | null }; onAdd: () => void; onReview: () => void }) {
-  const text = meeting.state === "pending" ? (meeting.when ? `Meeting ${meeting.when}` : "Meeting agreed") : meeting.state === "check" ? "Meeting to confirm" : meeting.when ? `Meeting ${meeting.when} added` : "Meeting added";
+/** The agreed meeting: a quiet line under the changes, added with one click. */
+function MeetingRow({ meeting, onAdd, onReview }: { meeting: PostCallMeeting; onAdd: () => void; onReview: () => void }) {
+  const text =
+    meeting.state === "pending" ? (meeting.when ? `Meeting ${meeting.when}` : "Meeting agreed") : meeting.state === "check" ? "Meeting to confirm" : meeting.when ? `Meeting ${meeting.when} added` : "Meeting added";
   return (
-    <div className="meeting-row">
-      <span>{text}</span>
-      <div style={{ flex: 1 }} />
-      {meeting.state === "pending" && <button type="button" className="text-action" onClick={onAdd}>Add</button>}
-      {meeting.state === "check" && <button type="button" className="text-action" onClick={onReview}>Review</button>}
+    <div className="meeting-row" style={{ height: L.meeting }}>
+      <span className="meeting-icon">{meeting.state === "added" ? <Check size={10} stroke={3} /> : <Calendar />}</span>
+      <span className="meeting-text">{text}</span>
+      <div className="grow" />
+      {meeting.state === "pending" && <TextAction title="Add" onClick={onAdd} />}
+      {meeting.state === "check" && <TextAction title="Review" onClick={onReview} />}
     </div>
   );
 }
 
-
-/** The values picked now: what the rep chose, else what was extracted (`;`-joined for a checkbox list). */
-function pickedValues(change: PostCallChange, edited: string | undefined): string[] {
-  const raw = edited ?? change.value;
-  return change.multiple ? raw.split(";").map((v) => v.trim()).filter(Boolean) : [raw];
+/** The note: edited here while the card can still save it (it rides on Save), read-only after. Grows to 8 lines, then scrolls. */
+function NoteBox({ editable, text, placeholder, onChange }: { editable: boolean; text: string; placeholder: string; onChange: (text: string) => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight) || 16;
+    el.style.height = "0px";
+    const lines = Math.max(editable ? L.noteMinLines : 1, Math.min(L.noteLines, Math.round(el.scrollHeight / lineHeight)));
+    el.style.height = `${lines * lineHeight}px`;
+  }, [text, editable]);
+  return (
+    <div className="note-box" style={{ marginTop: L.gap }}>
+      <textarea ref={ref} className="note-text" value={text} readOnly={!editable} placeholder={placeholder} spellCheck={editable} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
 }
 
+/** How long Undo stays: a thin line that shrinks over the 5 s. */
+function UndoLine({ until }: { until: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (now >= until) return;
+    const timer = setTimeout(() => setNow(Date.now()), 33);
+    return () => clearTimeout(timer);
+  }, [now, until]);
+  return <div className="undo-line" style={{ width: `${Math.max(0, Math.min(1, (until - now) / 5000)) * 100}%` }} />;
+}

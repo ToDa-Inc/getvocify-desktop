@@ -15,6 +15,7 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
     /// `defaults write com.vocify.app vocify.liveHelpLog -bool true`.
     /// Read: `log stream --predicate 'subsystem == "com.vocify.app" AND category == "live-help"'`.
     nonisolated static let helpLog = Logger(subsystem: "com.vocify.app", category: "live-help")
+    nonisolated static let callLog = Logger(subsystem: "com.vocify.app", category: "call-source")
     static var helpLogOn: Bool { UserDefaults.standard.bool(forKey: "vocify.liveHelpLog") }
     weak var mainWebView: WKWebView?
 

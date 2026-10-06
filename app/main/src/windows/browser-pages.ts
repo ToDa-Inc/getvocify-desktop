@@ -111,3 +111,40 @@ export function createPageReader(run: (script: string) => Promise<string>, now: 
     },
   };
 }
+
+/** The browsers the CRM watcher reads when one of them is in front (Windows process names, as `front` answers). */
+export const WATCHED_BROWSERS = new Set(["chrome", "msedge", "brave", "opera", "vivaldi", "firefox", "arc"]);
+
+/**
+ * The long-lived reader behind the CRM watcher (see page-reader-process.ts): `front` answers the foreground window's
+ * process name, `read` the same lines as READ_PAGES_SCRIPT, each followed by an `<<END>>` line.
+ */
+export const READER_LOOP_SCRIPT = String.raw`
+$ErrorActionPreference = 'SilentlyContinue'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class VocifyForeground {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+}
+"@
+function Read-Pages {
+${READ_PAGES_SCRIPT}
+}
+while ($true) {
+  $line = [Console]::In.ReadLine()
+  if ($line -eq $null) { break }
+  if ($line -eq 'front') {
+    [uint32]$owner = 0
+    [void][VocifyForeground]::GetWindowThreadProcessId([VocifyForeground]::GetForegroundWindow(), [ref]$owner)
+    $process = Get-Process -Id $owner
+    if ($process) { Write-Output $process.ProcessName }
+  } elseif ($line -eq 'read') {
+    Read-Pages
+  }
+  Write-Output '<<END>>'
+  [Console]::Out.Flush()
+}
+`;

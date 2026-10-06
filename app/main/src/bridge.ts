@@ -34,6 +34,10 @@ export type BridgeDeps = {
   log(line: string): void;
   /** A draft was saved or removed: the dashboard page may now be needed, or no longer. */
   onDraftsChanged?(): void;
+  /** Mac: may Vocify read the CRM tab (Automation consent), as the watcher last found it. Absent where it cannot be read. */
+  crmTabs?(): string;
+  /** Mac: reads each running supported browser once, which makes macOS ask for Automation consent. */
+  askCrmTabs?(): Promise<void>;
   /** The CRM links open in the rep's browsers (Windows: read from the address bars). Absent where it cannot be read. */
   readCrmPages?(): Promise<{ urls: string[]; browsers: { name: string; bundleId: string; access: string }[] }>;
 };
@@ -42,6 +46,7 @@ type Args = Record<string, unknown>;
 /** 100 ms of silence at 16 kHz mono 16-bit: the call side where it cannot be captured (see `startSystemAudio`). */
 const SILENT_FRAME_BYTES = 3200;
 const OPEN_URL = /^(https?:\/\/|mailto:)/i;
+const MAC_AUTOMATION_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation";
 
 export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Promise<unknown> {
   /** The last session state the dashboard reported (undefined until it first does), so the log shows it once per change. */
@@ -80,7 +85,9 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
   /** In the permission test, the permissions the dashboard has asked for so far; the others read "not asked". */
   const asked = new Set<string>();
   const permissions = () => {
-    const real = permissionSnapshot(deps.platform, deps.microphoneAccess(), deps.reportedPlatform);
+    // Windows reads the address bars without asking; a Mac needs the rep's Automation consent per browser.
+    const crmTabs = deps.platform === "win32" ? "authorized" : deps.crmTabs?.();
+    const real: Record<string, unknown> = { ...permissionSnapshot(deps.platform, deps.microphoneAccess(), deps.reportedPlatform), ...(crmTabs ? { crmTabs } : {}) };
     if (!deps.testPermissions) return real;
     return {
       ...real,
@@ -125,6 +132,10 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
           // Shows the step a rep without the permission goes through: the system's own settings page for it.
           if (args.type === "microphone") deps.openExternal(microphoneSettingsUrl(deps.platform));
           else if (args.type === "systemAudio" && deps.platform === "darwin") deps.openExternal(MAC_SYSTEM_AUDIO_SETTINGS_URL);
+        }
+        if (args.type === "crmTabs") {
+          await deps.askCrmTabs?.();
+          return permissions();
         }
         if (args.type === "microphone") {
           const status = permissions().microphone;
@@ -185,6 +196,7 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
         // Only CRM links leave the machine; where the pages cannot be read, none are known.
         return deps.readCrmPages ? deps.readCrmPages() : { urls: [], browsers: [] };
       case "crm:open-automation-settings":
+        if (deps.platform === "darwin") deps.openExternal(MAC_AUTOMATION_SETTINGS_URL);
         return { ok: true };
       default:
         return null;

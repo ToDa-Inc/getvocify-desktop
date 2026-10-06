@@ -166,7 +166,9 @@ export class DashboardHost {
   emit(channel: string, payload: unknown): void {
     const contents = this.contents;
     if (!contents) {
-      const needsPage = (channel === "shell:command" && payload === "listen") || channel === "call:pages" || channel === "call:source";
+      // A CRM record coming on screen starts it too: naming the contact and calling it both need the page.
+      const crmRecord = channel === "crm:screen" && ((payload as { urls?: unknown[] } | null)?.urls?.length ?? 0) > 0;
+      const needsPage = (channel === "shell:command" && payload === "listen") || channel === "call:pages" || channel === "call:source" || crmRecord;
       if (!needsPage) return;
       this.queue.push({ channel, payload });
       this.ensureHidden();

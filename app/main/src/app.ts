@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, screen, shell, systemPreferences, Tray } from "electron";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { CallSource } from "../../core/callSource.ts";
 import { dirname, join } from "node:path";
@@ -18,7 +18,10 @@ import { ShortcutManager } from "./shortcut.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { trayItems } from "./tray-menu.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
-import { crmUrlsOf, createPageReader, encodePowerShell, type BrowserPage } from "./windows/browser-pages.ts";
+import { crmUrlsOf, createPageReader, encodePowerShell, READER_LOOP_SCRIPT, WATCHED_BROWSERS, type BrowserPage } from "./windows/browser-pages.ts";
+import { createPageReaderProcess, type ReaderChild } from "./windows/page-reader-process.ts";
+import { createMacPageReader, type MacAccess } from "./mac/browser-pages.ts";
+import { createCrmScreenWatcher } from "./crm-screen-watcher.ts";
 import { MIC_CONSENT_KEY, MicWatcher, type DetectedCaller } from "./windows/mic-use.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -218,9 +221,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   let quitting = false;
   // The dashboard page does the recording and, after Stop, the upload: it must stay until the call is handed over.
   const recordingOrFinishing = () => ["recording", "stopped", "finishing"].includes(controller.state.mode.kind);
+  // A call offer on show (or a call) needs the page that resolved it and that dials.
+  const calling = () => controller.state.onScreen !== null || controller.state.dial !== null || ["dialConfirm", "dialing"].includes(controller.state.mode.kind);
   const canDestroy = () =>
     quitting ||
-    Date.now() >= busyUntil && !controller.isListening && !recordingOrFinishing() && controller.state.postCall === null && drafts.count() === 0;
+    Date.now() >= busyUntil && !controller.isListening && !recordingOrFinishing() && !calling() && controller.state.postCall === null && drafts.count() === 0;
   const dashboard = new DashboardHost({
     url: options.dashboardUrl,
     preload: join(here, "dashboard-preload.cjs"),
@@ -233,6 +238,47 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     log,
   });
   dashboardHolder.host = dashboard;
+
+  /* ---------- the CRM contact on screen (the island's call offer) ---------- */
+
+  // osascript's refusal (-1743) must reach the reader, so this exec keeps the error, unlike `run`.
+  const execStrict = (file: string, args: string[], timeout: number) =>
+    new Promise<string>((resolve, reject) => {
+      execFile(file, args, { timeout, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => (error ? reject(new Error(`${error.message} ${stderr}`)) : resolve(stdout)));
+    });
+  const macReader = createMacPageReader(execStrict);
+  const macAccess = (): MacAccess | undefined => {
+    const stored = settings.get("crmTabs");
+    return stored === "authorized" || stored === "denied" ? stored : undefined;
+  };
+  const screenReader =
+    platform === "win32"
+      ? createPageReaderProcess(
+          () =>
+            spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(READER_LOOP_SCRIPT)], {
+              windowsHide: true,
+              stdio: ["pipe", "pipe", "ignore"],
+            }) as unknown as ReaderChild,
+          () => Date.now(),
+        )
+      : null;
+  const crmScreen = createCrmScreenWatcher({
+    front: () => (screenReader ? screenReader.front() : macReader.front()),
+    // On a Mac only once the rep allowed it from first-run setup: reading a browser is what makes macOS ask.
+    isBrowser: (app) => (screenReader ? WATCHED_BROWSERS.has(app) : macReader.isBrowser(app) && macAccess() === "authorized"),
+    read: async (app) => {
+      if (screenReader) return crmUrlsOf(await screenReader.read());
+      const { urls, access } = await macReader.read(app);
+      if (access === "denied") settings.set("crmTabs", "denied");
+      return urls;
+    },
+    emit: (urls) => dashboard.emit("crm:screen", { urls }),
+    every: (ms, fn) => {
+      const timer = setInterval(fn, ms);
+      return () => clearInterval(timer);
+    },
+  });
+  if (platform === "win32" || platform === "darwin") crmScreen.start();
 
   /* ---------- the island window ---------- */
 
@@ -363,6 +409,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       return { status: response.status, text: () => response.text() };
     },
     log,
+    crmTabs: platform === "darwin" ? () => macAccess() ?? "never_requested" : undefined,
+    askCrmTabs:
+      platform === "darwin"
+        ? async () => {
+            const answer = await macReader.askAll();
+            if (answer === "authorized" || answer === "denied") settings.set("crmTabs", answer);
+          }
+        : undefined,
   });
   // Only the dashboard window may talk to the shell, and only through the bridge.
   ipcMain.handle("vocify", (event, op: unknown, args: unknown) => {

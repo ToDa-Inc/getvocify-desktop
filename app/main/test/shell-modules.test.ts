@@ -222,7 +222,7 @@ test("a saved shortcut is restored on the next launch, and 'off' stays off", () 
 
 /* ---------- the bridge ---------- */
 
-function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean } = {}) {
+function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void> } = {}) {
   const emitted: { channel: string; payload: unknown }[] = [];
   const opened: string[] = [];
   const logs: string[] = [];
@@ -257,6 +257,8 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
     platform: options.platform ?? "win32",
     askMicrophone: options.askMicrophone,
     testPermissions: options.testPermissions,
+    crmTabs: options.crmTabs,
+    askCrmTabs: options.askCrmTabs,
     controller,
     loopback,
     drafts: new Drafts(join(tmp(), "meetings")),
@@ -274,11 +276,11 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
 
 test("bridge: the permission test shows both permissions as not asked until the dashboard asks for each", async () => {
   const t = bridgeSetup({ microphone: "granted", testPermissions: true });
-  assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "never_requested", systemAudio: "never_requested" });
+  assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "never_requested", systemAudio: "never_requested", crmTabs: "authorized" });
   await t.call("permissions:request", { type: "microphone" });
-  assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "authorized", systemAudio: "never_requested" });
+  assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "authorized", systemAudio: "never_requested", crmTabs: "authorized" });
   await t.call("permissions:request", { type: "systemAudio" });
-  assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "authorized", systemAudio: "authorized" });
+  assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "authorized", systemAudio: "authorized", crmTabs: "authorized" });
   assert.deepEqual(t.opened, ["ms-settings:privacy-microphone"], "the test shows the settings step once; Windows has no call-audio setting");
 });
 
@@ -295,7 +297,7 @@ test("bridge: on a Mac the microphone is asked for with the system prompt once, 
 
 test("bridge: permissions report the global Windows microphone setting and open it on request", async () => {
   const t = bridgeSetup({ microphone: "denied" });
-  assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "denied", systemAudio: "authorized" });
+  assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "denied", systemAudio: "authorized", crmTabs: "authorized" });
   await t.call("permissions:request", { type: "microphone" });
   assert.deepEqual(t.opened, ["ms-settings:privacy-microphone"]);
   await t.call("permissions:open", { type: "systemAudio" });
@@ -379,4 +381,34 @@ test("bridge: a call-audio start that fails reports why and leaves nothing subsc
   assert.equal(t.pcmListeners.size + t.lostListeners.size, 0);
   await t.call("system-audio:start", {});
   assert.equal(t.pcmListeners.size, 0, "starting twice does not stack listeners");
+});
+
+
+test("bridge: reading the CRM tab needs no permission on Windows", async () => {
+  const b = bridgeSetup({ platform: "win32" });
+  assert.equal(((await b.call("permissions:status", {})) as { crmTabs?: string }).crmTabs, "authorized");
+});
+
+test("bridge: on a Mac the CRM tab permission is asked from first-run setup, and denied opens Automation settings", async () => {
+  let status = "never_requested";
+  let asked = 0;
+  const b = bridgeSetup({
+    platform: "darwin",
+    crmTabs: () => status,
+    askCrmTabs: async () => {
+      asked += 1;
+      status = "authorized";
+    },
+  });
+  assert.equal(((await b.call("permissions:status", {})) as { crmTabs?: string }).crmTabs, "never_requested");
+  const after = (await b.call("permissions:request", { type: "crmTabs" })) as { crmTabs?: string };
+  assert.equal(asked, 1);
+  assert.equal(after.crmTabs, "authorized");
+  await b.call("crm:open-automation-settings", {});
+  assert.deepEqual(b.opened, ["x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"]);
+});
+
+test("bridge: a build that cannot read browsers does not mention the CRM tab", async () => {
+  const b = bridgeSetup({ platform: "darwin" });
+  assert.equal("crmTabs" in ((await b.call("permissions:status", {})) as object), false);
 });

@@ -56,6 +56,8 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
   crm: {
     pages: (options: Record<string, unknown> = {}) => call("crm:pages", options),
     openAutomationSettings: () => call("crm:open-automation-settings"),
+    // The CRM pages in the frontmost browser changed: { urls } ([] = no record any more).
+    onScreen: on("crm:screen"),
     onCallPages: on("call:pages"),
     onCallEnded: on("call:ended"),
     onCallSource: on("call:source"),

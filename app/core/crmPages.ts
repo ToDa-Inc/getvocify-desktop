@@ -69,6 +69,11 @@ const browsers: Browser[] = [
 ];
 
 export const CrmPages = {
+  /** Every supported browser's bundle id. */
+  bundleIDs(): string[] {
+    return browsers.map((b) => b.bundleID);
+  },
+
   browser(bundleID: string): Browser | undefined {
     return browsers.find((b) => b.bundleID === bundleID);
   },

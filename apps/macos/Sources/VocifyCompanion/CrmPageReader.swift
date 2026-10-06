@@ -44,13 +44,35 @@ enum CrmPageReader {
     /// The front window's active tab as a CRM URL (or none), when the frontmost app is a supported browser
     /// Vocify may read; nil otherwise.
     /// Never asks for consent (that happens once, from first-run setup), so it never blocks on a prompt.
-    static func readFrontmost() -> [String]? {
-        guard let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-              let browser = CrmPages.browser(bundleID: bundleID),
-              determineAccess(bundleID: bundleID, ask: false) == .granted,
-              let output = runCompiled(browser)
-        else { return nil }
-        return CrmPages.frontRecordURLs(fromScriptOutput: output)
+    /// The front window's active tab as a CRM URL (or none) for a supported browser Vocify may read; nil otherwise.
+    /// Runs off the main thread: the consent check and the script take tens of milliseconds, every 1.5 s.
+    nonisolated static func readFront(bundleID: String) async -> [String]? {
+        guard let browser = CrmPages.browser(bundleID: bundleID) else { return nil }
+        return await Task.detached(priority: .utility) {
+            guard determineAccess(bundleID: bundleID, ask: false) == .granted,
+                  let output = runOsascript(browser.script)
+            else { return nil }
+            return CrmPages.frontRecordURLs(fromScriptOutput: output)
+        }.value
+    }
+
+    /// `osascript` in its own process: AppleScript off the main thread, attributed to Vocify (its parent) for consent.
+    nonisolated private static func runOsascript(_ source: String) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", source]
+        let out = Pipe()
+        process.standardOutput = out
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 
     /// Each running supported browser's Automation consent; `ask` shows macOS's prompt for the ones not asked yet.
@@ -62,25 +84,6 @@ enum CrmPageReader {
             answers.append(await Task.detached { determineAccess(bundleID: bundleID, ask: ask) }.value.rawValue)
         }
         return answers
-    }
-
-    /// The watcher reads every 1.5 s: compile each browser's script once.
-    private static var compiled: [String: NSAppleScript] = [:]
-
-    private static func runCompiled(_ browser: CrmPages.Browser) -> String? {
-        let script: NSAppleScript
-        if let cached = compiled[browser.bundleID] {
-            script = cached
-        } else {
-            guard let fresh = NSAppleScript(source: browser.script) else { return nil }
-            var error: NSDictionary?
-            guard fresh.compileAndReturnError(&error) else { return nil }
-            compiled[browser.bundleID] = fresh
-            script = fresh
-        }
-        var error: NSDictionary?
-        let result = script.executeAndReturnError(&error)
-        return error == nil ? result.stringValue : nil
     }
 
     /// Blocks while macOS shows the consent prompt, so never call it on the main thread with `ask`.

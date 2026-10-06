@@ -97,6 +97,9 @@ final class BridgeHolder: ObservableObject {
         webView.setValue(false, forKey: "drawsBackground")
         webView.uiDelegate = uiDelegate
         webView.navigationDelegate = navigationDelegate
+        // Safari ▸ Develop can inspect the dashboard only when asked for:
+        // `defaults write com.vocify.app vocify.webInspector -bool true`, then relaunch.
+        if UserDefaults.standard.bool(forKey: "vocify.webInspector") { webView.isInspectable = true }
         bridge.mainWebView = webView
         MeetingPillController.shared.watchCalls(bridge: bridge)
         CrmScreenWatcher.shared.start(bridge: bridge)

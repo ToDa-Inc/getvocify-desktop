@@ -41,14 +41,24 @@ final class CrmScreenWatcher {
         timer = next
     }
 
+    /// A read still running when the next tick comes is never stacked.
+    private var reading = false
+
     private func tick() {
+        guard !reading, let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return }
+        reading = true
         let started = ContinuousClock.now
-        let urls = CrmPageReader.readFrontmost()
-        let took = (ContinuousClock.now - started).components
-        let ms = took.seconds * 1000 + took.attoseconds / 1_000_000_000_000_000
-        Self.log.debug("read \(ms, privacy: .public) ms")
-        // nil: not allowed to read this browser, or it went away. Nothing new to say.
-        guard let urls, let changed = change.next(urls) else { return }
-        bridge?.emitCrmScreen(changed)
+        Task { @MainActor [weak self] in
+            let urls = await CrmPageReader.readFront(bundleID: bundleID)
+            guard let self else { return }
+            self.reading = false
+            let took = (ContinuousClock.now - started).components
+            Self.log.debug("read \(took.seconds * 1000 + took.attoseconds / 1_000_000_000_000_000, privacy: .public) ms (off the main thread)")
+            // nil: not allowed to read this browser, or it went away. Nothing new to say.
+            guard let urls, let changed = self.change.next(urls) else { return }
+            let shown = changed.first.flatMap { URL(string: $0).map { "\($0.host ?? "")\($0.path)" } } ?? "none"
+            Self.log.debug("crm:screen \(shown, privacy: .public)")
+            self.bridge?.emitCrmScreen(changed)
+        }
     }
 }

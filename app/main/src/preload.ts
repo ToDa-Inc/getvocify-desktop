@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { IslandAction, IslandState, Levels } from "../../island/src/types.ts";
 
 contextBridge.exposeInMainWorld("vocifyIsland", {
+  platform: process.platform,
   onState(callback: (state: IslandState) => void) {
     const handler = (_event: unknown, state: IslandState) => callback(state);
     ipcRenderer.on("island:state", handler);
@@ -18,7 +19,8 @@ contextBridge.exposeInMainWorld("vocifyIsland", {
   act(action: IslandAction) {
     ipcRenderer.send("island:act", action);
   },
-  typing(on: boolean) {
-    ipcRenderer.send("island:typing", on === true);
+  /** See `IslandHost.keyboard`. Resolves once the window can take the keys. */
+  keyboard(mode: "available" | "now" | "release" | "off") {
+    return ipcRenderer.invoke("island:keyboard", mode);
   },
 });

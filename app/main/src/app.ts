@@ -388,11 +388,30 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   ipcMain.on("island:act", (event, action: IslandAction) => {
     if (fromIsland(event.sender)) controller.act(action);
   });
-  // Typing in the island (the call note) needs keyboard focus, which the island otherwise never takes.
-  ipcMain.on("island:typing", (event, on: boolean) => {
-    if (!fromIsland(event.sender)) return;
-    // Taking focus is left to the rep's own click in the field, so the caret lands there and no key is lost.
-    island.setFocusable(on);
+  /**
+   * Typing in the card needs the keyboard, which the island otherwise never takes. Windows: the window takes it only on a
+   * click in a field ("now") and gives it back when the typing is done, so a card appearing never takes it from the rep's
+   * window. macOS: the window is made able to take it while the card is shown, so the click in a field itself focuses it
+   * (a window made focusable only on that click misses the first keys).
+   */
+  ipcMain.handle("island:keyboard", (event, mode: string) => {
+    if (!fromIsland(event.sender)) return false;
+    const windows = platform === "win32";
+    const giveBack = () => {
+      island.setFocusable(false);
+      if (island.isFocused()) island.blur();
+    };
+    if (mode === "available") {
+      if (!windows) island.setFocusable(true);
+    } else if (mode === "now") {
+      island.setFocusable(true);
+      if (windows) island.focus();
+    } else if (mode === "release") {
+      if (windows) giveBack();
+    } else {
+      giveBack();
+    }
+    return true;
   });
   ipcMain.on("island:resize", (event, size: { width: number; height: number }) => {
     if (!fromIsland(event.sender) || !size || !(size.width > 0) || !(size.height > 0)) return;

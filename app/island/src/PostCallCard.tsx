@@ -82,8 +82,8 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const typable = postCall.stage === "ready" && postCall.canApprove;
   useEffect(() => {
     if (!typable) return;
-    window.vocifyIsland?.typing?.(true);
-    return () => window.vocifyIsland?.typing?.(false);
+    void window.vocifyIsland?.keyboard?.("available");
+    return () => void window.vocifyIsland?.keyboard?.("off");
   }, [typable]);
 
   const closeMenus = useCallback(() => {
@@ -394,7 +394,12 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable,
         data-open={open}
         title={hasOptions ? (change.multiple ? "Pick one or more" : "Pick another value") : editable ? "Edit the text" : "Edit it in Vocify"}
         onClick={(event) => {
-          if (!hasOptions) return editable ? setEditing(true) : toggle();
+          if (!hasOptions) {
+            if (!editable) return toggle();
+            if (handsOverOnClick()) void takeKeyboard().then(() => setEditing(true));
+            else setEditing(true);
+            return;
+          }
           event.stopPropagation();
           if (value.current) toggleOptions(value.current);
         }}
@@ -414,6 +419,24 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable,
       </div>
     </div>
   );
+}
+
+/**
+ * Windows only: the island window takes the keyboard on a click in a field, and the caret goes in once it has it. On a Mac
+ * the window can already take it while the card is shown, so the click itself focuses the field (waiting would lose keys).
+ */
+const handsOverOnClick = () => window.vocifyIsland?.platform === "win32";
+
+function takeKeyboard(): Promise<unknown> {
+  return window.vocifyIsland?.keyboard?.("now") ?? Promise.resolve();
+}
+
+/** Gives the keyboard back once no field of the card has the caret any more (a moment later: focus may be moving). */
+function releaseKeyboardSoon(): void {
+  setTimeout(() => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement)) void window.vocifyIsland?.keyboard?.("release");
+  }, 150);
 }
 
 /** A free-text value typed in place: Enter or a click elsewhere keeps it, Escape leaves it as it was. Grows with the text. */
@@ -459,7 +482,10 @@ function ValueEditor({ text, onDone }: { text: string; onDone: (text: string | n
           finish(null);
         }
       }}
-      onBlur={() => finish(draft)}
+      onBlur={() => {
+        finish(draft);
+        releaseKeyboardSoon();
+      }}
     />
   );
 }
@@ -499,6 +525,17 @@ function NoteBox({ editable, text, placeholder, onChange }: { editable: boolean;
         readOnly={!editable}
         placeholder={placeholder}
         spellCheck={editable}
+        onMouseDown={(event) => {
+          if (!editable || document.activeElement === ref.current || !handsOverOnClick()) return;
+          // Windows: the window takes the keys only now; the caret goes in once it has them.
+          event.preventDefault();
+          const at = event.currentTarget;
+          void takeKeyboard().then(() => {
+            at.focus();
+            at.setSelectionRange(at.value.length, at.value.length);
+          });
+        }}
+        onBlur={releaseKeyboardSoon}
         onChange={(event) => onChange(event.target.value)}
       />
     </div>

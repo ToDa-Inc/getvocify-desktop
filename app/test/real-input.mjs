@@ -180,7 +180,8 @@ app.whenReady().then(async () => {
     check(await until(() => mode() === "finishing", 2000, "finishing"), "Finish ends the call at once and the island holds a spinner");
     await snap("finishing");
     check(await until(() => mode() === "postCall" && controller.state.postCall?.stage === "ready" && controller.state.expanded, 15000, "card ready"), "the call's card opens when its update is ready");
-    callKeepsFocus("Stop, Resume and Finish");
+    await sleep(600);
+    callKeepsFocus("Stop, Resume, Finish and the card opening");
     await snap("card-ready");
 
     /* ---------- the after-call card ---------- */
@@ -232,6 +233,8 @@ app.whenReady().then(async () => {
     await click(".postcall-header .icon-button");
     check(await until(() => mode() === "idle" && controller.state.postCall === null, 4000, "dismissed"), "Done clears the card and the island rests");
     check(!island.isFocusable(), "the island gives the keyboard back once the card is gone");
+    await sleep(400);
+    callKeepsFocus("after typing in the card and closing it");
 
     /* ---------- a detected call ---------- */
     // Call detection reports "no call" first, as the Windows watcher does at start.

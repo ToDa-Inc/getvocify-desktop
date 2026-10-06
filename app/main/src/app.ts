@@ -180,7 +180,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       emit: (channel, payload) => dashboardHolder.host?.emit(channel, payload),
       showMainWindow: () => dashboardHolder.host?.show(),
       onState: (state) => pushState(state),
-      onLevels: (levels) => island.webContents.send("island:levels", levels),
+      onLevels: (levels) => {
+        if (!island.isDestroyed()) island.webContents.send("island:levels", levels);
+      },
       saveRecorderReady: (ready) => settings.set("recorderReady", ready),
       // A call was detected: name where it happens and send the CRM pages on screen, so the dashboard can name the contact.
       lookUpCallContact: (caller) => {
@@ -332,11 +334,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     const key = `${target.width}x${target.height}`;
     if (!force && key === lastKey) return;
     lastKey = key;
+    if (island.isDestroyed()) return;
     const current = island.getBounds();
     const cover = { width: Math.max(current.width, target.width), height: Math.max(current.height, target.height) };
     island.setBounds(frameFor(cover.width, cover.height));
     if (fitTimer) clearTimeout(fitTimer);
-    fitTimer = setTimeout(() => island.setBounds(frameFor(target.width, target.height)), 420);
+    fitTimer = setTimeout(() => {
+      if (!island.isDestroyed()) island.setBounds(frameFor(target.width, target.height));
+    }, 420);
   };
 
   let checkForUpdates: (() => void) | null = null;
@@ -437,11 +442,19 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (typeof state === "object" && state !== null && Object.keys(state).some((key) => key !== "levels")) touch();
     void bridge("shell:state", { state });
   });
+  // A message can still arrive from the island while the app quits and its window is already gone.
+  const fromIsland = (sender: Electron.WebContents) => !island.isDestroyed() && sender === island.webContents;
   ipcMain.on("island:act", (event, action: IslandAction) => {
-    if (event.sender === island.webContents) controller.act(action);
+    if (fromIsland(event.sender)) controller.act(action);
+  });
+  // Typing in the island (the call note) needs keyboard focus, which the island otherwise never takes.
+  ipcMain.on("island:typing", (event, on: boolean) => {
+    if (!fromIsland(event.sender)) return;
+    // Taking focus is left to the rep's own click in the field, so the caret lands there and no key is lost.
+    island.setFocusable(on);
   });
   ipcMain.on("island:resize", (event, size: { width: number; height: number }) => {
-    if (event.sender !== island.webContents || !size || !(size.width > 0) || !(size.height > 0)) return;
+    if (!fromIsland(event.sender) || !size || !(size.width > 0) || !(size.height > 0)) return;
     reportedSize = { width: Math.round(size.width), height: Math.round(size.height) };
     fit(targetSize(controller.state), true);
   });

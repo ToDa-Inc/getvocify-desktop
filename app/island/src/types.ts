@@ -63,6 +63,8 @@ export type PostCallChange = {
   /** Picked from in place; empty for free text, which is edited in Vocify. */
   options: PostCallOption[];
   multiple: boolean;
+  /** Free text the dashboard will write as typed: the card lets the rep type over it. False everywhere else. */
+  editable: boolean;
   /** Scored under "needs review": shown unticked, or left to the review in Vocify. */
   check: boolean;
 };
@@ -169,4 +171,6 @@ export type IslandHost = {
    * The page reports the island's size in px and the window follows.
    */
   resize(size: { width: number; height: number }): void;
+  /** The island never takes keyboard focus (a click must not take it from the call), except while an editable note is shown. */
+  typing?(on: boolean): void;
 };

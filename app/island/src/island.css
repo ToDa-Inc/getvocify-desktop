@@ -218,6 +218,7 @@ button.type-tag:hover { color: var(--text); }
 .value-text [data-kept="true"] { color: var(--text); }
 .value-text [data-kept="false"] { color: var(--secondary); }
 .was-text { font-size: 11px; color: var(--secondary); }
+.value-input { flex: 1; min-width: 0; margin: -2px 0 -2px -4px; padding: 1px 4px; border: 0; outline: none; resize: none; overflow: hidden; border-radius: 5px; background: rgba(255, 255, 255, 0.08); color: var(--text); font: inherit; font-size: 12px; line-height: 17px; }
 .value-chevron { width: 14px; height: 17px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--secondary); transition: color 120ms, transform 120ms; }
 .change-value:hover .value-chevron, .change-value[data-open="true"] .value-chevron { color: var(--text); }
 .change-value[data-open="true"] .value-chevron svg { transform: rotate(180deg); }

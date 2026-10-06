@@ -18,6 +18,7 @@
     "test:shell": "node test/build-shell-test.mjs && electron test/shell-e2e.mjs",
     "test:windows": "node test/windows-real.mjs",
     "test:focus": "node test/build-shell-test.mjs && electron test/focus-windows.mjs",
+    "test:real": "node test/build-shell-test.mjs && node island/build.mjs && electron test/real-input.mjs",
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "release:win": "npm run build && electron-builder --win nsis --x64 --publish always"
   },

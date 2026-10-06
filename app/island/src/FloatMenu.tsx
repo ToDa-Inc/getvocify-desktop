@@ -43,7 +43,12 @@ export function FloatMenu({ anchor, width, onClose, onExtent, label, children }:
   // focus, so it cannot see clicks in other apps the way the Mac app's global monitor does.
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const leave = () => {
+    // Only a real exit counts: the system can report a "leave" while the pointer is still over the window (a window
+    // gaining focus elsewhere, the island resizing), and a menu must never close under the rep's pointer.
+    const leave = (event: MouseEvent) => {
+      const inside = event.clientX > 0 && event.clientY > 0 && event.clientX < window.innerWidth - 1 && event.clientY < window.innerHeight - 1;
+      if (inside) return;
+      clearTimeout(timer);
       timer = setTimeout(onClose, 600);
     };
     const enter = () => clearTimeout(timer);

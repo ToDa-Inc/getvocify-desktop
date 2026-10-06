@@ -50,6 +50,8 @@ export function parsePostCall(raw: unknown): PostCallData | null {
       value: str(item.value) ?? to,
       options,
       multiple: options.length > 0 && (bool(item.multiple) ?? false),
+      // Only a dashboard that writes typed text says so; anything else stays "edit it in Vocify".
+      editable: options.length === 0 && (bool(item.editable) ?? false),
       check: bool(item.check) ?? false,
     });
   }

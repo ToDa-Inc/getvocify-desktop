@@ -106,6 +106,9 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
             return permissionSnapshot()
         case "permissions:appInfo":
             return appInfo()
+        case "shell:relaunch":
+            relaunch()
+            return ["ok": true]
         case "shell:state":
             if let state = args["state"] as? [String: Any] {
                 for (key, value) in state {
@@ -266,6 +269,24 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
                 ?? "Vocify",
             "bundleId": bundle.bundleIdentifier ?? "com.vocify.app",
         ]
+    }
+
+    /// Screen & System Audio Recording only applies after a restart. Reopens this exact copy once
+    /// it has quit; "Quit & Reopen" in Settings goes by bundle ID and can open another copy.
+    private func relaunch() {
+        let reopen = Process()
+        reopen.executableURL = URL(fileURLWithPath: "/bin/sh")
+        reopen.arguments = [
+            "-c",
+            "while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$0\"",
+            Bundle.main.bundlePath,
+        ]
+        do {
+            try reopen.run()
+        } catch {
+            return
+        }
+        NSApp.terminate(nil)
     }
 
     private func requestPermission(type: String?) async {

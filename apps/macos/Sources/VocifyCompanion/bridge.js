@@ -93,6 +93,8 @@
       showOverlay: () => call('overlay:show'),
       hideOverlay: () => call('overlay:hide'),
       openExternal: (url) => call('shell:open-external', { url }),
+      // Quits and reopens this copy of the app (Screen & System Audio applies after a restart).
+      relaunch: () => call('shell:relaunch'),
       command: (name) => {
         call('shell:command', { name });
       },

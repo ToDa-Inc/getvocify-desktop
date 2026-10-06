@@ -158,5 +158,5 @@ export type IslandHost = {
    * "available" while a card with fields is shown, "over" while the pointer is over a field (so the click in it focuses
    * the window), "release" when the typing is done or the pointer leaves (the keyboard goes back), "off" when the card is gone.
    */
-  keyboard?(mode: "available" | "over" | "release" | "off"): Promise<unknown>;
+  keyboard?(mode: "available" | "over" | "now" | "release" | "off"): Promise<unknown>;
 };

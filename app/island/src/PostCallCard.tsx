@@ -396,7 +396,11 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable,
         onMouseEnter={editable && !hasOptions ? keyboardOver : undefined}
         onMouseLeave={editable && !hasOptions ? releaseKeyboardSoon : undefined}
         onClick={(event) => {
-          if (!hasOptions) return editable ? setEditing(true) : toggle();
+          if (!hasOptions) {
+            if (!editable) return toggle();
+            keyboardNow();
+            return setEditing(true);
+          }
           event.stopPropagation();
           if (value.current) toggleOptions(value.current);
         }}
@@ -421,6 +425,11 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable,
 /** The pointer is over a field the rep can type in: the click that follows focuses the island (see `keyboard`). */
 function keyboardOver(): void {
   void window.vocifyIsland?.keyboard?.("over");
+}
+
+/** A click in a field: the island must have the keyboard now (Windows may need it brought to the front). */
+function keyboardNow(): void {
+  void window.vocifyIsland?.keyboard?.("now");
 }
 
 /** Gives the keyboard back once no field of the card has the caret any more (a moment later: focus may be moving). */
@@ -518,6 +527,7 @@ function NoteBox({ editable, text, placeholder, onChange }: { editable: boolean;
         placeholder={placeholder}
         spellCheck={editable}
         onMouseEnter={editable ? keyboardOver : undefined}
+        onMouseDown={editable ? keyboardNow : undefined}
         onMouseLeave={releaseKeyboardSoon}
         onBlur={releaseKeyboardSoon}
         onChange={(event) => onChange(event.target.value)}

@@ -406,6 +406,19 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       if (!windows) island.setFocusable(true);
     } else if (mode === "over") {
       if (windows) island.setFocusable(true);
+    } else if (mode === "now") {
+      // Windows: the click in the field was input to this app, so it may bring its window to the front; a window created
+      // "never activate" is not activated by the click itself. Each way is tried until the island has the keyboard.
+      if (windows && !island.isFocused()) {
+        island.setFocusable(true);
+        island.focus();
+        if (!island.isFocused()) {
+          island.show();
+          island.focus();
+        }
+        island.webContents.focus();
+        log(`keyboard for typing in the island: ${island.isFocused() ? "taken" : "not given by Windows"}`);
+      }
     } else if (mode === "release") {
       if (windows && !island.isFocused()) island.setFocusable(false);
       else if (windows) giveBack();

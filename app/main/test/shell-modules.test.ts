@@ -129,7 +129,7 @@ test("the dashboard can be told another platform name than the real one, without
 
 test("on Windows call audio needs no permission; elsewhere it is unavailable", () => {
   assert.deepEqual(permissionSnapshot("win32", "granted"), { platform: "win32", microphone: "authorized", systemAudio: "authorized" });
-  assert.deepEqual(permissionSnapshot("darwin", "denied"), { platform: "darwin", microphone: "denied", systemAudio: "denied", systemAudioError: "unsupported_platform" });
+  assert.deepEqual(permissionSnapshot("darwin", "denied"), { platform: "darwin", microphone: "denied", systemAudio: "authorized" }, "microphone-only elsewhere: call audio is reported ready so a recording can start");
 });
 
 /* ---------- shortcut ---------- */
@@ -222,7 +222,7 @@ test("a saved shortcut is restored on the next launch, and 'off' stays off", () 
 
 /* ---------- the bridge ---------- */
 
-function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform } = {}) {
+function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean> } = {}) {
   const emitted: { channel: string; payload: unknown }[] = [];
   const opened: string[] = [];
   const logs: string[] = [];
@@ -255,6 +255,7 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
   const deps: BridgeDeps = {
     readCrmPages: async () => ({ urls: ["https://app.hubspot.com/contacts/1/contact/2"], browsers: [{ name: "chrome", bundleId: "chrome", access: "granted" }] }),
     platform: options.platform ?? "win32",
+    askMicrophone: options.askMicrophone,
     controller,
     loopback,
     drafts: new Drafts(join(tmp(), "meetings")),
@@ -269,6 +270,17 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
   };
   return { call: createBridge(deps), emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, loopbackStops: () => loopbackStops };
 }
+
+test("bridge: on a Mac the microphone is asked for with the system prompt once, and a refusal points to System Settings", async () => {
+  let asked = 0;
+  const fresh = bridgeSetup({ microphone: "not-determined", platform: "darwin", askMicrophone: async () => (asked += 1) > 0 });
+  await fresh.call("permissions:request", { type: "microphone" });
+  assert.equal(asked, 1);
+  assert.deepEqual(fresh.opened, [], "the system's own prompt is shown, not Settings");
+  const refused = bridgeSetup({ microphone: "denied", platform: "darwin", askMicrophone: async () => true });
+  await refused.call("permissions:request", { type: "microphone" });
+  assert.deepEqual(refused.opened, ["x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"]);
+});
 
 test("bridge: permissions report the global Windows microphone setting and open it on request", async () => {
   const t = bridgeSetup({ microphone: "denied" });
@@ -339,9 +351,12 @@ test("bridge: call audio starts, its frames and its loss go to the page, and sto
   assert.equal(t.pcmListeners.size + t.lostListeners.size, 0, "no listener is left behind");
 });
 
-test("bridge: a call-audio start that fails reports why and leaves nothing subscribed", async () => {
-  const t = bridgeSetup({ loopbackStart: { ok: false, reason: "unsupported_platform" }, platform: "darwin" });
-  assert.deepEqual(await t.call("system-audio:start", {}), { ok: false, reason: "unsupported_platform" });
+test("bridge: a call-audio start that fails reports why and leaves nothing subscribed; where it cannot exist the recording carries on with the microphone", async () => {
+  const mac = bridgeSetup({ loopbackStart: { ok: false, reason: "unsupported_platform" }, platform: "darwin" });
+  assert.deepEqual(await mac.call("system-audio:start", {}), { ok: true, backend: "none" });
+  assert.equal(mac.pcmListeners.size + mac.lostListeners.size, 0);
+  const t = bridgeSetup({ loopbackStart: { ok: false, reason: "capture_failed:NotAllowedError" } });
+  assert.deepEqual(await t.call("system-audio:start", {}), { ok: false, reason: "capture_failed:NotAllowedError" });
   assert.equal(t.pcmListeners.size + t.lostListeners.size, 0);
   await t.call("system-audio:start", {});
   assert.equal(t.pcmListeners.size, 0, "starting twice does not stack listeners");

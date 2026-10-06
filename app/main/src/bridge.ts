@@ -1,7 +1,7 @@
 import type { IslandController } from "./controller.ts";
 import type { Drafts } from "./drafts.ts";
 import type { Loopback } from "./loopback/loopback.ts";
-import { APP_INFO, MICROPHONE_SETTINGS_URL, permissionSnapshot } from "./permissions.ts";
+import { APP_INFO, microphoneSettingsUrl, permissionSnapshot } from "./permissions.ts";
 import { saasRequest, type SaasResult } from "./saas.ts";
 import type { KeyEvent, ShortcutManager } from "./shortcut.ts";
 
@@ -23,6 +23,8 @@ export type BridgeDeps = {
   showMainWindow(): void;
   /** Electron's `getMediaAccessStatus('microphone')`. */
   microphoneAccess(): string;
+  /** macOS only: shows the system's microphone prompt (once; a refusal can only be undone in System Settings). */
+  askMicrophone?(): Promise<boolean>;
   openExternal(url: string): void;
   /** Quits and reopens this app (a permission that applies only after a restart). */
   relaunch(): void;
@@ -58,6 +60,8 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
     const started = await deps.loopback.start();
     if (started.ok) return { ok: true, backend: "wasapi-loopback" };
     stopListening();
+    // Where call audio cannot be captured (not Windows) the recording carries on with the microphone alone.
+    if (started.reason === "unsupported_platform") return { ok: true, backend: "none" };
     return { ok: false, reason: started.reason ?? "no_system_audio" };
   }
 
@@ -93,12 +97,18 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
       case "permissions:status":
         return permissions();
       case "permissions:request":
-        // No prompt exists on Windows: if microphone access is off, the one place to turn it on is Settings.
-        if (args.type === "microphone" && permissions().microphone !== "authorized") deps.openExternal(MICROPHONE_SETTINGS_URL);
+        if (args.type === "microphone") {
+          const status = permissions().microphone;
+          if (status !== "authorized") {
+            // macOS asks once, in its own prompt; Windows has no prompt, so its one switch is in Settings.
+            if (deps.askMicrophone && status === "never_requested") await deps.askMicrophone();
+            else deps.openExternal(microphoneSettingsUrl(deps.platform));
+          }
+        }
         return permissions();
       case "permissions:open":
       case "permissions:guide":
-        if (args.type === "microphone") deps.openExternal(MICROPHONE_SETTINGS_URL);
+        if (args.type === "microphone") deps.openExternal(microphoneSettingsUrl(deps.platform));
         return permissions();
       case "permissions:appInfo":
         return APP_INFO;

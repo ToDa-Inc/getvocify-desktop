@@ -2,6 +2,12 @@ export type Status = "authorized" | "denied" | "never_requested";
 
 /** Windows: Settings > Privacy & security > Microphone > "Let desktop apps access your microphone". */
 export const MICROPHONE_SETTINGS_URL = "ms-settings:privacy-microphone";
+const MAC_MICROPHONE_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
+
+/** Where the microphone is switched on for this OS. */
+export function microphoneSettingsUrl(platform: NodeJS.Platform): string {
+  return platform === "darwin" ? MAC_MICROPHONE_SETTINGS_URL : MICROPHONE_SETTINGS_URL;
+}
 
 /**
  * Electron's `systemPreferences.getMediaAccessStatus('microphone')` as the dashboard's three states. On Windows 10 and
@@ -19,14 +25,17 @@ export function microphoneStatus(raw: string): Status {
   }
 }
 
-/** What `permissions.status()` returns. Call audio needs no permission on Windows and cannot be captured elsewhere. */
+/**
+ * What `permissions.status()` returns. Call audio needs no permission on Windows. Elsewhere this shell cannot capture it
+ * (the Mac has its own native app), so it runs microphone-only: call audio is reported ready so the dashboard lets a
+ * recording start, and no call audio ever arrives.
+ */
 export function permissionSnapshot(platform: NodeJS.Platform, microphoneRaw: string, reported?: "win32" | "darwin"): Record<string, unknown> {
   const windows = platform === "win32";
   return {
     platform: reported ?? (windows ? "win32" : "darwin"),
     microphone: microphoneStatus(microphoneRaw),
-    systemAudio: windows ? "authorized" : "denied",
-    ...(windows ? {} : { systemAudioError: "unsupported_platform" }),
+    systemAudio: "authorized",
   };
 }
 

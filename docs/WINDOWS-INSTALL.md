@@ -56,3 +56,7 @@ Same layout, sizes, colours, copy and behaviour, ported from the Swift code and 
 Proven on a real Windows runner (see the workflow): a real mouse click on the island acts on the first press and leaves the foreground window unchanged; the installer builds, installs and starts; the island layout (58 checks); the call-audio pipeline with a synthetic tone; a whole call through the shell; the microphone-use record is read and parsed from the real registry; a real Chrome's address bar is read through UI Automation.
 
 Not proven: capturing a real call's audio from a real Windows audio device, real microphone use by Zoom/Teams being picked up by the registry record, the island over a fullscreen call window, 200% display scaling and several monitors, the open states side by side with the Swift app, and anything on a company-managed PC. Those need your test.
+
+## Trying it on a Mac (developer run)
+
+`cd app && npm ci && npm start` runs the same app on a Mac. There it is microphone-only: the dashboard is told call audio is ready so a recording can start, and no call audio arrives (call detection, the call's side and the CRM link are Windows features here; the Mac has its own native app). The microphone is asked for with the macOS prompt, once, for the "Electron" app; if it was refused, the dashboard's Open Settings button opens System Settings > Privacy & Security > Microphone.

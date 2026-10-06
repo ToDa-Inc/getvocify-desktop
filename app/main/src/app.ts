@@ -321,6 +321,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     emit: (channel, payload) => dashboard.emit(channel, payload),
     showMainWindow: () => dashboard.show(),
     microphoneAccess: () => systemPreferences.getMediaAccessStatus("microphone"),
+    askMicrophone: platform === "darwin" ? () => systemPreferences.askForMediaAccess("microphone") : undefined,
     openExternal: (url) => void shell.openExternal(url),
     relaunch: () => {
       app.relaunch();

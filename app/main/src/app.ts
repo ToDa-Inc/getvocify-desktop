@@ -297,8 +297,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const trayRefresh = tray ? setInterval(() => tray.setContextMenu(buildTrayMenu(controller.state)), 5000) : null;
   trayRefresh?.unref();
   if (platform === "darwin") {
+    // Keeping the island over full-screen windows turns the app into one without a Dock icon; give it back.
     const dockIcon = nativeImage.createFromPath(appIconPath);
-    if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon);
+    void app.dock?.show().then(() => {
+      if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon);
+    });
   }
   function pushState(state: IslandState): void {
     if (island.isDestroyed()) return;

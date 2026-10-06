@@ -58,6 +58,9 @@ final class MeetingPillState: ObservableObject {
         case recording
         /// Just stopped: paused, ending once the grace runs out unless the rep resumes.
         case stopped(StopGrace)
+        /// The recording ended: the dashboard is taking its last words and sending it. Nothing
+        /// new can be recorded until its memo shows up as the post-call card.
+        case finishing
         /// The call is over: its memo is being written, then its CRM update is one click away.
         case postCall
 
@@ -633,7 +636,7 @@ struct IslandGeometry: Equatable {
         guard !open else { return Self.ear }
         switch mode {
         case .idle: return Self.idleEar
-        case .call, .postCall: return Self.callEar
+        case .call, .postCall, .finishing: return Self.callEar
         default: return Self.ear
         }
     }
@@ -651,7 +654,7 @@ struct IslandGeometry: Equatable {
             return open ? CGSize(width: max(gap + Self.ear * 2, MeetingPillState.PostCallLayout.width), height: barHeight + postCallBody) : closed
         case .stopped:
             return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
-        case .starting:
+        case .starting, .finishing:
             return closed
         }
     }
@@ -701,6 +704,12 @@ final class MeetingPillController {
     private var autoClose: Task<Void, Never>?
     private var lastPostCallStage: MeetingPillState.PostCall.Stage?
     private var hangUp: Task<Void, Never>?
+    private var finishTimeout: Task<Void, Never>?
+    /// The card on show when the recording ended: `.finishing` waits for a newer one.
+    private var finishingAfter: String?
+    /// Waiting on a memo that never came (nothing was said, the upload failed): the dashboard
+    /// says why in its window, and the island goes back to rest.
+    private static let finishGiveUp: TimeInterval = 30
     /// The call app being recorded; its letting go of the mic is the hang-up.
     private var recordingCaller: MicActivityMonitor.Caller?
     /// The call app holding the mic right now, as last reported.
@@ -751,7 +760,8 @@ final class MeetingPillController {
     }
 
     /// Back to rest: the last call's update if one is pending, else the mark beside the camera.
-    func hide() {
+    /// `finishing`: the recording just ended from the island; wait for its memo instead.
+    func hide(finishing: Bool = false) {
         startTimeout?.cancel()
         hangUp?.cancel()
         if state.mode == .recording || state.mode.isStopped, let bundleID = recordingCaller?.bundleID {
@@ -760,7 +770,12 @@ final class MeetingPillController {
         recordingCaller = nil
         calls.ignoresWebKit = false
         state.callContact = nil
-        rest()
+        if finishing {
+            finish()
+        } else if state.mode != .finishing {
+            // The dashboard hides the island as it stops; a finishing one keeps waiting.
+            rest()
+        }
     }
 
     private func rest() {
@@ -793,7 +808,7 @@ final class MeetingPillController {
         case .postCall:
             transition(to: .postCall, expanded: !state.expanded)
             if state.expanded { startCountdown(Self.postCallLinger) }
-        case .starting, .stopped:
+        case .starting, .stopped, .finishing:
             break
         }
     }
@@ -879,10 +894,31 @@ final class MeetingPillController {
             case .resume: bridge?.emitCommand("resume")
             case .callEnded: bridge?.emitCallEnded()
             case .stop:
-                hide()
+                hide(finishing: true)
                 bridge?.emitCommand("stop")
             }
         }
+    }
+
+    /// Holds the island on a spinner from the moment the recording ends until its memo is
+    /// being written, so there's no gap where it looks idle and a new recording could start.
+    private func finish() {
+        finishingAfter = state.postCall?.memoId
+        autoClose?.cancel()
+        state.countdown = nil
+        transition(to: .finishing, expanded: false)
+        finishTimeout?.cancel()
+        finishTimeout = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.finishGiveUp * 1_000_000_000))
+            guard let self, !Task.isCancelled, self.state.mode == .finishing else { return }
+            self.rest()
+        }
+    }
+
+    /// Ends the stop grace now, without waiting for its line to run out.
+    func finishRecording() {
+        guard case .stopped(let grace) = state.mode else { return }
+        run(grace.onFinish)
     }
 
     private func callAudioChanged(was: Bool, now: Bool) {
@@ -898,7 +934,7 @@ final class MeetingPillController {
             stop()
         case .stopped:
             resumeRecording()
-        case .starting:
+        case .starting, .finishing:
             return
         case .postCall:
             // A new call: the last one's card stays in Vocify.
@@ -1144,6 +1180,11 @@ final class MeetingPillController {
         switch state.mode {
         case .recording, .starting, .call, .stopped:
             return  // shown once the island is back at rest
+        case .finishing:
+            // The card just cleared, or is still the last call's: keep waiting for this one.
+            guard let postCall = state.postCall, postCall.memoId != finishingAfter else { return }
+            finishTimeout?.cancel()
+            rest()
         case .idle:
             if state.postCall != nil { rest() }
         case .postCall:
@@ -1182,7 +1223,7 @@ final class MeetingPillController {
         case .recording:
             watchForHangUp(caller)
             return
-        case .starting, .stopped:
+        case .starting, .stopped, .finishing:
             return
         case .idle, .call, .postCall:
             if let caller, !callHandled, bridge?.isListening != true, !isQuiet(caller) {
@@ -1418,6 +1459,7 @@ struct IslandView: View {
         case .idle: return open ? "Close" : "Record a meeting"
         case .call: return open ? "Close" : ""
         case .starting, .stopped: return ""
+        case .finishing: return "Saving the call"
         case .postCall:
             switch state.postCall?.stage {
             case .writing: return "Writing the update"
@@ -1444,7 +1486,7 @@ struct IslandView: View {
                 RecordingDot(paused: true)
                 ElapsedText(clock: state.clock)
             }
-        case .starting:
+        case .starting, .finishing:
             ProgressView().controlSize(.mini)
         case .idle:
             VocifyMarkIcon()
@@ -1502,7 +1544,7 @@ struct IslandView: View {
             } else {
                 RecordDot(caller: caller, ready: state.recorderReady, action: controller.record)
             }
-        case .stopped:
+        case .stopped, .finishing:
             EmptyView()
         case .starting:
             Text("Starting")
@@ -1560,7 +1602,8 @@ private struct CallMenu: View {
     }
 }
 
-/// Just stopped: the memo starts when the line under it runs out; Resume carries on the same recording.
+/// Just stopped: the memo starts when the line under it runs out, or at once on Finish;
+/// Resume carries on the same recording.
 private struct StoppedMenu: View {
     let title: String
     let controller: MeetingPillController
@@ -1572,7 +1615,9 @@ private struct StoppedMenu: View {
                 .foregroundStyle(IslandStyle.text)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            PrimaryActionButton(title: "Resume", symbol: "play.fill", help: "Keep recording this call", action: controller.resumeRecording)
+            TextAction(title: "Resume", symbol: "play.fill", action: controller.resumeRecording)
+                .help("Keep recording this call")
+            PrimaryActionButton(title: "Finish", symbol: "checkmark", help: "End the call and write its update", action: controller.finishRecording)
         }
         .padding(.horizontal, 14)
         .frame(maxHeight: .infinity)

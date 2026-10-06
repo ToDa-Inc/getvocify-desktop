@@ -366,6 +366,14 @@ test("bridge: a call-audio start that fails reports why and leaves nothing subsc
   const mac = bridgeSetup({ loopbackStart: { ok: false, reason: "unsupported_platform" }, platform: "darwin" });
   assert.deepEqual(await mac.call("system-audio:start", {}), { ok: true, backend: "none" });
   assert.equal(mac.pcmListeners.size + mac.lostListeners.size, 0);
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const silent = mac.emitted.filter((e) => e.channel === "system-audio:pcm");
+  assert.ok(silent.length >= 2, "the call side sends silence every 100 ms so its transcription stream stays open");
+  assert.ok(silent.every((e) => e.payload instanceof ArrayBuffer && e.payload.byteLength === 3200 && new Uint8Array(e.payload).every((b) => b === 0)));
+  await mac.call("system-audio:stop", {});
+  const after = mac.emitted.length;
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  assert.equal(mac.emitted.length, after, "stopping ends the silence");
   const t = bridgeSetup({ loopbackStart: { ok: false, reason: "capture_failed:NotAllowedError" } });
   assert.deepEqual(await t.call("system-audio:start", {}), { ok: false, reason: "capture_failed:NotAllowedError" });
   assert.equal(t.pcmListeners.size + t.lostListeners.size, 0);

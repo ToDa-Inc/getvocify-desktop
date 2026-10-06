@@ -39,6 +39,8 @@ export type BridgeDeps = {
 };
 
 type Args = Record<string, unknown>;
+/** 100 ms of silence at 16 kHz mono 16-bit: the call side where it cannot be captured (see `startSystemAudio`). */
+const SILENT_FRAME_BYTES = 3200;
 const OPEN_URL = /^(https?:\/\/|mailto:)/i;
 
 export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Promise<unknown> {
@@ -46,12 +48,15 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
   let reportedReady: boolean | undefined;
   let unsubscribePcm: (() => void) | null = null;
   let unsubscribeLost: (() => void) | null = null;
+  let silence: ReturnType<typeof setInterval> | null = null;
 
   const stopListening = () => {
     unsubscribePcm?.();
     unsubscribeLost?.();
     unsubscribePcm = null;
     unsubscribeLost = null;
+    if (silence) clearInterval(silence);
+    silence = null;
   };
 
   async function startSystemAudio(): Promise<unknown> {
@@ -63,7 +68,12 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
     if (started.ok) return { ok: true, backend: "wasapi-loopback" };
     stopListening();
     // Where call audio cannot be captured (not Windows) the recording carries on with the microphone alone.
-    if (started.reason === "unsupported_platform") return { ok: true, backend: "none" };
+    // The call side then sends silence, as a quiet call would: a transcription stream that gets no audio at all for
+    // that side is closed by the provider after its timeout (Deepgram's 1011 "did not receive audio data").
+    if (started.reason === "unsupported_platform") {
+      silence = setInterval(() => deps.emit("system-audio:pcm", new ArrayBuffer(SILENT_FRAME_BYTES)), 100);
+      return { ok: true, backend: "none" };
+    }
     return { ok: false, reason: started.reason ?? "no_system_audio" };
   }
 

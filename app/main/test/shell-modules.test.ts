@@ -279,7 +279,7 @@ test("bridge: the permission test shows both permissions as not asked until the 
   assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "authorized", systemAudio: "never_requested" });
   await t.call("permissions:request", { type: "systemAudio" });
   assert.deepEqual(await t.call("permissions:status", {}), { platform: "win32", microphone: "authorized", systemAudio: "authorized" });
-  assert.deepEqual(t.opened, [], "an allowed microphone sends nobody to Settings");
+  assert.deepEqual(t.opened, ["ms-settings:privacy-microphone"], "the test shows the settings step once; Windows has no call-audio setting");
 });
 
 test("bridge: on a Mac the microphone is asked for with the system prompt once, and a refusal points to System Settings", async () => {

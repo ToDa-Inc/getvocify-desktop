@@ -1,7 +1,7 @@
 import type { IslandController } from "./controller.ts";
 import type { Drafts } from "./drafts.ts";
 import type { Loopback } from "./loopback/loopback.ts";
-import { APP_INFO, microphoneSettingsUrl, permissionSnapshot } from "./permissions.ts";
+import { APP_INFO, MAC_SYSTEM_AUDIO_SETTINGS_URL, microphoneSettingsUrl, permissionSnapshot } from "./permissions.ts";
 import { saasRequest, type SaasResult } from "./saas.ts";
 import type { KeyEvent, ShortcutManager } from "./shortcut.ts";
 
@@ -112,6 +112,9 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
         if (deps.testPermissions && typeof args.type === "string" && !asked.has(args.type)) {
           deps.log(`permission test: the dashboard asked for ${args.type}`);
           asked.add(args.type);
+          // Shows the step a rep without the permission goes through: the system's own settings page for it.
+          if (args.type === "microphone") deps.openExternal(microphoneSettingsUrl(deps.platform));
+          else if (args.type === "systemAudio" && deps.platform === "darwin") deps.openExternal(MAC_SYSTEM_AUDIO_SETTINGS_URL);
         }
         if (args.type === "microphone") {
           const status = permissions().microphone;

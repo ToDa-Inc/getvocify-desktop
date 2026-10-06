@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Close } from "./icons.tsx";
+import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallData } from "./types.ts";
 
 type Act = (action: IslandAction) => void;
@@ -40,8 +41,9 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"crm" | "email" | "notes">("crm");
   const [openOptions, setOpenOptions] = useState<string | null>(null);
-  const [optionsAnchor, setOptionsAnchor] = useState<{ x: number; y: number; height: number } | null>(null);
+  const [optionsAnchor, setOptionsAnchor] = useState<Anchor | null>(null);
   const [typeListOpen, setTypeListOpen] = useState(false);
+  const [typeAnchor, setTypeAnchor] = useState<Anchor | null>(null);
 
   useEffect(() => {
     setKeptChanges(new Set(postCall.changes.filter(c => !c.check).map(c => c.key)));
@@ -76,40 +78,20 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
     if (!change.multiple) setOpenOptions(null);
   };
 
-  const toggleOpts = (change: PostCallChange, rect: DOMRect) => {
+  const toggleOpts = (change: PostCallChange, element: Element) => {
     setTypeListOpen(false);
     if (openOptions === change.key) {
       setOpenOptions(null);
     } else {
       setOpenOptions(change.key);
-      setOptionsAnchor({ x: rect.left, y: rect.top, height: rect.height });
+      setOptionsAnchor(anchorOf(element));
     }
   };
 
-  // A dropdown closes on a click anywhere else in the island, and when the pointer leaves the island for a moment (the
-  // island never takes focus, so it cannot see clicks in other apps the way the Mac app's global monitor does).
-  const dropdownOpen = openOptions !== null || typeListOpen;
-  useEffect(() => {
-    if (!dropdownOpen) return;
-    const close = () => { setOpenOptions(null); setTypeListOpen(false); };
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const leave = () => { timer = setTimeout(close, 600); };
-    const enter = () => clearTimeout(timer);
-    document.addEventListener("click", close);
-    document.documentElement.addEventListener("mouseleave", leave);
-    document.documentElement.addEventListener("mouseenter", enter);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener("click", close);
-      document.documentElement.removeEventListener("mouseleave", leave);
-      document.documentElement.removeEventListener("mouseenter", enter);
-    };
-  }, [dropdownOpen]);
-
-  // The window must be as tall as the dropdown reaches, or the end of it is cut off.
-  useEffect(() => {
-    if (openOptions === null) onPopupExtent(null);
-  }, [openOptions, onPopupExtent]);
+  const closeMenus = useCallback(() => {
+    setOpenOptions(null);
+    setTypeListOpen(false);
+  }, []);
 
   const handleApprove = () => {
     const kept = postCall.changes.filter(c => keptChanges.has(c.key));
@@ -124,7 +106,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
         <div className="postcall-header">
           <div className="postcall-title">{postCall.contactName ?? "Your call"}</div>
           {postCall.type && (
-            <button type="button" className="type-tag" onClick={e => { e.stopPropagation(); setTypeListOpen(!typeListOpen); }}>
+            <button type="button" className="type-tag" onClick={e => { e.stopPropagation(); setOpenOptions(null); setTypeAnchor(anchorOf(e.currentTarget)); setTypeListOpen(!typeListOpen); }}>
               {postCall.type.label}
               {postCall.type.options.length > 0 && <ChevronDown size={7} style={{ transform: typeListOpen ? "rotate(180deg)" : "rotate(0deg)" }} />}
             </button>
@@ -132,18 +114,6 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
           <div style={{ flex: 1 }} />
           <button type="button" className="icon-button" onClick={() => act({ name: "postCall", type: "dismiss" })}><Close size={11} /></button>
         </div>
-
-        {typeListOpen && postCall.type && postCall.type.options.length > 0 && (
-          // Inline under the header, like the Swift card: the card grows by the list instead of covering anything.
-          <div className="type-list" style={{ marginBottom: 6 }} onClick={(e) => e.stopPropagation()}>
-            {[{ key: postCall.type.key, label: postCall.type.label }, ...postCall.type.options.filter((o) => o.key !== postCall.type?.key)].map((opt) => (
-              <button key={opt.key} type="button" className="type-row" onClick={() => { act({ name: "postCall", type: "setType", details: { key: opt.key } }); setTypeListOpen(false); }}>
-                <span className="type-check" style={{ opacity: postCall.type?.key === opt.key ? 1 : 0 }}><Check size={9.5} stroke={3.4} /></span>
-                <span className="type-row-label">{opt.label}</span>
-              </button>
-            ))}
-          </div>
-        )}
 
         {tabs.length > 1 && (
           <div className="postcall-tabs">
@@ -224,14 +194,30 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
         </div>
       </div>
 
-      {openOptions && optionsAnchor && postCall.changes.find(c => c.key === openOptions) && (
-        <OptionsPopup anchor={optionsAnchor} change={postCall.changes.find((c) => c.key === openOptions)!} editedValues={editedValues} onPick={pick} onExtent={onPopupExtent} />
+      {openOptions && optionsAnchor && (() => {
+        const change = postCall.changes.find((c) => c.key === openOptions);
+        if (!change) return null;
+        const selected = pickedValues(change, editedValues[change.key]);
+        return (
+          <FloatMenu anchor={optionsAnchor} width={Math.max(160, Math.round(optionsAnchor.width) + 8)} onClose={closeMenus} onExtent={onPopupExtent} label={change.label}>
+            {change.options.map((opt) => (
+              <MenuRow key={opt.value} label={opt.label} selected={selected.includes(opt.value)} onPick={() => pick(opt.value, change)} />
+            ))}
+          </FloatMenu>
+        );
+      })()}
+      {typeListOpen && typeAnchor && postCall.type && postCall.type.options.length > 0 && (
+        <FloatMenu anchor={typeAnchor} width={190} onClose={closeMenus} onExtent={onPopupExtent} label="Call type">
+          {[{ key: postCall.type.key, label: postCall.type.label }, ...postCall.type.options.filter((o) => o.key !== postCall.type?.key)].map((opt) => (
+            <MenuRow key={opt.key} label={opt.label} selected={postCall.type?.key === opt.key} onPick={() => { act({ name: "postCall", type: "setType", details: { key: opt.key } }); setTypeListOpen(false); }} />
+          ))}
+        </FloatMenu>
       )}
     </>
   );
 }
 
-function ChangeRow({ change, shown: s, kept, height, open, toggle, toggleOptions }: { change: PostCallChange; shown: string; kept: boolean; height: number; open: boolean; toggle: () => void; toggleOptions: (r: DOMRect) => void }) {
+function ChangeRow({ change, shown: s, kept, height, open, toggle, toggleOptions }: { change: PostCallChange; shown: string; kept: boolean; height: number; open: boolean; toggle: () => void; toggleOptions: (element: Element) => void }) {
   const [hoverVal, setHoverVal] = useState(false);
   const valRef = useRef<HTMLDivElement>(null);
   const lh = lineHeight(L.valueSize);
@@ -245,7 +231,7 @@ function ChangeRow({ change, shown: s, kept, height, open, toggle, toggleOptions
         </div>
         <span className="change-label">{change.label}</span>
       </button>
-      <div className="change-value" ref={valRef} onMouseEnter={() => setHoverVal(true)} onMouseLeave={() => setHoverVal(false)} onClick={() => change.options.length ? toggleOptions(valRef.current!.getBoundingClientRect()) : toggle()}>
+      <div className="change-value" ref={valRef} onMouseEnter={() => setHoverVal(true)} onMouseLeave={() => setHoverVal(false)} onClick={(e) => { if (change.options.length) { e.stopPropagation(); toggleOptions(valRef.current!); } else toggle(); }}>
         <span data-kept={kept}>{s}</span>
         {change.from && <span className="was-text">was {change.from}</span>}
         {change.options.length > 0 && <ChevronDown size={8} style={{ opacity: open || hoverVal ? 1 : 0.5, marginTop: `${tickTop}px` }} />}
@@ -266,7 +252,6 @@ function MeetingRow({ meeting, onAdd, onReview }: { meeting: { state: string; wh
   );
 }
 
-const POPUP_WIDTH = 200;
 
 /** The values picked now: what the rep chose, else what was extracted (`;`-joined for a checkbox list). */
 function pickedValues(change: PostCallChange, edited: string | undefined): string[] {
@@ -274,33 +259,3 @@ function pickedValues(change: PostCallChange, edited: string | undefined): strin
   return change.multiple ? raw.split(";").map((v) => v.trim()).filter(Boolean) : [raw];
 }
 
-function OptionsPopup({ anchor, change, editedValues, onPick, onExtent }: {
-  anchor: { x: number; y: number; height: number };
-  change: PostCallChange;
-  editedValues: Record<string, string>;
-  onPick: (value: string, change: PostCallChange) => void;
-  onExtent: (bottom: number | null) => void;
-}) {
-  const selected = pickedValues(change, editedValues[change.key]);
-  const ref = useRef<HTMLDivElement>(null);
-  // Inside the island's width, whatever the row it opens from.
-  const left = Math.max(8, Math.min(anchor.x - 8, document.documentElement.clientWidth - POPUP_WIDTH - 8));
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    onExtent(Math.ceil(el.getBoundingClientRect().bottom) + 8);
-    return () => onExtent(null);
-  }, [change.key, change.options.length, onExtent]);
-
-  return (
-    <div ref={ref} className="options-popup" style={{ top: `${anchor.y + anchor.height + 8}px`, left: `${left}px`, width: POPUP_WIDTH }} onClick={(e) => e.stopPropagation()}>
-      {change.options.map((opt) => (
-        <button key={opt.value} type="button" className="option-row" data-selected={selected.includes(opt.value)} onClick={() => onPick(opt.value, change)}>
-          <Check size={10} />
-          <span>{opt.label}</span>
-        </button>
-      ))}
-    </div>
-  );
-}

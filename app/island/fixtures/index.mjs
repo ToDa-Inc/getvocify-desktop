@@ -210,5 +210,5 @@ export const interactions = [
   { name: "resume-after-stop", fixture: "stopped-open-manual", click: ".text-action", expect: [{ name: "resume" }] },
   { name: "finish-after-stop", fixture: "stopped-open-manual", click: ".primary-action", expect: [{ name: "finish" }] },
   { name: "open-vocify-after-failed-send", fixture: "finishing-open-failed", click: ".primary-action", expect: [{ name: "openApp" }] },
-  { name: "pick-type", fixture: "recording-open-type-list", click: ".type-row:nth-child(3)", expect: [{ name: "pickCallType", key: "demo" }], after: true },
+  { name: "pick-type", fixture: "recording-open-type-list", click: ".option-row:nth-child(3)", expect: [{ name: "pickCallType", key: "demo" }], after: true },
 ];

@@ -302,8 +302,12 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     // Keeping the island over full-screen windows turns the app into one without a Dock icon; give it back.
     // The same icon as the Mac app: the mark inside a cream squircle (VocifyMark.squircle, rendered once).
     const dockIcon = nativeImage.createFromPath(join(here, "../assets/dock-icon.png"));
+    // macOS puts the default icon back as the Dock entry reappears: set ours before and again just after.
+    if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon);
     void app.dock?.show().then(() => {
-      if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon);
+      setTimeout(() => {
+        if (!dockIcon.isEmpty()) app.dock?.setIcon(dockIcon);
+      }, 800);
     });
   }
   function pushState(state: IslandState): void {
@@ -484,9 +488,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   /* ---------- tray ---------- */
 
   function createTray(): Tray | null {
-    const image = nativeImage.createFromPath(appIconPath);
+    // The Mac menu bar takes a black "template" of the mark (the mic and its waves) that macOS tints for light and dark
+    // bars; the Windows notification area takes the full-colour logo. Each file has an @2x twin for sharp high-DPI.
+    const image = nativeImage.createFromPath(join(here, "../assets", platform === "darwin" ? "trayTemplate.png" : "tray.png"));
     if (image.isEmpty()) return null;
-    const tray = new Tray(image.resize({ width: 16, height: 16 }));
+    const tray = new Tray(image);
     tray.setToolTip("Vocify");
     tray.on("click", () => dashboard.show());
     return tray;

@@ -60,10 +60,10 @@ const measure = (win) => win.webContents.executeJavaScript(`(() => {
       return { overflow: card.scrollHeight - card.clientHeight, cardHeight: Math.round(card.getBoundingClientRect().height), bar: document.querySelector('.topbar').getBoundingClientRect().height };
     })(),
     popup: (() => {
-      const popup = document.querySelector('.options-popup');
+      const popup = document.querySelector('.float-menu');
       if (!popup) return null;
       const sizes = window.__islandSizes || [];
-      return { bottom: Math.ceil(popup.getBoundingClientRect().bottom), reported: sizes.length ? sizes[sizes.length - 1].height : 0, selected: popup.querySelectorAll('[data-selected="true"]').length, right: Math.ceil(popup.getBoundingClientRect().right), islandRight: Math.ceil(r.right) };
+      return { bottom: Math.ceil(popup.getBoundingClientRect().bottom), reported: sizes.length ? sizes[sizes.length - 1].height : Math.round(r.bottom), expectPick: !!document.querySelector('.postcall-card'), selected: popup.querySelectorAll('[data-selected="true"]').length, right: Math.ceil(popup.getBoundingClientRect().right), islandRight: Math.ceil(r.right) };
     })(),
     inViewport: r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight,
     overflow,
@@ -107,7 +107,8 @@ for (const fixture of fixtures) {
     if (m.popup) {
       if (m.popup.reported < m.popup.bottom) problems.push(`the window is ${m.popup.reported}px tall but a dropdown reaches ${m.popup.bottom}px: its end would be cut off`);
       if (m.popup.right > m.popup.islandRight) problems.push("a dropdown reaches past the island's right edge");
-      if (m.popup.selected < 1) problems.push("the dropdown does not show which option is picked");
+      // The after-call card always has a value picked; the call-type list while recording may only show a proposal.
+      if (m.popup.expectPick && m.popup.selected < 1) problems.push("the dropdown does not show which option is picked");
     }
     if (fixture.fit) {
       if (!m.card) problems.push("no after-call card rendered");

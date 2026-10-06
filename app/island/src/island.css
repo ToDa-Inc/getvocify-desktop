@@ -135,13 +135,6 @@ button:focus-visible { outline: 1.5px solid var(--beige); outline-offset: 2px; }
 .type-tag[data-placeholder="true"] { opacity: 0.8; }
 .type-tag-button:hover .type-tag { color: var(--text); opacity: 1; }
 .type-tag-label { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.type-list-wrap { flex: none; padding: 0 14px 6px; }
-.type-list { background: rgba(255, 255, 255, 0.06); border-radius: 10px; padding: 3px 0; display: flex; flex-direction: column; }
-.type-row { display: flex; align-items: center; gap: 7px; height: 26px; margin: 0 3px; padding: 0 8px; border-radius: 7px; text-align: left; transition: background 100ms; }
-.type-row:hover { background: rgba(255, 255, 255, 0.08); }
-.type-check { width: 12px; display: inline-flex; color: var(--beige); }
-.type-row-label { font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.type-row-label[data-decide="true"] { color: var(--secondary); }
 
 .live-help-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--secondary); }
 .live-help-toggle[data-on="true"] { color: var(--beige); }
@@ -252,10 +245,29 @@ button:focus-visible { outline: 1.5px solid var(--beige); outline-offset: 2px; }
 .note-draft { flex: 1; padding: 8px; background: rgba(255, 255, 255, 0.06); border: 0.5px solid rgba(255, 255, 255, 0.07); border-radius: 8px; color: var(--text); font-size: 12px; font-family: inherit; resize: none; max-height: 100px; }
 .note-draft::placeholder { color: var(--secondary); }
 
-.options-popup { position: fixed; z-index: 1000; background: rgb(28, 28, 31); border-radius: 10px; padding: 4px; display: flex; flex-direction: column; gap: 0; min-width: 200px; max-height: 250px; overflow-y: auto; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5); border: 0.5px solid rgba(255, 255, 255, 0.15); }
-.option-row { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px; font-size: 12px; color: var(--secondary); background: transparent; border: 0; cursor: pointer; border-radius: 6px; transition: background 100ms, color 100ms; white-space: nowrap; }
+/* Dropdowns float over the island in its glass (the Swift OptionPopup: blur, black 0.28, a 0.07 fill with a sheen, the rim). */
+.float-menu {
+  position: fixed; z-index: 1000; padding: 4px; border-radius: 10px; overflow-y: auto; display: flex; flex-direction: column;
+  background:
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06), transparent 50%),
+    linear-gradient(rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.07)),
+    rgba(24, 24, 27, 0.86);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  scrollbar-width: none;
+}
+.float-menu::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.30), rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.20));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+.option-row { flex: none; display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px; font-size: 12px; color: var(--secondary); background: transparent; border: 0; cursor: default; border-radius: 6px; transition: background 100ms, color 100ms; white-space: nowrap; }
 .option-row:hover { background: rgba(255, 255, 255, 0.08); color: var(--text); }
 .option-row[data-selected="true"] { color: var(--text); }
-.option-row svg { color: var(--beige); opacity: 0; transition: opacity 120ms; }
-.option-row[data-selected="true"] svg { opacity: 1; }
+.option-row > svg:first-child { flex: none; color: var(--beige); opacity: 0; transition: opacity 120ms; }
+.option-row[data-selected="true"] > svg:first-child { opacity: 1; }
+.option-row[data-dim="true"]:not(:hover) { color: var(--secondary); opacity: 0.85; }
 .option-row span { flex: 1; overflow: hidden; text-overflow: ellipsis; text-align: left; }

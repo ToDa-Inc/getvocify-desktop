@@ -3,8 +3,9 @@ import { cornerRadius, earWidth, islandSize } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
 import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Pause, Play, Sparkle, Waveform } from "./icons.tsx";
+import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
-import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuRow, type TypeMenuView } from "./types.ts";
+import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuView } from "./types.ts";
 
 type Act = (action: IslandAction) => void;
 
@@ -313,7 +314,8 @@ function FinishingMenu({ finish, act }: { finish: IslandState["finish"]; act: Ac
 /* ---------- open recording ---------- */
 
 function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
-  const [typeOpen, setTypeOpen] = useState(false);
+  const [typeAnchor, setTypeAnchor] = useState<Anchor | null>(null);
+  const closeType = useCallback(() => setTypeAnchor(null), []);
   const menu = state.typeMenu;
   return (
     <div className="open-island">
@@ -330,7 +332,11 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
             type="button"
             className="type-tag-button"
             title={menu.sparkle ? "Vocify's proposal for this call. Change it if it's another kind." : "The call type: live help uses its playbook"}
-            onClick={() => setTypeOpen((value) => !value)}
+            onClick={(event) => {
+              event.stopPropagation();
+              const target = event.currentTarget;
+              setTypeAnchor((open) => (open ? null : anchorOf(target)));
+            }}
           >
             <TypeTag menu={menu} />
           </button>
@@ -341,16 +347,22 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
           <ArrowUpRight size={12} />
         </IconButton>
       </div>
-      {typeOpen && menu && (
-        <div className="type-list-wrap">
-          <TypeList
-            rows={menu.rows}
-            choose={(key) => {
-              act({ name: "pickCallType", key });
-              setTypeOpen(false);
-            }}
-          />
-        </div>
+      {typeAnchor && menu && (
+        <FloatMenu anchor={typeAnchor} width={190} onClose={closeType} label="Call type">
+          {menu.rows.map((row) => (
+            <MenuRow
+              key={row.label}
+              label={row.label}
+              selected={row.checked}
+              suggested={row.suggested}
+              dim={row.key === null}
+              onPick={() => {
+                act({ name: "pickCallType", key: row.key });
+                setTypeAnchor(null);
+              }}
+            />
+          ))}
+        </FloatMenu>
       )}
       {state.callAudioLost && !state.paused && <CallAudioLostLine />}
       {state.liveHelp !== false && <HelpSection current={state.assist} earlier={state.lastHelp} />}
@@ -712,16 +724,3 @@ function TypeTag({ menu }: { menu: TypeMenuView }) {
   );
 }
 
-function TypeList({ rows, choose }: { rows: TypeMenuRow[]; choose: (key: string | null) => void }) {
-  return (
-    <div className="type-list">
-      {rows.map((row) => (
-        <button type="button" key={row.label} className="type-row" aria-selected={row.checked} onClick={() => choose(row.key)}>
-          <span className="type-check" style={{ opacity: row.checked ? 1 : 0 }}><Check size={9.5} stroke={3.4} /></span>
-          <span className="type-row-label" data-decide={row.key === null}>{row.label}</span>
-          {row.suggested && <Sparkle size={9} style={{ color: "var(--beige)" }} />}
-        </button>
-      ))}
-    </div>
-  );
-}

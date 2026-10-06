@@ -155,8 +155,8 @@ export type IslandHost = {
   resize(size: { width: number; height: number }): void;
   /**
    * The island never takes the keyboard (a click must not take it from the call) unless the rep types in it:
-   * "available" while a card with fields is shown, "now" on a click in a field (resolves once keys reach the window),
-   * "release" when the typing is done (the keyboard goes back), "off" when the card is gone.
+   * "available" while a card with fields is shown, "over" while the pointer is over a field (so the click in it focuses
+   * the window), "release" when the typing is done or the pointer leaves (the keyboard goes back), "off" when the card is gone.
    */
-  keyboard?(mode: "available" | "now" | "release" | "off"): Promise<unknown>;
+  keyboard?(mode: "available" | "over" | "release" | "off"): Promise<unknown>;
 };

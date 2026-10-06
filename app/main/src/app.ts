@@ -389,10 +389,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (fromIsland(event.sender)) controller.act(action);
   });
   /**
-   * Typing in the card needs the keyboard, which the island otherwise never takes. Windows: the window takes it only on a
-   * click in a field ("now") and gives it back when the typing is done, so a card appearing never takes it from the rep's
-   * window. macOS: the window is made able to take it while the card is shown, so the click in a field itself focuses it
-   * (a window made focusable only on that click misses the first keys).
+   * Typing in the card needs the keyboard, which the island otherwise never takes. Windows: the window becomes able to take
+   * it while the pointer is over a field ("over"), so the rep's own click in the field focuses it the way any click does
+   * (Windows refuses a window that pulls itself to the front), and gives it back when the typing is done ("release").
+   * A card appearing, or a click elsewhere in it, never takes it. macOS: the window can take it while the card is shown,
+   * so the click in a field itself focuses it.
    */
   ipcMain.handle("island:keyboard", (event, mode: string) => {
     if (!fromIsland(event.sender)) return false;
@@ -403,11 +404,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     };
     if (mode === "available") {
       if (!windows) island.setFocusable(true);
-    } else if (mode === "now") {
-      island.setFocusable(true);
-      if (windows) island.focus();
+    } else if (mode === "over") {
+      if (windows) island.setFocusable(true);
     } else if (mode === "release") {
-      if (windows) giveBack();
+      if (windows && !island.isFocused()) island.setFocusable(false);
+      else if (windows) giveBack();
     } else {
       giveBack();
     }

@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld("vocifyIsland", {
     ipcRenderer.send("island:act", action);
   },
   /** See `IslandHost.keyboard`. Resolves once the window can take the keys. */
-  keyboard(mode: "available" | "now" | "release" | "off") {
+  keyboard(mode: "available" | "over" | "release" | "off") {
     return ipcRenderer.invoke("island:keyboard", mode);
   },
 });

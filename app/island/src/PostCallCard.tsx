@@ -393,13 +393,10 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable,
         className="change-value"
         data-open={open}
         title={hasOptions ? (change.multiple ? "Pick one or more" : "Pick another value") : editable ? "Edit the text" : "Edit it in Vocify"}
+        onMouseEnter={editable && !hasOptions ? keyboardOver : undefined}
+        onMouseLeave={editable && !hasOptions ? releaseKeyboardSoon : undefined}
         onClick={(event) => {
-          if (!hasOptions) {
-            if (!editable) return toggle();
-            if (handsOverOnClick()) void takeKeyboard().then(() => setEditing(true));
-            else setEditing(true);
-            return;
-          }
+          if (!hasOptions) return editable ? setEditing(true) : toggle();
           event.stopPropagation();
           if (value.current) toggleOptions(value.current);
         }}
@@ -421,14 +418,9 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable,
   );
 }
 
-/**
- * Windows only: the island window takes the keyboard on a click in a field, and the caret goes in once it has it. On a Mac
- * the window can already take it while the card is shown, so the click itself focuses the field (waiting would lose keys).
- */
-const handsOverOnClick = () => window.vocifyIsland?.platform === "win32";
-
-function takeKeyboard(): Promise<unknown> {
-  return window.vocifyIsland?.keyboard?.("now") ?? Promise.resolve();
+/** The pointer is over a field the rep can type in: the click that follows focuses the island (see `keyboard`). */
+function keyboardOver(): void {
+  void window.vocifyIsland?.keyboard?.("over");
 }
 
 /** Gives the keyboard back once no field of the card has the caret any more (a moment later: focus may be moving). */
@@ -525,16 +517,8 @@ function NoteBox({ editable, text, placeholder, onChange }: { editable: boolean;
         readOnly={!editable}
         placeholder={placeholder}
         spellCheck={editable}
-        onMouseDown={(event) => {
-          if (!editable || document.activeElement === ref.current || !handsOverOnClick()) return;
-          // Windows: the window takes the keys only now; the caret goes in once it has them.
-          event.preventDefault();
-          const at = event.currentTarget;
-          void takeKeyboard().then(() => {
-            at.focus();
-            at.setSelectionRange(at.value.length, at.value.length);
-          });
-        }}
+        onMouseEnter={editable ? keyboardOver : undefined}
+        onMouseLeave={releaseKeyboardSoon}
         onBlur={releaseKeyboardSoon}
         onChange={(event) => onChange(event.target.value)}
       />

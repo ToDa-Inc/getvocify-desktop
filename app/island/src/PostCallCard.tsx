@@ -183,7 +183,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
                           kept={kept.has(change.key)}
                           open={options?.key === change.key}
                           toggle={() => toggleChange(change.key)}
-                          editable={typable}
+                          editable={typable && change.editable}
                           onEdit={(text) => {
                             setEdited((previous) => ({ ...previous, [change.key]: text }));
                             setKept((previous) => new Set([...previous, change.key]));

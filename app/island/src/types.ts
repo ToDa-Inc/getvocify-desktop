@@ -56,6 +56,8 @@ export type PostCallChange = {
   /** Picked from in place; empty for free text, which is edited in Vocify. */
   options: PostCallOption[];
   multiple: boolean;
+  /** Free text the dashboard will write as typed: the card lets the rep type over it. False everywhere else. */
+  editable: boolean;
   /** Scored under "needs review": shown unticked, or left to the review in Vocify. */
   check: boolean;
 };

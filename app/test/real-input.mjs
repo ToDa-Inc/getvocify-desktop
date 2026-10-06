@@ -4,7 +4,7 @@
 // Run: node test/build-shell-test.mjs && node island/build.mjs && electron test/real-input.mjs   (macOS or Windows)
 import { app, BrowserWindow, ipcMain } from "electron";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -14,9 +14,11 @@ const out = join(here, "out-real");
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 const failures = [];
+const started = Date.now();
+const elapsed = () => `${((Date.now() - started) / 1000).toFixed(1).padStart(5)}s`;
 const check = (ok, message) => {
   if (!ok) failures.push(message);
-  console.log(`${ok ? "ok  " : "FAIL"} ${message}`);
+  console.log(`${elapsed()} ${ok ? "ok  " : "FAIL"} ${message}`);
 };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -51,11 +53,18 @@ function foregroundPid() {
 }
 
 app.whenReady().then(async () => {
+  // Never hang: a stuck step fails the run.
+  setTimeout(() => {
+    console.log("FAIL the run did not finish within 5 minutes");
+    app.exit(1);
+  }, 300000).unref();
   let callWindow = null;
   try {
     if (mac) {
-      macTool = join(mkdtempSync(join(tmpdir(), "vocify-input-")), "mac-input");
-      execFileSync("swiftc", ["-O", join(here, "tools/mac-input.swift"), "-o", macTool]);
+      // Compiled once per version of the source, so a run does not wait on the compiler.
+      const source = join(here, "tools/mac-input.swift");
+      macTool = join(tmpdir(), `vocify-mac-input-${statSync(source).mtimeMs}`);
+      if (!existsSync(macTool)) execFileSync("swiftc", ["-O", source, "-o", macTool]);
     }
     const userDataDir = mkdtempSync(join(tmpdir(), "vocify-real-"));
     writeFileSync(join(userDataDir, "settings.json"), JSON.stringify({ recorderReady: true }));
@@ -115,7 +124,7 @@ app.whenReady().then(async () => {
     // Mac ships the native app). So it is checked on Windows and only reported on a Mac.
     const callKeepsFocus = (step) => {
       const kept = foregroundPid() === callPid;
-      if (mac) console.log(`info ${step}: the call window ${kept ? "keeps" : "loses"} the keyboard (not checked on a Mac)`);
+      if (mac) console.log(`${elapsed()} info ${step}: the call window ${kept ? "keeps" : "loses"} the keyboard (not checked on a Mac)`);
       else check(kept, `${step}: the call window keeps the keyboard`);
     };
 
@@ -141,6 +150,8 @@ app.whenReady().then(async () => {
     callKeepsFocus("Pause and Resume");
     await click(".type-tag-button");
     check((await page(`!!document.querySelector('.float-menu')`)) === true, "the call-type list floats open");
+    await sleep(1200);
+    check((await page(`!!document.querySelector('.float-menu')`)) === true, "and stays open under the pointer");
     await snap("type-menu");
     const pickedType = await text(".float-menu .option-row span", 2);
     await click(".float-menu .option-row", { index: 2 });
@@ -179,6 +190,8 @@ app.whenReady().then(async () => {
     check((await page(`document.querySelector('.tick').dataset.kept`)) === "true", "and ticks it again");
     await click(".change-value");
     check((await page(`!!document.querySelector('.float-menu')`)) === true, "a value with options opens its list");
+    await sleep(1200);
+    check((await page(`!!document.querySelector('.float-menu')`)) === true, "and it stays open under the pointer");
     await snap("card-options");
     await click(".float-menu .option-row", { index: 0 });
     check((await text(".value-text")).startsWith("Manager"), `picking an option shows it (${await text(".value-text")})`);
@@ -187,6 +200,10 @@ app.whenReady().then(async () => {
     await click(".postcall-title");
     check((await page(`document.querySelectorAll('.value-text')[1].firstElementChild.textContent`)) === "Software and SaaS", `a free-text value is typed in place (${await text(".value-text", 1)})`);
     await snap("card-edited");
+    // A free-text value the dashboard does not write as typed is not offered for typing: a click ticks it, as on the Mac.
+    await click(".change-value", { index: 2, fx: 0.3 });
+    check((await page(`!document.querySelector('.value-input') && document.querySelectorAll('.tick')[2].dataset.kept === 'false'`)) === true, "a value that can't be typed toggles its tick instead");
+    await click(".change-value", { index: 2, fx: 0.3 });
     await click(".postcall-header .type-tag");
     const cardType = await text(".float-menu .option-row span", 1);
     await click(".float-menu .option-row", { index: 1 });

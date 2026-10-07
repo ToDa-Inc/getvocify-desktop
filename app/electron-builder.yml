@@ -36,7 +36,8 @@ mac:
   target:
     - dmg
     - zip
-  # One app for Apple Silicon and Intel (dist:mac passes --universal); the helper is built universal too.
+  # One app for Apple Silicon and Intel (dist:mac passes --universal); the helper is already universal, so the merge keeps it as is.
+  x64ArchFiles: Contents/Resources/mac-helper/vocify-mac-helper
   icon: build/icon.png
   # Required for notarization and App Store compliance (Electron docs: Required Features).
   # https://www.electron.build/configuration/mac#required-features

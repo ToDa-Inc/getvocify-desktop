@@ -25,6 +25,9 @@ const MIN_HOLD_AFTER_LEAVE = 1.5;
 const LEVEL_FADE_SECONDS = 0.5;
 /** Waiting for the dashboard to report the call the rep just placed from the island. */
 const DIAL_TIMEOUT = 8;
+/** What the island says when the dashboard never took a call, and for how long (s). */
+const DIAL_FAILED = "Couldn't start the call";
+const DIAL_FAILED_HOLD = 4;
 const DIGIT = /^[0-9*#]$/;
 /** Waiting on a memo that never came (nothing was said, the upload failed): the dashboard says why in its window, and the island goes back to rest. */
 const FINISH_GIVE_UP = 30;
@@ -51,7 +54,7 @@ export type Effects = {
   lookUpCallContact?(caller: Caller | null): void;
 };
 
-type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout";
+type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout" | "dialFailedHold";
 
 export class IslandController {
   private effects: Effects;
@@ -319,8 +322,14 @@ export class IslandController {
     this.effects.emit("shell:command", "dial");
     this.start("dialTimeout", DIAL_TIMEOUT, () => {
       if (this.mode !== "dialing" || this.current.dial !== null) return;
-      this.transition({ kind: "idle" }, false);
-      this.effects.showMainWindow();
+      // The dashboard never took the call: say so where the rep clicked, for a moment. Never open the dashboard for it.
+      const offer = this.current.onScreen;
+      this.set({ dial: { phase: "ended", name: offer?.name ?? null, phone: offer?.phone ?? "", answeredAt: null, muted: false, message: DIAL_FAILED } });
+      this.start("dialFailedHold", DIAL_FAILED_HOLD, () => {
+        if (this.mode !== "dialing" || this.current.dial?.message !== DIAL_FAILED) return;
+        this.set({ dial: null });
+        this.rest();
+      });
     });
   }
 

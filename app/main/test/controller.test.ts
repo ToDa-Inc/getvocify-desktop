@@ -606,14 +606,19 @@ test("Call is not taken from the closed island", () => {
   assert.equal(t.mode(), "idle");
 });
 
-test("a dial the dashboard never reports returns to idle after 8 s", () => {
+test("a dial the dashboard never reports says so on the island for a moment, and never opens the dashboard", () => {
   const t = setup();
   t.controller.applyShellState({ onScreen: ana });
   t.controller.act({ name: "openDialConfirm" });
   t.controller.act({ name: "dial" });
   t.advance(8.1);
+  assert.equal(t.mode(), "dialing");
+  assert.deepEqual([t.controller.state.dial?.phase, t.controller.state.dial?.message], ["ended", "Couldn't start the call"]);
+  assert.equal(t.log.mainWindow, 0);
+  t.advance(4.1);
   assert.equal(t.mode(), "idle");
-  assert.equal(t.log.mainWindow, 1);
+  assert.equal(t.controller.state.dial, null);
+  assert.equal(t.log.mainWindow, 0);
 });
 
 test("closing the confirm row goes back to rest", () => {

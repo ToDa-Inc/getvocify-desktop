@@ -267,7 +267,8 @@ app.whenReady().then(async () => {
     handle.detectCall(null);
     check(await until(() => mode() === "stopped", 6000, "hang-up"), "hanging up pauses and waits for Resume");
     check(await until(() => mode() === "finishing" || mode() === "postCall", 8000, "after the grace"), "the grace runs out into finishing");
-    handle.quit();
+    // Not handle.quit(): a call can still be finishing here, and a normal quit then asks "A meeting is still recording"
+    // and waits for an answer nobody gives on a test machine, which held the Windows build until it was cancelled.
   } catch (error) {
     failures.push(String(error?.stack ?? error));
     console.log(error);

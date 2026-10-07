@@ -621,6 +621,15 @@ test("a dial the dashboard never reports says so on the island for a moment, and
   assert.equal(t.log.mainWindow, 0);
 });
 
+test("the confirm row also records, as the open island at rest does", () => {
+  const t = setup();
+  t.controller.applyShellState({ onScreen: ana });
+  t.controller.act({ name: "openDialConfirm" });
+  t.controller.act({ name: "record" });
+  assert.equal(t.mode(), "starting");
+  assert.ok(t.commands().includes("listen"));
+});
+
 test("closing the confirm row goes back to rest", () => {
   const t = setup();
   t.controller.applyShellState({ onScreen: ana });

@@ -258,6 +258,7 @@ export const interactions = [
   { name: "open-island-calls", fixture: "idle-open-callable", click: ".primary-action", expect: [{ name: "dial" }] },
   { name: "open-island-records", fixture: "idle-open-callable", click: ".menu .icon-button", expect: [{ name: "record" }] },
   { name: "brief-offer-still-calls", fixture: "idle-open-brief", click: ".primary-action", expect: [{ name: "dial" }] },
+  { name: "confirm-records", fixture: "confirm-callable", click: ".menu .record-icon", expect: [{ name: "record" }] },
   { name: "confirm-calls", fixture: "confirm-callable", click: ".primary-action", expect: [{ name: "dial" }] },
   { name: "no-caller-id-opens-settings", fixture: "confirm-no-caller-id", click: ".primary-action", expect: [{ name: "openCalling" }] },
   { name: "ringing-cancels", fixture: "dialing-ringing", click: ".stop-button", expect: [{ name: "hangup" }] },

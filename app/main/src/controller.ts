@@ -507,7 +507,8 @@ export class IslandController {
   record(): void {
     const previous = this.current.mode;
     if (this.vocifyCallUp) return;
-    if (previous.kind !== "idle" && previous.kind !== "call") return;
+    // The confirm row offers Record next to Call, as the open island at rest does.
+    if (previous.kind !== "idle" && previous.kind !== "call" && previous.kind !== "dialConfirm") return;
     if (!this.current.recorderReady) return this.effects.showMainWindow();
     if (previous.kind === "call") this.recordingCaller = this.shownCaller;
     else this.effects.lookUpCallSource?.(this.currentCaller);
@@ -515,7 +516,7 @@ export class IslandController {
     this.effects.emit("shell:command", "listen");
     this.start("startTimeout", START_TIMEOUT, () => {
       if (this.mode !== "starting") return;
-      this.transition(previous, false);
+      this.transition(previous.kind === "dialConfirm" ? { kind: "idle" } : previous, false);
       this.effects.showMainWindow();
     });
   }

@@ -355,7 +355,7 @@ function IdleMenu({ ready, onScreen, act }: { ready: boolean; onScreen: OnScreen
       {onScreen ? (
         <>
           <OnScreenOffer onScreen={onScreen} act={act} />
-          <IconButton help="Record meeting" onClick={() => act({ name: "record" })}>
+          <IconButton help="Record meeting" className="record-icon" onClick={() => act({ name: "record" })}>
             <RecordCircle size={12} />
           </IconButton>
         </>
@@ -473,6 +473,9 @@ function DialConfirmMenu({ onScreen, act }: { onScreen: OnScreenCall; act: Act }
   return (
     <Offer onScreen={onScreen}>
       <OnScreenOffer onScreen={onScreen} act={act} />
+      <IconButton help="Record meeting" className="record-icon" onClick={() => act({ name: "record" })}>
+        <RecordCircle size={12} />
+      </IconButton>
       <IconButton help="Close" onClick={() => act({ name: "toggle" })}>
         <Close size={11} />
       </IconButton>
@@ -935,9 +938,9 @@ function RecordDot({ ready, title, onClick }: { ready: boolean; title: string; o
   );
 }
 
-function IconButton({ help, onClick, children }: { help: string; onClick: () => void; children: ReactNode }) {
+function IconButton({ help, onClick, children, className }: { help: string; onClick: () => void; children: ReactNode; className?: string }) {
   return (
-    <button type="button" className="icon-button" title={help} aria-label={help} onClick={(event) => { event.stopPropagation(); onClick(); }}>
+    <button type="button" className={className ? `icon-button ${className}` : "icon-button"} title={help} aria-label={help} onClick={(event) => { event.stopPropagation(); onClick(); }}>
       {children}
     </button>
   );

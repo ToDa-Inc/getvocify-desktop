@@ -13,8 +13,6 @@
   <true/>
 
   <!-- System audio capture via Core Audio taps -->
-  <key>com.apple.security.device.audio-capture</key>
-  <true/>
 
   <!-- Read the CRM tab via AppleScript -->
   <key>com.apple.security.automation.apple-events</key>

@@ -37,14 +37,12 @@ jobs:
       - name: Logic tests
         run: npm run test:logic
 
-      # Build the native macOS helper binary (if it exists; for now a placeholder for testing).
+      # The native macOS helper (call audio, call detection, notch).
       - name: Build native helper
         run: |
-          if [ -f native/mac-helper/build.sh ]; then
-            bash native/mac-helper/build.sh
-          else
-            echo "Warning: native/mac-helper/build.sh not found; helper will not be included in this test build."
-          fi
+          # Without the helper the Mac app has no call audio and no call detection: never ship that.
+          bash native/mac-helper/build.sh
+          test -x native/mac-helper/dist/vocify-mac-helper
 
       # Import the Developer ID certificate for signing and notarization.
       - name: Import Developer ID certificate

@@ -36,9 +36,7 @@ mac:
   target:
     - dmg
     - zip
-  # Build for Apple Silicon (arm64) on this Mac; CI will specify --arm64 or --universal via CLI.
-  # See: https://www.electron.build/multi-platform-build
-  defaultArch: arm64
+  # One app for Apple Silicon and Intel (dist:mac passes --universal); the helper is built universal too.
   icon: build/icon.png
   # Required for notarization and App Store compliance (Electron docs: Required Features).
   # https://www.electron.build/configuration/mac#required-features

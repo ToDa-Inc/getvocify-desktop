@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { cornerRadius, earWidth, islandSize } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
-import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Keypad, Mic, MicSlash, Pause, Phone, PhoneDown, Play, Sparkle, Waveform } from "./icons.tsx";
+import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Keypad, Mic, MicSlash, Pause, Phone, PhoneDown, Play, RecordCircle, Sparkle, Waveform } from "./icons.tsx";
 import { CallWording, PhoneFormat, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
@@ -261,21 +261,35 @@ function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onP
     case "postCall":
       return state.postCall ? <PostCallCard postCall={state.postCall} act={act} onPopupExtent={onPopupExtent} /> : null;
     case "dialConfirm":
-      return state.onScreen ? <DialConfirmMenu onScreen={state.onScreen} act={act} /> : null;
+      // The rep left the record while the row was open: the island goes back to rest, not blank.
+      return state.onScreen ? <DialConfirmMenu onScreen={state.onScreen} act={act} /> : <IdleMenu ready={state.recorderReady} onScreen={null} act={act} />;
     case "dialing":
       return state.dial ? <DialingMenu dial={state.dial} act={act} /> : null;
     default:
-      return <IdleMenu ready={state.recorderReady} act={act} />;
+      return <IdleMenu ready={state.recorderReady} onScreen={state.onScreen} act={act} />;
   }
 }
 
 /* ---------- menus ---------- */
 
-function IdleMenu({ ready, act }: { ready: boolean; act: Act }) {
+/** At rest, open. With a CRM contact on screen it leads with who that is and Call, the way the
+ * confirm row does, and recording a meeting becomes the quiet icon beside it. */
+function IdleMenu({ ready, onScreen, act }: { ready: boolean; onScreen: OnScreenCall | null; act: Act }) {
   return (
     <div className="menu">
-      <QuietRecordButton title="Record meeting" ready={ready} onClick={() => act({ name: "record" })} />
-      <div className="grow" />
+      {onScreen ? (
+        <>
+          <OnScreenOffer onScreen={onScreen} act={act} />
+          <IconButton help="Record meeting" onClick={() => act({ name: "record" })}>
+            <RecordCircle size={12} />
+          </IconButton>
+        </>
+      ) : (
+        <>
+          <QuietRecordButton title="Record meeting" ready={ready} onClick={() => act({ name: "record" })} />
+          <div className="grow" />
+        </>
+      )}
       <IconButton help="Open Vocify" onClick={() => act({ name: "openApp" })}>
         <ArrowUpRight size={12} />
       </IconButton>
@@ -355,11 +369,11 @@ function CallGlyph({ onScreen, onClick }: { onScreen: OnScreenCall; onClick: () 
   );
 }
 
-/** Who would be called and from which number; one click calls. */
-function DialConfirmMenu({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) {
+/** Who would be called and from which number, and Call (or what is missing). */
+function OnScreenOffer({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) {
   const copy = CallWording.confirm(onScreen);
   return (
-    <div className="menu">
+    <>
       <div className="menu-stack">
         <span className="menu-title">{copy.title}</span>
         <span className="menu-line">{copy.line}</span>
@@ -375,6 +389,15 @@ function DialConfirmMenu({ onScreen, act }: { onScreen: OnScreenCall; act: Act }
             <Phone size={9} />
           </PrimaryActionButton>
         ))}
+    </>
+  );
+}
+
+/** Who would be called and from which number; one click calls. */
+function DialConfirmMenu({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) {
+  return (
+    <div className="menu">
+      <OnScreenOffer onScreen={onScreen} act={act} />
       <IconButton help="Close" onClick={() => act({ name: "toggle" })}>
         <Close size={11} />
       </IconButton>

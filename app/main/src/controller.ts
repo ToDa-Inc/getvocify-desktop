@@ -310,7 +310,9 @@ export class IslandController {
 
   /** Places the call through the dashboard; the island follows its `dial` state. */
   private dial(): void {
-    if (this.mode !== "dialConfirm" || this.current.onScreen?.state !== "callable") return;
+    // From the confirm row, or straight from the open island at rest.
+    const offered = this.mode === "dialConfirm" || (this.mode === "idle" && this.current.expanded);
+    if (!offered || this.current.onScreen?.state !== "callable") return;
     if (!this.current.recorderReady) return this.effects.showMainWindow();
     this.dialAnswered = false;
     this.transition({ kind: "dialing" }, true);

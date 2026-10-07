@@ -217,6 +217,8 @@ export const fixtures = [
   { name: "postcall-open-nothing-sure", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [], canApprove: false }) }, expect: { width: 420 }, fit: true },
   // calling the CRM contact on screen: same names and values as the Mac app's IslandFixtures.swift
   { name: "idle-callable", state: { onScreen: ana }, expect: { width: 257, height: 32 } },
+  { name: "idle-open-callable", state: { mode: { kind: "idle" }, expanded: true, onScreen: ana }, expect: { width: 380, height: 88 } },
+  { name: "idle-open-needs-contact", state: { mode: { kind: "idle" }, expanded: true, onScreen: { ...ana, name: null, phone: null, state: "needs_contact" } }, expect: { width: 380, height: 88 } },
   { name: "idle-no-phone", state: { onScreen: { ...ana, phone: null, state: "no_phone" } }, expect: { width: 257, height: 32 } },
   { name: "confirm-callable", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: ana }, expect: { width: 380, height: 88 } },
   { name: "confirm-no-caller-id", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, callerId: null, state: "no_caller_id" } }, expect: { width: 380, height: 88 } },
@@ -245,6 +247,8 @@ export const interactions = [
   { name: "save-leaves-out-unticked", fixture: "postcall-open-ready", before: [".change-row .change-toggle"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: ["contact:title", "contact:needs_review"], edits: {} } }] },
   { name: "save-sends-a-picked-value", fixture: "postcall-open-ready", before: [".change-row .change-value", ".option-row:nth-child(2)"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: ["contact:needs_review"], edits: { "contact:title": "manager" } } }] },
   { name: "call-glyph-opens-confirm", fixture: "idle-callable", click: ".call-glyph", expect: [{ name: "openDialConfirm" }] },
+  { name: "open-island-calls", fixture: "idle-open-callable", click: ".primary-action", expect: [{ name: "dial" }] },
+  { name: "open-island-records", fixture: "idle-open-callable", click: ".menu .icon-button", expect: [{ name: "record" }] },
   { name: "confirm-calls", fixture: "confirm-callable", click: ".primary-action", expect: [{ name: "dial" }] },
   { name: "no-caller-id-opens-settings", fixture: "confirm-no-caller-id", click: ".primary-action", expect: [{ name: "openCalling" }] },
   { name: "ringing-cancels", fixture: "dialing-ringing", click: ".stop-button", expect: [{ name: "hangup" }] },

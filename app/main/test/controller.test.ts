@@ -588,6 +588,24 @@ test("the contact on screen opens the confirm row, and Call sends one dial", () 
   assert.equal(t.mode(), "dialing");
 });
 
+test("the open island at rest shows the contact on screen, and Call there dials it", () => {
+  const t = setup();
+  t.controller.toggle();
+  assert.equal(t.controller.state.expanded, true);
+  t.controller.applyShellState({ onScreen: ana });
+  t.controller.act({ name: "dial" });
+  assert.deepEqual(t.commands(), ["dial"]);
+  assert.equal(t.mode(), "dialing");
+});
+
+test("Call is not taken from the closed island", () => {
+  const t = setup();
+  t.controller.applyShellState({ onScreen: ana });
+  t.controller.act({ name: "dial" });
+  assert.deepEqual(t.commands(), []);
+  assert.equal(t.mode(), "idle");
+});
+
 test("a dial the dashboard never reports returns to idle after 8 s", () => {
   const t = setup();
   t.controller.applyShellState({ onScreen: ana });

@@ -73,6 +73,9 @@ export const Calendar = ({ size = 10, stroke = 2, style, className }: IconProps)
 export const Users = ({ size = 10.5, stroke = 2.2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><circle cx="9" cy="8" r="3.2" /><path d="M3 19.5c.8-3 3.2-4.6 6-4.6s5.2 1.6 6 4.6M15.5 5.2a3 3 0 0 1 0 5.6M18 14.6c1.6.6 2.6 2.2 3 4.9" /></svg>
 );
+export const RecordCircle = ({ size = 12, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none" /></svg>
+);
 export const ExclamationCircle = ({ size = 10.5, stroke = 2.2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5.5M12 16.5v.01" /></svg>
 );

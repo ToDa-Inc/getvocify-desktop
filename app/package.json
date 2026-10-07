@@ -20,7 +20,9 @@
     "test:focus": "node test/build-shell-test.mjs && electron test/focus-windows.mjs",
     "test:real": "node test/build-shell-test.mjs && node island/build.mjs && electron test/real-input.mjs",
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
-    "release:win": "npm run build && electron-builder --win nsis --x64 --publish always"
+    "release:win": "npm run build && electron-builder --win nsis --x64 --publish always",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "release:mac": "npm run build && electron-builder --mac --publish always"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

@@ -1,10 +1,14 @@
 // The Mac implementations against the shared contracts, with macOS faked at its edge: `osascript` (the app in front and
 // the browser's tabs), Electron's microphone status and prompt, the settings pages, and the rep's answer to "Vocify wants
-// to control Google Chrome". Call detection on a Mac comes with the native helper (Phase 2): until then there is none.
+// to control Google Chrome", and the native helper (native/mac-helper/PROTOCOL.md) as a fake child process.
+import { EventEmitter } from "node:events";
+import { createMacCallDetector } from "../src/platform/mac/call-detector.ts";
 import { createMacCrmScreenReader } from "../src/platform/mac/crm-screen-reader.ts";
+import type { HelperChild } from "../src/platform/mac/helper.ts";
 import { createMacPermissions } from "../src/platform/mac/permissions.ts";
 import { createMacSystemAudio } from "../src/platform/mac/system-audio.ts";
 import type { Status } from "../src/platform/types.ts";
+import { callDetectorContract } from "./contracts/call-detector.contract.ts";
 import { crmScreenReaderContract } from "./contracts/crm-screen-reader.contract.ts";
 import { permissionsContract } from "./contracts/permissions.contract.ts";
 import { systemAudioContract } from "./contracts/system-audio.contract.ts";
@@ -64,8 +68,98 @@ permissionsContract("Mac", () => {
   };
 });
 
-systemAudioContract("Mac (until the native helper)", () => ({
-  audio: createMacSystemAudio(),
+/** vocify-mac-helper as a child process the test speaks for (see native/mac-helper/PROTOCOL.md). */
+function fakeHelper() {
+  const child = Object.assign(new EventEmitter(), {
+    stdout: new EventEmitter(),
+    stderr: new EventEmitter(),
+    stdin: { end: () => child.kill() },
+    killed: false,
+    kill() {
+      if (child.killed) return;
+      child.killed = true;
+      setImmediate(() => child.emit("exit", 0));
+    },
+  });
+  return child;
+}
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+const line = (stream: EventEmitter, value: unknown) => stream.emit("data", Buffer.from(`${JSON.stringify(value)}\n`));
+
+systemAudioContract("Mac", () => {
+  let helper: ReturnType<typeof fakeHelper> | null = null;
+  const audio = createMacSystemAudio({
+    spawn: (command) => {
+      if (command !== "audio") throw new Error(`unexpected helper command ${command}`);
+      helper = fakeHelper();
+      const started = helper;
+      setImmediate(() => line(started.stderr, { event: "started" }));
+      return started as unknown as HelperChild;
+    },
+  });
+  return {
+    audio,
+    osPlays: async (bytes) => {
+      // In uneven pieces, as a pipe delivers them.
+      for (let sent = 0; sent < bytes; sent += 1234) {
+        if (helper && !helper.killed) helper.stdout.emit("data", Buffer.alloc(Math.min(1234, bytes - sent)));
+      }
+      await tick();
+    },
+    osEnds: async () => {
+      if (!helper) return;
+      line(helper.stderr, { event: "lost", reason: "device_changed" });
+      helper.emit("exit", 0);
+      await tick();
+    },
+  };
+});
+
+systemAudioContract("Mac without permission", () => ({
+  audio: createMacSystemAudio({
+    spawn: () => {
+      const helper = fakeHelper();
+      setImmediate(() => {
+        line(helper.stderr, { event: "error", reason: "permission_denied" });
+        helper.emit("exit", 1);
+      });
+      return helper as unknown as HelperChild;
+    },
+  }),
   osPlays: async () => {},
   osEnds: async () => {},
 }));
+
+callDetectorContract("Mac", () => {
+  let helper: ReturnType<typeof fakeHelper> | null = null;
+  const using = new Map<string, { bundleId: string; name: string; pid: number; path: string }>();
+  const report = () => helper && !helper.killed && line(helper.stdout, { event: "mic", apps: [...using.values()] });
+  const detector = createMacCallDetector({
+    spawn: (command) => {
+      if (command !== "mic") throw new Error(`unexpected helper command ${command}`);
+      helper = fakeHelper();
+      setImmediate(report);
+      return helper as unknown as HelperChild;
+    },
+    ownBundleId: "com.vocify.app",
+  });
+  return {
+    detector,
+    zoomStarts: () => {
+      using.set("zoom", { bundleId: "us.zoom.xos", name: "zoom.us", pid: 501, path: "/Applications/zoom.us.app" });
+      report();
+    },
+    zoomStops: () => {
+      using.delete("zoom");
+      report();
+    },
+    vocifyStarts: () => {
+      using.set("vocify", { bundleId: "com.vocify.app.helper", name: "Vocify Helper", pid: 502, path: "/Applications/Vocify.app" });
+      report();
+    },
+    advance: async () => {
+      await tick();
+      await tick();
+    },
+  };
+});

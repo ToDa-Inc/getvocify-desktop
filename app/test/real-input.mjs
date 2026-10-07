@@ -267,6 +267,9 @@ app.whenReady().then(async () => {
     handle.detectCall(null);
     check(await until(() => mode() === "stopped", 6000, "hang-up"), "hanging up pauses and waits for Resume");
     check(await until(() => mode() === "finishing" || mode() === "postCall", 8000, "after the grace"), "the grace runs out into finishing");
+    // The island shows "finishing" a moment before the dashboard reports it stopped listening. Quitting in between
+    // opens the "A meeting is still recording" dialog, which nobody can answer on a CI machine.
+    check(await until(() => !controller.isListening, 4000, "stopped listening"), "the dashboard stops listening once the call is finishing");
     handle.quit();
   } catch (error) {
     failures.push(String(error?.stack ?? error));

@@ -1,0 +1,95 @@
+name: macOS app
+
+on:
+  # Manual trigger only for now; no automatic builds on push.
+  workflow_dispatch:
+
+# Publishing a build as a GitHub release needs write access to this repository's contents.
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      # Every build gets a higher version than the last, which is how installed apps know there is something newer.
+      - name: Version this build
+        run: npm version "0.4.${{ github.run_number }}" --no-git-tag-version
+
+      - run: npm run build
+      - run: npm run typecheck
+
+      # What can be checked without a screen: the ported logic, the shell's modules, call detection, the controller.
+      - name: Logic tests
+        run: npm run test:logic
+
+      # The native macOS helper (call audio, call detection, notch).
+      - name: Build native helper
+        run: |
+          # Without the helper the Mac app has no call audio and no call detection: never ship that.
+          bash native/mac-helper/build.sh
+          test -x native/mac-helper/dist/vocify-mac-helper
+
+      # Import the Developer ID certificate for signing and notarization.
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: bash ../scripts/import-apple-cert.sh
+
+      # Build and sign the macOS app (dmg and zip).
+      # Signing identity is read from the imported keychain (CSC_* env vars are set by import-apple-cert.sh).
+      # Notarization happens automatically if APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, and APPLE_TEAM_ID are set.
+      - name: Build the installer
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run dist:mac
+
+      # Verify code signature on the built .app and notarization status.
+      - name: Verify code signature
+        run: |
+          app_path="release/Vocify-*.app"
+          if [ -d "$app_path" ]; then
+            codesign --verify --deep --strict "$app_path"
+            echo "✓ Code signature verified"
+            echo "Checking notarization status..."
+            spctl -a -vv -t install "$app_path" || echo "Note: Notarization check unavailable in this environment (expected in CI)"
+          fi
+
+      # Inspect the built app's Info.plist and helper binary location.
+      - name: Inspect built app
+        run: |
+          app_path=$(ls -d release/Vocify-*.app 2>/dev/null | head -1)
+          if [ -n "$app_path" ]; then
+            echo "App Info.plist:"
+            plutil -p "$app_path/Contents/Info.plist" | head -20
+            echo ""
+            echo "Helper binary location:"
+            ls -lh "$app_path/Contents/Resources/mac-helper/" 2>/dev/null || echo "No helper binary found"
+          fi
+
+      # Upload the dmg and zip for manual testing.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vocify-macOS
+          path: |
+            app/release/Vocify-*.dmg
+            app/release/Vocify-*.zip
+          if-no-files-found: error

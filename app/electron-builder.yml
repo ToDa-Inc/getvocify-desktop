@@ -32,6 +32,31 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   artifactName: Vocify-Setup-${version}.${ext}
+mac:
+  target:
+    - dmg
+    - zip
+  # One app for Apple Silicon and Intel (dist:mac passes --universal); the helper is built universal too.
+  icon: build/icon.png
+  # Required for notarization and App Store compliance (Electron docs: Required Features).
+  # https://www.electron.build/configuration/mac#required-features
+  hardenedRuntime: true
+  entitlements: build/entitlements.plist
+  entitlementsInherit: build/entitlements-inherit.plist
+  # Helper binary ships outside asar, signed and hardened.
+  extraResources:
+    - from: native/mac-helper/dist/vocify-mac-helper
+      to: mac-helper/vocify-mac-helper
+  # Minimum macOS version for App Transport Security and hardened runtime.
+  minimumSystemVersion: "14.2"
+  # Signing identity from env (CSC_NAME, CSC_KEY_PASSWORD, CSC_LINK); skipped if absent (unsigned/ad-hoc build).
+  # Notarization driven by APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID; skipped if absent.
+  # https://www.electron.build/configuration/mac#notarize
+  notarize: true
+  extendInfo:
+    NSMicrophoneUsageDescription: Vocify records your microphone while you are on the call.
+    NSAudioCaptureUsageDescription: Vocify listens to the call audio through your system.
+    NSAppleEventsUsageDescription: Vocify reads your CRM window to see who you are talking to.
 # Builds are published as GitHub pre-releases by the Windows workflow; installed apps check them (see main/src/updater.ts).
 publish:
   provider: github

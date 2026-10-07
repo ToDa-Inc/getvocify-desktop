@@ -62,6 +62,9 @@ app.whenReady().then(async () => {
   let callWindow = null;
   try {
     if (mac) {
+      // Real clicks do not land on a locked screen: say so instead of failing every step.
+      const locked = execFileSync("swift", ["-e", 'import CoreGraphics; let d = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]; print(d["CGSSessionScreenIsLocked"] as? Bool ?? false)'], { encoding: "utf8" }).trim();
+      if (locked === "true") throw new Error("the screen is locked: unlock it and leave mouse and keyboard alone while this runs");
       // Compiled once per version of the source, so a run does not wait on the compiler.
       const source = join(here, "tools/mac-input.swift");
       macTool = join(tmpdir(), `vocify-mac-input-${statSync(source).mtimeMs}`);

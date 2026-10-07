@@ -82,8 +82,8 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const typable = postCall.stage === "ready" && postCall.canApprove;
   useEffect(() => {
     if (!typable) return;
-    window.vocifyIsland?.typing?.(true);
-    return () => window.vocifyIsland?.typing?.(false);
+    void window.vocifyIsland?.keyboard?.("available");
+    return () => void window.vocifyIsland?.keyboard?.("off");
   }, [typable]);
 
   const closeMenus = useCallback(() => {
@@ -393,6 +393,10 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable,
         className="change-value"
         data-open={open}
         title={hasOptions ? (change.multiple ? "Pick one or more" : "Pick another value") : editable ? "Edit the text" : "Edit it in Vocify"}
+        onMouseEnter={editable && !hasOptions ? keyboardOver : undefined}
+        // On the press, before the text box opens: the keyboard is the island's by the time the caret goes in.
+        onMouseDown={editable && !hasOptions ? keyboardNow : undefined}
+        onMouseLeave={editable && !hasOptions ? releaseKeyboardSoon : undefined}
         onClick={(event) => {
           if (!hasOptions) return editable ? setEditing(true) : toggle();
           event.stopPropagation();
@@ -414,6 +418,24 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable,
       </div>
     </div>
   );
+}
+
+/** The pointer is over a field the rep can type in: the click that follows focuses the island (see `keyboard`). */
+function keyboardOver(): void {
+  void window.vocifyIsland?.keyboard?.("over");
+}
+
+/** A click in a field: the island must have the keyboard now (Windows may need it brought to the front). */
+function keyboardNow(): void {
+  void window.vocifyIsland?.keyboard?.("now");
+}
+
+/** Gives the keyboard back once no field of the card has the caret any more (a moment later: focus may be moving). */
+function releaseKeyboardSoon(): void {
+  setTimeout(() => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement)) void window.vocifyIsland?.keyboard?.("release");
+  }, 150);
 }
 
 /** A free-text value typed in place: Enter or a click elsewhere keeps it, Escape leaves it as it was. Grows with the text. */
@@ -459,7 +481,10 @@ function ValueEditor({ text, onDone }: { text: string; onDone: (text: string | n
           finish(null);
         }
       }}
-      onBlur={() => finish(draft)}
+      onBlur={() => {
+        finish(draft);
+        releaseKeyboardSoon();
+      }}
     />
   );
 }
@@ -499,6 +524,10 @@ function NoteBox({ editable, text, placeholder, onChange }: { editable: boolean;
         readOnly={!editable}
         placeholder={placeholder}
         spellCheck={editable}
+        onMouseEnter={editable ? keyboardOver : undefined}
+        onMouseDown={editable ? keyboardNow : undefined}
+        onMouseLeave={releaseKeyboardSoon}
+        onBlur={releaseKeyboardSoon}
         onChange={(event) => onChange(event.target.value)}
       />
     </div>

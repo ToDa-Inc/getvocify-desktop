@@ -447,11 +447,45 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   ipcMain.on("island:act", (event, action: IslandAction) => {
     if (fromIsland(event.sender)) controller.act(action);
   });
-  // Typing in the island (the call note) needs keyboard focus, which the island otherwise never takes.
-  ipcMain.on("island:typing", (event, on: boolean) => {
-    if (!fromIsland(event.sender)) return;
-    // Taking focus is left to the rep's own click in the field, so the caret lands there and no key is lost.
-    island.setFocusable(on);
+  /**
+   * Typing in the card needs the keyboard, which the island otherwise never takes. Windows: the window becomes able to take
+   * it while the pointer is over a field ("over"), so the rep's own click in the field focuses it the way any click does
+   * (Windows refuses a window that pulls itself to the front), and gives it back when the typing is done ("release").
+   * A card appearing, or a click elsewhere in it, never takes it. macOS: the window can take it while the card is shown,
+   * so the click in a field itself focuses it.
+   */
+  ipcMain.handle("island:keyboard", (event, mode: string) => {
+    if (!fromIsland(event.sender)) return false;
+    const windows = platform === "win32";
+    const giveBack = () => {
+      island.setFocusable(false);
+      if (island.isFocused()) island.blur();
+    };
+    if (mode === "available") {
+      if (!windows) island.setFocusable(true);
+    } else if (mode === "over") {
+      // Electron's setFocusable on Windows also drops focus: never call it when nothing changes (it would blur a field).
+      if (windows && !island.isFocusable()) island.setFocusable(true);
+    } else if (mode === "now") {
+      // Windows: the click in the field was input to this app, so it may bring its window to the front; a window created
+      // "never activate" is not activated by the click itself. Each way is tried until the island has the keyboard.
+      if (windows && !island.isFocused()) {
+        if (!island.isFocusable()) island.setFocusable(true);
+        island.focus();
+        if (!island.isFocused()) {
+          island.show();
+          island.focus();
+        }
+        island.webContents.focus();
+        log(`keyboard for typing in the island: ${island.isFocused() ? "taken" : "not given by Windows"}`);
+      }
+    } else if (mode === "release") {
+      if (windows && !island.isFocused()) island.setFocusable(false);
+      else if (windows) giveBack();
+    } else {
+      giveBack();
+    }
+    return true;
   });
   ipcMain.on("island:resize", (event, size: { width: number; height: number }) => {
     if (!fromIsland(event.sender) || !size || !(size.width > 0) || !(size.height > 0)) return;

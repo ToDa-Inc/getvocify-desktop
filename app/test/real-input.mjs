@@ -40,11 +40,12 @@ public class W {
 `;
 const powershell = (script) => execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", POWERSHELL_NATIVE + script], { encoding: "utf8", windowsHide: true, timeout: 60000 }).trim();
 
-/** A real click at screen point (x, y), then optionally real key presses typing `text`. */
+/** A real click at screen point (x, y) (none when x is negative), then optionally real key presses typing `text`. */
 function input(x, y, text = "") {
   if (mac) return execFileSync(macTool, [String(x), String(y), text]);
   const keys = text.replace(/[+^%~(){}[\]]/g, "{$&}");
-  powershell(`[void][W]::SetCursorPos(${Math.round(x)}, ${Math.round(y)}); Start-Sleep -Milliseconds 150; [W]::mouse_event(2,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 60; [W]::mouse_event(4,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 400; ${keys ? `[System.Windows.Forms.SendKeys]::SendWait('${keys.replace(/'/g, "''")}')` : ""}`);
+  const click = x < 0 ? "" : `[void][W]::SetCursorPos(${Math.round(x)}, ${Math.round(y)}); Start-Sleep -Milliseconds 150; [W]::mouse_event(2,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 60; [W]::mouse_event(4,0,0,0,[UIntPtr]::Zero); Start-Sleep -Milliseconds 400; `;
+  powershell(`${click}${keys ? `[System.Windows.Forms.SendKeys]::SendWait('${keys.replace(/'/g, "''")}')` : ""}`);
 }
 /** The process the system sends the keyboard to right now. */
 function foregroundPid() {
@@ -61,6 +62,9 @@ app.whenReady().then(async () => {
   let callWindow = null;
   try {
     if (mac) {
+      // Real clicks do not land on a locked screen: say so instead of failing every step.
+      const locked = execFileSync("swift", ["-e", 'import CoreGraphics; let d = CGSessionCopyCurrentDictionary() as? [String: Any] ?? [:]; print(d["CGSSessionScreenIsLocked"] as? Bool ?? false)'], { encoding: "utf8" }).trim();
+      if (locked === "true") throw new Error("the screen is locked: unlock it and leave mouse and keyboard alone while this runs");
       // Compiled once per version of the source, so a run does not wait on the compiler.
       const source = join(here, "tools/mac-input.swift");
       macTool = join(tmpdir(), `vocify-mac-input-${statSync(source).mtimeMs}`);
@@ -98,12 +102,27 @@ app.whenReady().then(async () => {
       const w = island.getBounds();
       return { x: w.x + r.x, y: w.y + r.y };
     };
+    /** What has the keyboard right now, for a step that types. */
+    const diagnose = async (label) => {
+      const fg = foregroundPid();
+      console.log(`      [${label}] foreground ${ours.has(fg) ? "the island's app" : `pid ${fg}`}; island focused ${island.isFocused()}, focusable ${island.isFocusable()}; caret in ${await page("document.activeElement?.className || document.activeElement?.tagName")}; ${describe()}`);
+    };
     const click = async (selector, options = {}) => {
       await sleep(250);
       const p = await point(selector, options.fx ?? 0.5, options.fy ?? 0.5, options.index ?? 0);
       if (!p) {
-        check(false, `${selector} is on screen to click`);
+        check(false, `${selector} is on screen to click (${describe()})`);
         return false;
+      }
+      if (options.type) {
+        // Click first, look at who has the keyboard, then type: shows where keys would go.
+        input(p.x, p.y);
+        await sleep(400);
+        await diagnose(`after clicking ${selector}`);
+        input(-1, -1, options.type);
+        await sleep(options.settle ?? 450);
+        await diagnose(`after typing into ${selector}`);
+        return true;
       }
       input(p.x, p.y, options.type ?? "");
       await sleep(options.settle ?? 450);
@@ -180,7 +199,8 @@ app.whenReady().then(async () => {
     check(await until(() => mode() === "finishing", 2000, "finishing"), "Finish ends the call at once and the island holds a spinner");
     await snap("finishing");
     check(await until(() => mode() === "postCall" && controller.state.postCall?.stage === "ready" && controller.state.expanded, 15000, "card ready"), "the call's card opens when its update is ready");
-    callKeepsFocus("Stop, Resume and Finish");
+    await sleep(600);
+    callKeepsFocus("Stop, Resume, Finish and the card opening");
     await snap("card-ready");
 
     /* ---------- the after-call card ---------- */
@@ -232,6 +252,8 @@ app.whenReady().then(async () => {
     await click(".postcall-header .icon-button");
     check(await until(() => mode() === "idle" && controller.state.postCall === null, 4000, "dismissed"), "Done clears the card and the island rests");
     check(!island.isFocusable(), "the island gives the keyboard back once the card is gone");
+    await sleep(400);
+    callKeepsFocus("after typing in the card and closing it");
 
     /* ---------- a detected call ---------- */
     // Call detection reports "no call" first, as the Windows watcher does at start.

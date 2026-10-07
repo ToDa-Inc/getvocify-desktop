@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'" />
+<title>Vocify demo: call detection</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 18px; background: #16171a; color: #e7e7ea; font: 13px -apple-system, "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 15px; margin: 0 0 4px; }
+  p.hint { margin: 0 0 14px; color: #9a9ca3; line-height: 1.45; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #8a8c93; margin: 16px 0 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 6px; }
+  button { background: #26282d; color: #e7e7ea; border: 1px solid #34363c; border-radius: 8px; padding: 7px 11px; font: inherit; cursor: pointer; }
+  button:hover { background: #2f3238; }
+  button.danger { color: #f0a0a0; }
+</style>
+</head>
+<body>
+  <h1>Call detection</h1>
+  <p class="hint">On the real app the platform helper tells the island which app is using the microphone. These buttons do that by hand. The island is at the top of the screen; the demo dashboard opens from it.</p>
+  <h2>A call app takes the microphone</h2>
+  <div class="row">
+    <button data-cmd="mic:zoom">Zoom takes the mic</button>
+    <button data-cmd="mic:chrome">Meet in Chrome takes the mic</button>
+    <button data-cmd="mic:none">The call app lets go (hang up)</button>
+  </div>
+  <h2>Other</h2>
+  <div class="row">
+    <button data-cmd="dashboard:show">Open the demo dashboard</button>
+    <button data-cmd="signedout:toggle">Toggle signed out</button>
+    <button class="danger" data-cmd="quit">Quit</button>
+  </div>
+<script>
+  document.querySelectorAll("button[data-cmd]").forEach((button) => button.addEventListener("click", () => window.demo.send(button.dataset.cmd)));
+</script>
+</body>
+</html>

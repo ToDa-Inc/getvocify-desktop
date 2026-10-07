@@ -17,3 +17,9 @@ native/macos-tap/vocify-tap
 # Legacy Electron tree (kept for reference; native Mac app is apps/macos)
 # Do not nest a second clone of this repo here.
 .reticle/
+
+# Electron app work
+app/test/out/
+app/main/dist-test/
+app/main/dist-shell-test/
+app/release/

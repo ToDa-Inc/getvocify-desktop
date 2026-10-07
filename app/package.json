@@ -1,0 +1,39 @@
+{
+  "name": "vocify",
+  "productName": "Vocify",
+  "version": "0.4.0",
+  "description": "Vocify for desktop: the dashboard, the call island and call capture.",
+  "author": "Vocify",
+  "private": true,
+  "type": "module",
+  "main": "main/dist/main.mjs",
+  "scripts": {
+    "build": "node island/build.mjs && node main/build.mjs",
+    "typecheck": "tsc -p island/tsconfig.json && tsc -p main/tsconfig.json",
+    "start": "npm run build && electron main/dist/main.mjs",
+    "start:demo": "npm run build && electron main/dist/main.mjs --demo",
+    "test:logic": "node --test core/*.test.ts main/test/*.test.ts test/*.test.ts",
+    "test:island": "node island/build.mjs && electron test/island-shots.mjs",
+    "test:loopback": "node test/build-loopback-test.mjs && electron test/loopback-e2e.mjs",
+    "test:shell": "node test/build-shell-test.mjs && electron test/shell-e2e.mjs",
+    "test:windows": "node test/windows-real.mjs",
+    "test:focus": "node test/build-shell-test.mjs && electron test/focus-windows.mjs",
+    "test:real": "node test/build-shell-test.mjs && node island/build.mjs && electron test/real-input.mjs",
+    "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "release:win": "npm run build && electron-builder --win nsis --x64 --publish always"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "electron": "33.4.11",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.25.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

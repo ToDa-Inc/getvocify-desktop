@@ -81,3 +81,10 @@ test("the offer's recent-activity brief: two lines at most, loading as one line,
   assert.equal(briefLinesShown(decodeOnScreen(base)!), 0);
   assert.equal(briefLinesShown(null), 0);
 });
+
+test("a call keeps the contact's brief: two lines at most, none when missing", () => {
+  const dial = decodeDial({ phase: "ringing", name: "Ana Ruiz", phone: "+34600111222", brief: ["One.", "", "Two.", "Three."] })!;
+  assert.deepEqual(dial.brief, ["One.", "Two."]);
+  assert.equal(decodeDial({ phase: "ringing", name: "Ana Ruiz", phone: "+34600111222" })!.brief, null);
+  assert.equal(decodeDial({ phase: "ringing", name: "Ana Ruiz", phone: "+34600111222", brief: "junk" })!.brief, null);
+});

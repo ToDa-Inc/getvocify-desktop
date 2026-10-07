@@ -228,6 +228,10 @@ export const fixtures = [
   { name: "confirm-no-caller-id", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, callerId: null, state: "no_caller_id" } }, expect: { width: 380, height: 88 } },
   { name: "confirm-needs-contact", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, name: null, phone: null, state: "needs_contact" } }, expect: { width: 380, height: 88 } },
   { name: "dialing-ringing", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ringing") }, expect: { width: 380, height: 88 } },
+  // the brief stays with the call: under "Calling…", and above live help once answered (collapsible)
+  { name: "dialing-ringing-brief", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ringing", { brief: ["Demo with the ops team yesterday; proposal still to send.", "Asked for pricing for 12 seats on the 1st."] }) }, expect: { width: 380, height: 128 } },
+  { name: "in-call-brief", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, brief: ["Demo with the ops team yesterday; proposal still to send.", "Asked for pricing for 12 seats on the 1st."] }) }, expect: { width: 460, height: 400 } },
+  { name: "in-call-brief-hidden", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, brief: ["Demo with the ops team yesterday; proposal still to send.", "Asked for pricing for 12 seats on the 1st."] }) }, expect: { width: 460, height: 400 }, steps: [".call-brief-toggle"] },
   { name: "in-call", state: inCall, expect: { width: 460, height: 400 } },
   { name: "in-call-muted-keypad", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, muted: true }), keypadOpen: true }, expect: { width: 460, height: 400 } },
   { name: "dial-ended-no-answer", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ended", { message: "No answer" }) }, expect: { width: 380, height: 88 } },
@@ -257,6 +261,7 @@ export const interactions = [
   { name: "confirm-calls", fixture: "confirm-callable", click: ".primary-action", expect: [{ name: "dial" }] },
   { name: "no-caller-id-opens-settings", fixture: "confirm-no-caller-id", click: ".primary-action", expect: [{ name: "openCalling" }] },
   { name: "ringing-cancels", fixture: "dialing-ringing", click: ".stop-button", expect: [{ name: "hangup" }] },
+  { name: "ringing-with-brief-cancels", fixture: "dialing-ringing-brief", click: ".stop-button", expect: [{ name: "hangup" }] },
   { name: "in-call-mutes", fixture: "in-call", click: ".controls .circle-button", expect: [{ name: "toggleMute" }] },
   { name: "in-call-hangs-up", fixture: "in-call", click: ".controls .stop-button", expect: [{ name: "hangup" }] },
   { name: "keypad-sends-digit", fixture: "in-call-muted-keypad", click: ".keypad-key", expect: [{ name: "digit", digit: "1" }] },

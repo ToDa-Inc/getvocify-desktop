@@ -49,6 +49,8 @@ export type DialIslandState = {
   muted: boolean;
   /** Why an unanswered call ended, in the rep's language. */
   message: string | null;
+  /** What happened with the contact lately, kept for the whole call. */
+  brief: string[] | null;
 };
 
 const STATES = new Set<OnScreenState>(["callable", "no_phone", "needs_contact", "no_caller_id"]);
@@ -81,7 +83,14 @@ export function decodeDial(raw: unknown): DialIslandState | null {
     answeredAt: typeof r.answeredAt === "number" ? r.answeredAt : null,
     muted: r.muted === true,
     message: text(r.message),
+    brief: briefLines(r.brief),
   };
+}
+
+function briefLines(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const lines = raw.map(text).filter((line): line is string => line !== null).slice(0, BRIEF_LINES);
+  return lines.length ? lines : null;
 }
 
 /** While a Vocify call is up the island must not offer or start any other recording. */

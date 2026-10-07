@@ -1,4 +1,4 @@
-import { briefLinesShown, type OnScreenCall } from "../../core/callIsland.ts";
+import { briefLinesShown, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
 import type { Geometry, Mode } from "./types.ts";
 
 export const EAR = 82;
@@ -54,8 +54,9 @@ export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody 
     case "call":
     case "stopped":
     case "finishing":
-    case "dialing":
       return open ? { width: wide(380), height: g.barHeight + 56 } : closed;
+    case "dialing":
+      return open ? { width: wide(380), height: g.barHeight + 56 + brief } : closed;
     case "recording":
       return open ? { width: wide(460), height: Math.min(400, Math.round(g.screenHeight * 0.5)) } : closed;
     case "postCall":
@@ -71,6 +72,9 @@ export function cornerRadius(kind: Kind, open: boolean): number {
 }
 
 /** The brief lines the call offer shows in this state (see `islandSize`). */
-export function offerBriefLines(state: { mode: { kind: Kind }; onScreen: OnScreenCall | null }): number {
-  return state.mode.kind === "idle" || state.mode.kind === "dialConfirm" ? briefLinesShown(state.onScreen) : 0;
+export function offerBriefLines(state: { mode: { kind: Kind }; onScreen: OnScreenCall | null; dial?: DialIslandState | null }): number {
+  if (state.mode.kind === "idle" || state.mode.kind === "dialConfirm") return briefLinesShown(state.onScreen);
+  // Calling: the brief stays under "Calling…" (a missed call says why instead).
+  if (state.mode.kind === "dialing" && state.dial && state.dial.phase !== "active" && state.dial.phase !== "ended") return state.dial.brief?.length ?? 0;
+  return 0;
 }

@@ -281,17 +281,70 @@ function Offer({ onScreen, children }: { onScreen: OnScreenCall | null; children
   return (
     <div className="offer">
       <div className="menu offer-row">{children}</div>
-      <div className="offer-brief" aria-live="polite">
-        {brief.state === "loading" ? (
-          <span className="offer-brief-line" data-loading="true">Reading recent activity…</span>
-        ) : (
-          brief.lines.map((line) => (
-            <span key={line} className="offer-brief-line" title={line}>
-              {line}
-            </span>
-          ))
-        )}
-      </div>
+      {brief.state === "loading" ? <BriefLines loading /> : <BriefLines lines={brief.lines} />}
+    </div>
+  );
+}
+
+/** The brief's lines under a row: one line each, full text on hover; one quiet line while it loads. */
+function BriefLines({ lines, loading }: { lines?: string[]; loading?: boolean }) {
+  return (
+    <div className="offer-brief" aria-live="polite">
+      {loading ? (
+        <span className="offer-brief-line" data-loading="true">Reading recent activity…</span>
+      ) : (
+        (lines ?? []).map((line) => (
+          <span key={line} className="offer-brief-line" title={line}>
+            {line}
+          </span>
+        ))
+      )}
+    </div>
+  );
+}
+
+const BRIEF_HIDDEN_KEY = "vocify.island.briefHidden";
+
+/** During the call: the contact's brief above live help, which the rep can fold to its heading (remembered). */
+function CallBriefSection({ lines }: { lines: string[] }) {
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return localStorage.getItem(BRIEF_HIDDEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () => {
+    setHidden((was) => {
+      try {
+        localStorage.setItem(BRIEF_HIDDEN_KEY, was ? "0" : "1");
+      } catch {
+        // the choice just isn't remembered
+      }
+      return !was;
+    });
+  };
+  return (
+    <div className="help call-brief">
+      <button
+        type="button"
+        className="help-heading call-brief-toggle"
+        aria-expanded={!hidden}
+        title={hidden ? "Show the brief" : "Hide the brief"}
+        onClick={(event) => {
+          event.stopPropagation();
+          toggle();
+        }}
+      >
+        <span>Brief</span>
+        <ChevronDown size={8} style={{ transform: hidden ? "rotate(-90deg)" : "none", transition: "transform 150ms" }} />
+      </button>
+      {!hidden &&
+        lines.map((line) => (
+          <div key={line} className="call-brief-line">
+            {line}
+          </div>
+        ))}
     </div>
   );
 }
@@ -437,11 +490,19 @@ function DialingMenu({ dial, act }: { dial: DialIslandState; act: Act }) {
     );
   }
   const ended = dial.phase === "ended";
-  return (
-    <div className="menu">
+  const row = (
+    <>
       <span className="menu-title" data-dim={ended}>{ended ? CallWording.ended(dial) : CallWording.dialing(dial)}</span>
       <div className="grow" />
       {!ended && <HangUpButton title="Cancel" onClick={() => act({ name: "hangup" })} />}
+    </>
+  );
+  // While it connects or rings, what happened with the contact lately stays under "Calling…".
+  if (ended || !dial.brief) return <div className="menu">{row}</div>;
+  return (
+    <div className="offer">
+      <div className="menu offer-row">{row}</div>
+      <BriefLines lines={dial.brief} />
     </div>
   );
 }
@@ -576,6 +637,7 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
       )}
       {state.keypadOpen && state.dial && <KeypadGrid onDigit={(digit) => act({ name: "digit", digit })} />}
       {state.callAudioLost && !state.paused && <CallAudioLostLine />}
+      {state.dial?.brief && <CallBriefSection lines={state.dial.brief} />}
       {state.liveHelp !== false && <HelpSection current={state.assist} earlier={state.lastHelp} />}
       <div className="hairline" />
       <TranscriptScroll turns={state.turns} />

@@ -324,7 +324,7 @@ export class IslandController {
       if (this.mode !== "dialing" || this.current.dial !== null) return;
       // The dashboard never took the call: say so where the rep clicked, for a moment. Never open the dashboard for it.
       const offer = this.current.onScreen;
-      this.set({ dial: { phase: "ended", name: offer?.name ?? null, phone: offer?.phone ?? "", answeredAt: null, muted: false, message: DIAL_FAILED } });
+      this.set({ dial: { phase: "ended", name: offer?.name ?? null, phone: offer?.phone ?? "", answeredAt: null, muted: false, message: DIAL_FAILED, brief: null } });
       this.start("dialFailedHold", DIAL_FAILED_HOLD, () => {
         if (this.mode !== "dialing" || this.current.dial?.message !== DIAL_FAILED) return;
         this.set({ dial: null });

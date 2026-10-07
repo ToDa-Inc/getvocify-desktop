@@ -281,6 +281,15 @@ check(PhoneFormat.grouped("+447700900123") == "+447700900123", "other countries 
 let ana = OnScreenCall.decode(["provider": "hubspot", "crmLabel": "HubSpot", "name": "Ana Ruiz", "phone": "+34600111222", "callerId": "+34910000000", "state": "callable"])
 check(ana?.state == .callable && ana?.name == "Ana Ruiz", "decodes the callable contact")
 check(OnScreenCall.decode(nil) == nil && OnScreenCall.decode(["state": "weird"]) == nil, "rejects anything else")
+
+// What happened with the contact lately, under the offer: two lines at most, loading as one, anything else as none.
+let briefBase: [String: Any] = ["provider": "hubspot", "crmLabel": "HubSpot", "name": "Ana Ruiz", "phone": "+34600111222", "callerId": "+34910000000", "state": "callable"]
+let briefReady = OnScreenCall.decode(briefBase.merging(["brief": ["state": "ready", "lines": ["One.", " ", "Two.", "Three."]]]) { $1 })!
+check(briefReady.brief == .ready(["One.", "Two."]) && briefReady.briefLines == 2, "the brief keeps two lines")
+let briefLoading = OnScreenCall.decode(briefBase.merging(["brief": ["state": "loading"]]) { $1 })!
+check(briefLoading.brief == .loading && briefLoading.briefLines == 1, "a loading brief takes one line")
+check(OnScreenCall.decode(briefBase.merging(["brief": ["state": "ready", "lines": [String]()]]) { $1 })!.brief == nil, "an empty brief is none")
+check(OnScreenCall.decode(briefBase.merging(["brief": "junk"]) { $1 })!.brief == nil && OnScreenCall.decode(briefBase)!.briefLines == 0, "no brief, no lines")
 let anaConfirm = CallWording.confirm(ana!)
 check(anaConfirm.title == "Ana Ruiz" && anaConfirm.line == "+34 600 11 12 22" && anaConfirm.button == "Call", "confirm row: who and their number")
 check(CallWording.glyphHelp(ana!) == "Call Ana Ruiz", "glyph help")

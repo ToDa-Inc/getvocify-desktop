@@ -59,6 +59,15 @@ permissionsContract("Mac", () => {
         return fakeOsascript(screen)(file, args);
       },
       crmTabs: { get: () => crmTabs, set: (value) => void (crmTabs = value) },
+      spawn: (command) => {
+        const helper = fakeHelper();
+        if (command === "audio-permission") {
+          setImmediate(() => line(helper.stdout, { status: "authorized" }));
+        } else if (command === "audio") {
+          setImmediate(() => line(helper.stderr, { event: "started" }));
+        }
+        return helper as unknown as HelperChild;
+      },
     }),
     platform: "darwin",
     microphoneIs: (raw) => void (microphone = raw),

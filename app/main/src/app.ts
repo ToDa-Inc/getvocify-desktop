@@ -74,22 +74,68 @@ type Placement = { geometry: Geometry; midX: number; originX: number; originY: n
 
 /** The notch comes from a Swift script for now; the Mac helper's `geometry.get` replaces it. Everywhere else the screen is measured from Electron. */
 function measureMac(): Promise<Placement | null> {
+  // Try the native helper first (Phase 2: the helper's `screen` command)
   return new Promise((resolve) => {
-    execFile("/usr/bin/swift", [join(here, "../native/screen.swift")], { timeout: 60000 }, (error, stdout) => {
-      if (error) return resolve(null);
-      try {
-        const raw = JSON.parse(stdout) as { width?: number; height?: number; originX?: number; originY?: number; menuBar?: number; notchWidth?: number; barHeight?: number; midX?: number };
-        if (!raw.width || !raw.height) return resolve(null);
-        resolve({
-          geometry: { notchWidth: raw.notchWidth ?? 0, barHeight: raw.barHeight ?? Math.max(raw.menuBar ?? 0, 30), screenHeight: raw.height },
-          midX: raw.midX ?? raw.width / 2,
-          originX: raw.originX ?? 0,
-          originY: raw.originY ?? 0,
-        });
-      } catch {
-        resolve(null);
-      }
-    });
+    // Import here to avoid circular dependencies
+    const { spawnMacHelper } = require("./platform/mac/helper.ts");
+
+    try {
+      const helper = spawnMacHelper("screen");
+      let output = "";
+
+      const onStdout = (chunk: Buffer) => {
+        output += chunk.toString();
+      };
+
+      const onExit = () => {
+        if (output) {
+          try {
+            const raw = JSON.parse(output) as { width?: number; height?: number; originX?: number; originY?: number; menuBar?: number; notchWidth?: number; barHeight?: number; midX?: number };
+            if (raw.width && raw.height) {
+              return resolve({
+                geometry: { notchWidth: raw.notchWidth ?? 0, barHeight: raw.barHeight ?? Math.max(raw.menuBar ?? 0, 30), screenHeight: raw.height },
+                midX: raw.midX ?? raw.width / 2,
+                originX: raw.originX ?? 0,
+                originY: raw.originY ?? 0,
+              });
+            }
+          } catch {
+            // Fall through to Swift fallback
+          }
+        }
+        // If helper fails or returns invalid JSON, fall back to Swift
+        swiftFallback(resolve);
+      };
+
+      helper.stdout.on("data", onStdout);
+      helper.on("exit", onExit);
+
+      // Timeout after 2 seconds
+      setTimeout(() => {
+        if (!helper.killed) helper.kill();
+      }, 2000);
+    } catch {
+      // If helper spawn fails, use Swift fallback
+      swiftFallback(resolve);
+    }
+  });
+}
+
+function swiftFallback(resolve: (value: Placement | null) => void): void {
+  execFile("/usr/bin/swift", [join(here, "../native/screen.swift")], { timeout: 60000 }, (error, stdout) => {
+    if (error) return resolve(null);
+    try {
+      const raw = JSON.parse(stdout) as { width?: number; height?: number; originX?: number; originY?: number; menuBar?: number; notchWidth?: number; barHeight?: number; midX?: number };
+      if (!raw.width || !raw.height) return resolve(null);
+      resolve({
+        geometry: { notchWidth: raw.notchWidth ?? 0, barHeight: raw.barHeight ?? Math.max(raw.menuBar ?? 0, 30), screenHeight: raw.height },
+        midX: raw.midX ?? raw.width / 2,
+        originX: raw.originX ?? 0,
+        originY: raw.originY ?? 0,
+      });
+    } catch {
+      resolve(null);
+    }
   });
 }
 
@@ -188,22 +234,52 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       saveRecorderReady: (ready) => settings.set("recorderReady", ready),
       // A call was detected: name where it happens and send the CRM pages on screen, so the dashboard can name the contact.
       lookUpCallContact: (caller) => {
-        if (platform !== "win32") return;
-        void pageReader.read().then((pages) => {
-          // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
-          if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
-          dashboard.emit("call:source", (sourceOf(caller, pages) ?? null)?.json ?? null);
-          const urls = crmUrlsOf(pages);
-          if (urls.length > 0) dashboard.emit("call:pages", { urls });
-        });
+        if (platform === "win32") {
+          void pageReader.read().then((pages) => {
+            // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
+            if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
+            dashboard.emit("call:source", (sourceOf(caller, pages) ?? null)?.json ?? null);
+            const urls = crmUrlsOf(pages);
+            if (urls.length > 0) dashboard.emit("call:pages", { urls });
+          });
+        } else if (platform === "darwin") {
+          // On Mac, use the CRM screen reader to get the browser's CRM pages
+          void os.crmScreenReader.front().then((app) => {
+            if (!app) return;
+            return os.crmScreenReader.read(app as string).then((urls) => {
+              // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
+              if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
+              const pageSource = urls && urls.length > 0 ? CallSource.page(urls as string[]) : null;
+              const appId = caller?.appId ?? undefined;
+              const source = CallSource.app(appId) ?? pageSource;
+              dashboard.emit("call:source", source?.json ?? null);
+              if (urls && urls.length > 0) dashboard.emit("call:pages", { urls });
+            });
+          });
+        }
       },
       // Recording without a detected call: name the app holding the mic, if any, without reading browsers needlessly.
       lookUpCallSource: (caller) => {
-        if (platform !== "win32") return;
-        const native = callSourceForExe(caller?.appId);
-        if (native) return dashboard.emit("call:source", native.json);
-        if (!caller) return;
-        void pageReader.read().then((pages) => dashboard.emit("call:source", (CallSource.page(pages.map((p) => p.url)) ?? null)?.json ?? null));
+        if (platform === "win32") {
+          const native = callSourceForExe(caller?.appId);
+          if (native) return dashboard.emit("call:source", native.json);
+          if (!caller) return;
+          void pageReader.read().then((pages) => dashboard.emit("call:source", (CallSource.page(pages.map((p) => p.url)) ?? null)?.json ?? null));
+        } else if (platform === "darwin") {
+          // On Mac, use CallSource.app for the app name
+          const appId = caller?.appId ?? undefined;
+          const source = CallSource.app(appId);
+          if (source) return dashboard.emit("call:source", source.json);
+          if (!caller) return;
+          // If no known app, try to read the CRM pages in the browser
+          void os.crmScreenReader.front().then((app) => {
+            if (!app) return;
+            return os.crmScreenReader.read(app as string).then((urls) => {
+              const pageSource = urls && urls.length > 0 ? CallSource.page(urls as string[]) : null;
+              dashboard.emit("call:source", pageSource?.json ?? null);
+            });
+          });
+        }
       },
     },
     placement.geometry,

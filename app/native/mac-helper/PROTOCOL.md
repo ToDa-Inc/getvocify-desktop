@@ -3,29 +3,30 @@
 The Electron app on macOS gets the things only native code can do from one small command-line program,
 `vocify-mac-helper`, shipped inside the app (`Contents/Resources/mac-helper/vocify-mac-helper`) and started by the app,
 so macOS attributes its permissions to Vocify (the responsible process). One process per command.
-Each command stops on SIGTERM or when its stdin closes. macOS 14.2 or later.
+Each command stops on SIGTERM or when its stdin closes. macOS 14 or later (`mic` needs 14.2).
 
 Status and events are one JSON object per line. Nothing else is written to the channel a command uses for them.
 
 ## `vocify-mac-helper audio`
 
-The call's audio: everything the Mac plays, except the Vocify app's own processes (the helper's parent and its
-children), through a Core Audio process tap.
+The call's audio: everything the Mac plays, except the Vocify app (the helper's parent) and the helper itself, through
+ScreenCaptureKit, the same capture and recovery as the Swift app's MeetingCapture (permission: Screen & System Audio
+Recording).
 
 - **stdout**: raw PCM, signed 16-bit little-endian, mono, 16 000 Hz, continuous, in chunks of any size. The app cuts it
-  into 3200-byte (100 ms) frames.
+  into 3200-byte (100 ms) frames. When nothing plays, silence is written, so the stream never stalls.
 - **stderr**, JSON lines:
-  - `{"event":"started"}` once audio is flowing (silence counts: a quiet Mac still sends zeros).
-  - `{"event":"error","reason":"<code>"}` then exit 1, when capture cannot start. Codes: `permission_denied`,
-    `unsupported_os`, `tap_failed`.
-  - `{"event":"lost","reason":"<code>"}` then exit 0, when capture ends on its own (for example `device_changed` that
-    could not be recovered).
+  - `{"event":"started"}` once capture runs.
+  - `{"event":"error","reason":"<code>"}` then exit 1, when capture cannot start: `permission_denied` (Screen & System
+    Audio Recording is off), `capture_failed`.
+  - `{"event":"lost","reason":"<code>"}` then exit 0, when capture ends on its own and a restart did not bring it back.
+- A change of audio output, or 10 s without samples, restarts the capture (at most once per 30 s unless forced).
 - Exit 0 on SIGTERM or stdin closed.
 
 ## `vocify-mac-helper audio-permission`
 
-- **stdout**: one line `{"status":"authorized"|"denied"|"never_requested"}` then exit 0. Never shows a prompt.
-  (If macOS offers no way to read this without asking, print `{"status":"unknown"}` and say so in the helper's README.)
+- **stdout**: one line `{"status":"authorized"|"never_requested"}` then exit 0. Never shows a prompt
+  (`CGPreflightScreenCaptureAccess`, as the Swift app). macOS does not tell a refusal from "never asked" here.
 
 ## `vocify-mac-helper mic`
 

@@ -62,9 +62,10 @@ func commandMic() {
     let encoder = JSONEncoder()
     encoder.outputFormatting = .sortedKeys
 
-    // Set up signal handler for SIGTERM
     signal(SIGTERM, handleSignal)
     signal(SIGINT, handleSignal)
+    signal(SIGPIPE, SIG_IGN)
+    stopWhenStdinCloses()
 
     monitor.start { apps in
         let event = MicEvent(apps: apps)
@@ -91,42 +92,42 @@ func commandMic() {
 // MARK: - Audio Command
 
 func commandAudio() {
-    let event: [String: String] = [
-        "event": "error",
-        "reason": "not_implemented"
-    ]
-
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = .sortedKeys
-
-    do {
-        let data = try encoder.encode(event)
-        if let json = String(data: data, encoding: .utf8) {
-            fputs(json + "\n", stderr)
+    signal(SIGTERM, handleSignal)
+    signal(SIGINT, handleSignal)
+    // Writing to the app after it went away must end the helper, not kill it with SIGPIPE mid-write.
+    signal(SIGPIPE, SIG_IGN)
+    stopWhenStdinCloses()
+    let capture = SystemAudioCapture()
+    var ended: (event: String, reason: String)?
+    capture.onEnd = { event, reason in
+        DispatchQueue.main.async {
+            ended = (event, reason)
+            isRunning = false
         }
-    } catch {
-        fputs("error encoding audio error: \(error)\n", stderr)
     }
+    capture.start()
+    let runLoop = RunLoop.current
+    while isRunning {
+        runLoop.run(until: Date(timeIntervalSinceNow: 0.1))
+    }
+    capture.stop()
+    if let ended {
+        status(["event": ended.event, "reason": ended.reason])
+        exit(ended.event == "error" ? 1 : 0)
+    }
+    exit(0)
+}
 
-    exit(1)
+/// PROTOCOL.md: a command also stops when its stdin closes, so a helper never outlives the app that started it.
+func stopWhenStdinCloses() {
+    Thread.detachNewThread {
+        while FileHandle.standardInput.availableData.count > 0 {}
+        DispatchQueue.main.async { isRunning = false }
+    }
 }
 
 // MARK: - Audio Permission Command
 
 func commandAudioPermission() {
-    let status = AudioPermissionChecker.getPermissionStatus()
-    let response = AudioPermissionResponse(status: status)
-
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = .sortedKeys
-
-    do {
-        let data = try encoder.encode(response)
-        if let json = String(data: data, encoding: .utf8) {
-            print(json)
-        }
-    } catch {
-        fputs("error encoding audio permission: \(error)\n", stderr)
-        exit(1)
-    }
+    print("{\"status\":\"\(systemAudioPermission())\"}")
 }

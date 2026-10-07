@@ -14,7 +14,30 @@ export type OnScreenCall = {
   /** The verified number the call goes out from. */
   callerId: string | null;
   state: OnScreenState;
+  /** What happened with the contact lately (the dashboard's recent-activity summary): loading, or its lines. */
+  brief?: OnScreenBrief | null;
 };
+
+export type OnScreenBrief = { state: "loading" } | { state: "ready"; lines: string[] };
+
+/** The island is a glance: two lines at most. */
+const BRIEF_LINES = 2;
+
+function decodeBrief(raw: unknown): OnScreenBrief | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  if (r.state === "loading") return { state: "loading" };
+  if (r.state !== "ready" || !Array.isArray(r.lines)) return null;
+  const lines = r.lines.map(text).filter((line): line is string => line !== null).slice(0, BRIEF_LINES);
+  return lines.length ? { state: "ready", lines } : null;
+}
+
+/** How many brief lines the offer shows (a loading brief takes one). */
+export function briefLinesShown(onScreen: OnScreenCall | null | undefined): number {
+  const brief = onScreen?.brief;
+  if (!brief) return 0;
+  return brief.state === "loading" ? 1 : brief.lines.length;
+}
 
 /** A Vocify call in progress, or one that ended unanswered. */
 export type DialIslandState = {
@@ -42,7 +65,7 @@ export function decodeOnScreen(raw: unknown): OnScreenCall | null {
   const provider = text(r.provider);
   const crmLabel = text(r.crmLabel);
   if (!STATES.has(state) || !provider || !crmLabel) return null;
-  return { provider, crmLabel, name: text(r.name), phone: text(r.phone), callerId: text(r.callerId), state };
+  return { provider, crmLabel, name: text(r.name), phone: text(r.phone), callerId: text(r.callerId), state, brief: decodeBrief(r.brief) };
 }
 
 export function decodeDial(raw: unknown): DialIslandState | null {

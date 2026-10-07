@@ -1,3 +1,4 @@
+import { briefLinesShown, type OnScreenCall } from "../../core/callIsland.ts";
 import type { Geometry, Mode } from "./types.ts";
 
 export const EAR = 82;
@@ -34,15 +35,25 @@ export function earWidth(kind: Kind, open: boolean): number {
 export type Size = { width: number; height: number };
 
 /** The island's shape in px. Same numbers as `IslandGeometry.size` in MeetingPill.swift. */
-export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody = 44): Size {
+/** One line of the call offer's brief (11.5 px text), and the room under the lines. */
+export const BRIEF_LINE = 16;
+export const BRIEF_BOTTOM = 8;
+
+/**
+ * `briefLines`: the lines of the contact's recent-activity brief under the call offer (open idle island and the
+ * confirm row only; 0 elsewhere).
+ */
+export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody = 44, briefLines = 0): Size {
   const closed = { width: gap(g) + earWidth(kind, false) * 2, height: g.barHeight };
   const wide = (min: number) => Math.max(gap(g) + EAR * 2, min);
+  const brief = briefLines > 0 ? briefLines * BRIEF_LINE + BRIEF_BOTTOM : 0;
   switch (kind) {
     case "idle":
+    case "dialConfirm":
+      return open ? { width: wide(380), height: g.barHeight + 56 + brief } : closed;
     case "call":
     case "stopped":
     case "finishing":
-    case "dialConfirm":
     case "dialing":
       return open ? { width: wide(380), height: g.barHeight + 56 } : closed;
     case "recording":
@@ -57,4 +68,9 @@ export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody 
 export function cornerRadius(kind: Kind, open: boolean): number {
   if (!open) return COLLAPSED_RADIUS;
   return kind === "recording" ? OPEN_RADIUS : OTHER_OPEN_RADIUS;
+}
+
+/** The brief lines the call offer shows in this state (see `islandSize`). */
+export function offerBriefLines(state: { mode: { kind: Kind }; onScreen: OnScreenCall | null }): number {
+  return state.mode.kind === "idle" || state.mode.kind === "dialConfirm" ? briefLinesShown(state.onScreen) : 0;
 }

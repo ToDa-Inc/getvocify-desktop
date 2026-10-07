@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { CallWording, CrmScreenChange, CrmTabsAccess, decodeDial, decodeOnScreen, isVocifyCallUp, PhoneFormat } from "./callIsland.ts";
+import { briefLinesShown, CallWording, CrmScreenChange, CrmTabsAccess, decodeDial, decodeOnScreen, isVocifyCallUp, PhoneFormat } from "./callIsland.ts";
 
 // Same checks as the Mac app (apps/macos/Sources/VocifyCoreChecks/main.swift), so both islands say the same.
 
@@ -67,4 +67,17 @@ test("the call offer follows the front window's active tab only", () => {
   assert.deepEqual(CrmPages.frontRecordURLs(`https://mail.google.com/mail/u/0/\n${b}\n`), []);
   assert.deepEqual(CrmPages.frontRecordURLs(`\n${a}\n`), [a]);
   assert.deepEqual(CrmPages.frontRecordURLs(""), []);
+});
+
+test("the offer's recent-activity brief: two lines at most, loading as one line, anything else as none", () => {
+  const base = { provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", phone: "+34600111222", callerId: "+34910000000", state: "callable" };
+  const ready = decodeOnScreen({ ...base, brief: { state: "ready", lines: ["One.", " ", "Two.", "Three."] } })!;
+  assert.deepEqual(ready.brief, { state: "ready", lines: ["One.", "Two."] });
+  assert.equal(briefLinesShown(ready), 2);
+  const loading = decodeOnScreen({ ...base, brief: { state: "loading" } })!;
+  assert.equal(briefLinesShown(loading), 1);
+  assert.equal(decodeOnScreen({ ...base, brief: { state: "ready", lines: [] } })!.brief, null);
+  assert.equal(decodeOnScreen({ ...base, brief: "junk" })!.brief, null);
+  assert.equal(briefLinesShown(decodeOnScreen(base)!), 0);
+  assert.equal(briefLinesShown(null), 0);
 });

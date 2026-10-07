@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { CallSource } from "../../core/callSource.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { islandSize } from "../../island/src/geometry.ts";
+import { islandSize, offerBriefLines } from "../../island/src/geometry.ts";
 import type { Geometry, IslandAction, IslandState } from "../../island/src/types.ts";
 import { createBridge } from "./bridge.ts";
 import { signInHostsFor, type ReportedPlatform } from "./config.ts";
@@ -308,7 +308,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const targetSize = (state: IslandState) => {
     const open = state.expanded && state.mode.kind !== "starting";
     if (state.mode.kind === "postCall" && open && reportedSize) return reportedSize;
-    return islandSize(state.geometry, state.mode.kind, open);
+    return islandSize(state.geometry, state.mode.kind, open, undefined, offerBriefLines(state));
   };
 
   const initial = islandSize(placement.geometry, "idle", false);

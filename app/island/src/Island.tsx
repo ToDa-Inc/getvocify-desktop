@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { cornerRadius, earWidth, islandSize } from "./geometry.ts";
+import { cornerRadius, earWidth, islandSize, offerBriefLines } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
 import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Keypad, Mic, MicSlash, Pause, Phone, PhoneDown, Play, RecordCircle, Sparkle, Waveform } from "./icons.tsx";
@@ -31,7 +31,7 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
   const [popupBottom, setPopupBottom] = useState<number | null>(null);
   const column = useRef<HTMLDivElement>(null);
   const natural = kind === "postCall" && open;
-  const shape = islandSize(state.geometry, kind, open);
+  const shape = islandSize(state.geometry, kind, open, undefined, offerBriefLines(state));
   const size = natural && cardHeight !== null ? { width: shape.width, height: cardHeight } : shape;
   const radius = cornerRadius(kind, open);
   const [hovered, setHovered] = useState(false);
@@ -274,9 +274,31 @@ function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onP
 
 /** At rest, open. With a CRM contact on screen it leads with who that is and Call, the way the
  * confirm row does, and recording a meeting becomes the quiet icon beside it. */
+/** The call offer's row, and under it what happened with the contact lately (at most two lines; one while it loads). */
+function Offer({ onScreen, children }: { onScreen: OnScreenCall | null; children: ReactNode }) {
+  const brief = onScreen?.brief;
+  if (!brief) return <div className="menu">{children}</div>;
+  return (
+    <div className="offer">
+      <div className="menu offer-row">{children}</div>
+      <div className="offer-brief" aria-live="polite">
+        {brief.state === "loading" ? (
+          <span className="offer-brief-line" data-loading="true">Reading recent activity…</span>
+        ) : (
+          brief.lines.map((line) => (
+            <span key={line} className="offer-brief-line" title={line}>
+              {line}
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 function IdleMenu({ ready, onScreen, act }: { ready: boolean; onScreen: OnScreenCall | null; act: Act }) {
   return (
-    <div className="menu">
+    <Offer onScreen={onScreen}>
       {onScreen ? (
         <>
           <OnScreenOffer onScreen={onScreen} act={act} />
@@ -293,7 +315,7 @@ function IdleMenu({ ready, onScreen, act }: { ready: boolean; onScreen: OnScreen
       <IconButton help="Open Vocify" onClick={() => act({ name: "openApp" })}>
         <ArrowUpRight size={12} />
       </IconButton>
-    </div>
+    </Offer>
   );
 }
 
@@ -396,12 +418,12 @@ function OnScreenOffer({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) 
 /** Who would be called and from which number; one click calls. */
 function DialConfirmMenu({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) {
   return (
-    <div className="menu">
+    <Offer onScreen={onScreen}>
       <OnScreenOffer onScreen={onScreen} act={act} />
       <IconButton help="Close" onClick={() => act({ name: "toggle" })}>
         <Close size={11} />
       </IconButton>
-    </div>
+    </Offer>
   );
 }
 

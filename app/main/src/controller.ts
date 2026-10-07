@@ -76,6 +76,8 @@ export class IslandController {
   private quiet: { appId: string; until: number } | null = null;
   private levelValues = { you: { value: 0, at: 0 }, them: { value: 0, at: 0 } };
   private shownSide: "you" | "them" = "them";
+  /** The Vocify call on show was answered: its end waits for the memo ("processing"), not back to rest. */
+  private dialAnswered = false;
   /** True when a native recorder draws the transcript itself; the dashboard's overlay then must not overwrite it. */
   nativeTranscript = false;
 
@@ -310,6 +312,7 @@ export class IslandController {
   private dial(): void {
     if (this.mode !== "dialConfirm" || this.current.onScreen?.state !== "callable") return;
     if (!this.current.recorderReady) return this.effects.showMainWindow();
+    this.dialAnswered = false;
     this.transition({ kind: "dialing" }, true);
     this.effects.emit("shell:command", "dial");
     this.start("dialTimeout", DIAL_TIMEOUT, () => {
@@ -329,6 +332,7 @@ export class IslandController {
   private dialChanged(): void {
     const dial = this.current.dial;
     if (dial) this.stopTimer("dialTimeout");
+    if (dial?.phase === "active") this.dialAnswered = true;
     switch (this.mode) {
       case "idle":
       case "dialConfirm":
@@ -337,7 +341,11 @@ export class IslandController {
         if (dial && dial.phase !== "ended") this.transition({ kind: "dialing" }, true);
         return;
       case "dialing":
-        if (!dial) return this.rest();
+        if (!dial) {
+          const answered = this.dialAnswered;
+          this.dialAnswered = false;
+          return answered ? this.finish() : this.rest();
+        }
         // Missed: open to say why until the dashboard clears it.
         if (dial.phase === "ended" && !this.current.expanded) this.transition({ kind: "dialing" }, true);
         return;

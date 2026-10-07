@@ -670,3 +670,22 @@ test("recording a Vocify call ignores other apps letting go of the mic", () => {
   t.advance(5);
   assert.equal(t.mode(), "recording");
 });
+
+test("an answered call that ends while the island shows the call holds it on 'processing' until the memo", () => {
+  const t = setup();
+  t.controller.applyShellState({ dial: dialState("ringing") });
+  t.controller.applyShellState({ dial: dialState("active", { answeredAt: 1 }) });
+  assert.equal(t.mode(), "dialing");
+  t.controller.applyShellState({ dial: null });
+  assert.equal(t.mode(), "finishing");
+  t.controller.applyShellState({ postCall: postCall("ready") });
+  assert.equal(t.mode(), "postCall");
+});
+
+test("a missed call ending goes back to rest, not to processing", () => {
+  const t = setup();
+  t.controller.applyShellState({ dial: dialState("ringing") });
+  t.controller.applyShellState({ dial: dialState("ended", { message: "No answer" }) });
+  t.controller.applyShellState({ dial: null });
+  assert.equal(t.mode(), "idle");
+});

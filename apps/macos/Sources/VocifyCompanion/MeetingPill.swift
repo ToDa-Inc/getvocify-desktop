@@ -2037,6 +2037,7 @@ private struct DialingMenu: View {
 private struct CallBar: View {
     let dial: DialIslandState
     let keypadOpen: Bool
+    var showsName = true
     let controller: MeetingPillController
 
     var body: some View {
@@ -2052,13 +2053,17 @@ private struct CallBar: View {
                 action: controller.toggleKeypad
             )
             HangUpButton(title: "Hang up", action: controller.hangUpCall)
-            // Who the call is with, whatever tab the rep has moved to since.
-            Text(dial.name ?? PhoneFormat.grouped(dial.phone))
-                .font(.system(size: 12.5, weight: .medium))
-                .foregroundStyle(IslandStyle.text)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(PhoneFormat.grouped(dial.phone))
+                .fixedSize()
+            // Who the call is with, whatever tab the rep has moved to since. The open call names them in
+            // the conversation instead: this row also carries the call type and live help.
+            if showsName {
+                Text(dial.name ?? PhoneFormat.grouped(dial.phone))
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(IslandStyle.text)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(PhoneFormat.grouped(dial.phone))
+            }
         }
     }
 }
@@ -3094,7 +3099,7 @@ private struct OpenIsland: View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 if let dial = state.dial {
-                    CallBar(dial: dial, keypadOpen: state.keypadOpen, controller: controller)
+                    CallBar(dial: dial, keypadOpen: state.keypadOpen, showsName: false, controller: controller)
                 } else {
                     CircleButton(
                         symbol: state.paused ? "play.fill" : "pause.fill",

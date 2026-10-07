@@ -24,6 +24,7 @@ enum IslandFixtures {
         "onScreen": ana,
         "listening": true,
         "liveHelp": true,
+        "liveType": ["selected": "cold", "proposed": true, "options": [["key": "cold", "label": "Llamada en frío"], ["key": "demo", "label": "Demo"]]],
         "dial": ["phase": "active", "name": "Ana Ruiz", "phone": "+34600111222", "answeredAt": answeredAt, "muted": false],
         "clock": ["startedAt": answeredAt, "pausedMs": 0],
         "assist": [
@@ -32,7 +33,7 @@ enum IslandFixtures {
         ],
         "overlay": ["turns": [
             ["key": "t1", "you": true, "text": "Hi Ana, it's Dani from Vocify.", "pending": ""],
-            ["key": "t2", "you": false, "label": "Ana", "text": "Hi! Yes, I saw your email. How much is it?", "pending": ""],
+            ["key": "t2", "you": false, "label": "Ana Ruiz", "text": "Hi! Yes, I saw your email. How much is it?", "pending": ""],
         ]],
     ]
 

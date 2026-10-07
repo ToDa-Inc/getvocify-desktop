@@ -1,8 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, screen, shell, systemPreferences, Tray } from "electron";
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { CallSource } from "../../core/callSource.ts";
-import { CrmPages } from "../../core/crmPages.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { islandSize } from "../../island/src/geometry.ts";
@@ -19,6 +18,7 @@ import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { trayItems } from "./tray-menu.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
 import { createCrmScreenWatcher } from "./crm-screen-watcher.ts";
+import { runQuiet } from "./platform/exec.ts";
 import { createPlatform } from "./platform/index.ts";
 import type { DetectedCaller } from "./platform/types.ts";
 import { createPageReader, crmUrlsOf, encodePowerShell, type BrowserPage } from "./windows/browser-pages.ts";
@@ -130,55 +130,23 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const offsetY = options.islandOffsetY ?? 0;
   const dashboardHolder: { host: DashboardHost | null } = { host: null };
 
-  // Platform-specific exec functions
-  const run = (file: string, args: string[], timeout: number) =>
-    new Promise<string>((resolve, reject) => {
-      execFile(file, args, { timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
-        if (error && typeof (error as { code?: unknown }).code !== "number") reject(error);
-        else resolve(error ? "" : stdout);
-      });
-    });
-
-  const execStrict = (file: string, args: string[], timeout: number) =>
-    new Promise<string>((resolve, reject) => {
-      execFile(file, args, { timeout, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => (error ? reject(new Error(`${error.message} ${stderr}`)) : resolve(stdout)));
-    });
-
-  // Normalize microphone status for the platform layer (exclude "unknown")
-  const normalizedMicrophoneAccess = (): "granted" | "denied" | "restricted" | "not-determined" => {
-    const status = systemPreferences.getMediaAccessStatus("microphone");
-    return (["granted", "denied", "restricted", "not-determined"].includes(status) ? status : "not-determined") as any;
-  };
-
-  // Create the platform layer for this OS
-  const platformInstance = createPlatform({
-    platform: (platform as any),
-    exec: platform === "darwin" ? execStrict : undefined,
-    macAccess: platform === "darwin" ? () => {
-      const stored = settings.get("crmTabs");
-      return stored === "authorized" || stored === "denied" ? stored : "never_requested";
-    } : undefined,
-    microphoneAccess: normalizedMicrophoneAccess,
-    askMicrophone: platform === "darwin" ? () => systemPreferences.askForMediaAccess("microphone") : undefined,
+  // The OS's own services (call audio, call detection, the CRM tab, permissions), built for this OS in one place.
+  const os = createPlatform(platform, {
+    systemPreferences,
     openExternal: (url) => void shell.openExternal(url),
-    read: platform === "win32" ? () => run("reg.exe", ["query", "HCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone", "/s"], 5000) : undefined,
-    every: (ms, fn) => { const timer = setInterval(fn, ms); return () => clearInterval(timer); },
-    ownExePath: process.execPath,
-    spawn: platform === "win32" ? () => spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", ""], { windowsHide: true, stdio: ["pipe", "pipe", "ignore"] }) as any : undefined,
-    macCrmTabs: platform === "darwin" ? {
+    crmTabsAnswer: {
       get: () => {
         const stored = settings.get("crmTabs");
         return stored === "authorized" || stored === "denied" ? stored : undefined;
       },
-      set: (value) => settings.set("crmTabs", value)
-    } : undefined,
+      set: (value) => settings.set("crmTabs", value),
+    },
+    log,
   });
 
   /* ---------- who is on the call ---------- */
 
-  // For Windows call detection, we also need a page reader to get ALL pages (not just the active tab like crmScreen).
-  // This is used in the controller's lookUpCallContact and lookUpCallSource methods.
-  const pageReader = platform === "win32" ? createPageReader((script) => run("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(script)], 10_000), () => Date.now()) : undefined;
+  const pageReader = createPageReader((script) => runQuiet("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(script)], 10_000), () => Date.now());
 
   // The app's own icon, as the Swift island shows it: asked of the system once per app, kept as a small image.
   const icons = new Map<string, string | null>();
@@ -220,7 +188,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       saveRecorderReady: (ready) => settings.set("recorderReady", ready),
       // A call was detected: name where it happens and send the CRM pages on screen, so the dashboard can name the contact.
       lookUpCallContact: (caller) => {
-        if (!pageReader) return;
+        if (platform !== "win32") return;
         void pageReader.read().then((pages) => {
           // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
           if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
@@ -231,7 +199,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       },
       // Recording without a detected call: name the app holding the mic, if any, without reading browsers needlessly.
       lookUpCallSource: (caller) => {
-        if (!pageReader) return;
+        if (platform !== "win32") return;
         const native = callSourceForExe(caller?.appId);
         if (native) return dashboard.emit("call:source", native.json);
         if (!caller) return;
@@ -279,9 +247,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   /* ---------- the CRM contact on screen (the island's call offer) ---------- */
 
   const crmScreen = createCrmScreenWatcher({
-    front: () => platformInstance.crmScreenReader.front(),
-    isBrowser: (app) => platformInstance.crmScreenReader.isBrowser(app),
-    read: (app) => platformInstance.crmScreenReader.read(app),
+    front: () => os.crmScreenReader.front(),
+    isBrowser: (app) => os.crmScreenReader.isBrowser(app),
+    read: (app) => os.crmScreenReader.read(app),
     emit: (urls) => dashboard.emit("crm:screen", { urls }),
     every: (ms, fn) => {
       const timer = setInterval(fn, ms);
@@ -405,7 +373,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     reportedPlatform: options.reportedPlatform,
     testPermissions: options.testPermissions === true,
     controller,
-    loopback: platformInstance.systemAudio,
+    loopback: os.systemAudio,
     drafts,
     shortcut,
     emit: (channel, payload) => dashboard.emit(channel, payload),
@@ -422,13 +390,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       return { status: response.status, text: () => response.text() };
     },
     log,
-    crmTabs: platform === "darwin" ? () => (settings.get("crmTabs") as string | undefined) ?? "never_requested" : undefined,
-    askCrmTabs:
-      platform === "darwin"
-        ? async () => {
-            await platformInstance.permissions.request("crmTabs");
-          }
-        : undefined,
+    crmTabs: platform === "darwin" ? () => os.permissions.status().crmTabs : undefined,
+    askCrmTabs: platform === "darwin" ? () => os.permissions.request("crmTabs") : undefined,
   });
   // Only the dashboard window may talk to the shell, and only through the bridge.
   ipcMain.handle("vocify", (event, op: unknown, args: unknown) => {
@@ -497,7 +460,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   shortcut.activate();
 
-  // Call detection through the platform layer (Windows only for now).
+  // Call detection: the OS reports which app holds the microphone (none on a Mac until the native helper).
   let detection = Promise.resolve();
   const report = (detected: DetectedCaller | null) => {
     // In order, and with the app's icon ready before the island hears of the call.
@@ -505,8 +468,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       controller.callChanged(detected ? { name: detected.name, appId: detected.appId, icon: await iconFor(detected.path) } : null);
     });
   };
-  platformInstance.callDetector?.start(report);
-  app.on("will-quit", () => platformInstance.callDetector?.stop());
+  os.callDetector?.start(report);
+  app.on("will-quit", () => os.callDetector?.stop());
 
   const reposition = () => {
     const next = platform === "darwin" ? placement : measureElectron();

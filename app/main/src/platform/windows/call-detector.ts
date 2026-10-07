@@ -1,34 +1,25 @@
-import { MicWatcher, type DetectedCaller } from "../../windows/mic-use.ts";
-import type { CallDetector } from "../types.ts";
+import { MicWatcher } from "../../windows/mic-use.ts";
+import type { CallDetector, DetectedCaller } from "../types.ts";
 
+/** The microphone-use record Windows keeps (see windows/mic-use.ts), polled once a second. */
 export function createWindowsCallDetector(deps: {
+  /** `reg query <MIC_CONSENT_KEY> /s`. */
   read(): Promise<string>;
   now(): number;
   every(ms: number, fn: () => void): () => void;
   ownExePath: string | null;
-  onError?(): void;
+  onError?(error: unknown): void;
 }): CallDetector {
-  const watcher = new MicWatcher({
-    read: deps.read,
-    now: deps.now,
-    every: deps.every,
-    ownExePath: deps.ownExePath,
-    onCaller: (caller) => {
-      onChangeCallback?.(caller);
-    },
-    onError: deps.onError,
-  });
-
-  let onChangeCallback: ((caller: DetectedCaller | null) => void) | null = null;
-
+  let watcher: MicWatcher | null = null;
   return {
-    start(onChange) {
-      onChangeCallback = onChange;
+    start(onChange: (caller: DetectedCaller | null) => void) {
+      if (watcher) return;
+      watcher = new MicWatcher({ ...deps, onCaller: onChange });
       watcher.start();
     },
     stop() {
-      onChangeCallback = null;
-      watcher.halt();
+      watcher?.halt();
+      watcher = null;
     },
   };
 }

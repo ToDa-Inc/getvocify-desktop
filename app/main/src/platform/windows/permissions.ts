@@ -1,43 +1,16 @@
-import type { PermissionKind, Permissions, PermissionStatus, Status } from "../types.ts";
+import { MICROPHONE_SETTINGS_URL, microphoneStatus } from "../../permissions.ts";
+import type { Permissions } from "../types.ts";
 
-export function createWindowsPermissions(deps: {
-  microphoneAccess(): "granted" | "denied" | "restricted" | "not-determined";
-  openExternal(url: string): void;
-}): Permissions {
-  const mapMicrophoneStatus = (raw: string): Status => {
-    if (raw === "granted") return "authorized";
-    if (raw === "denied" || raw === "restricted") return "denied";
-    return "never_requested";
-  };
-
+/**
+ * Windows asks nothing per app: the microphone is one global switch in Settings, call audio needs no permission, and the
+ * address bars are read without asking.
+ */
+export function createWindowsPermissions(deps: { microphoneAccess(): string; openExternal(url: string): void }): Permissions {
   return {
-    status(): PermissionStatus {
-      return {
-        platform: "win32",
-        microphone: mapMicrophoneStatus(deps.microphoneAccess()),
-        systemAudio: "authorized", // Windows can access system audio without asking
-        crmTabs: "authorized", // Windows can read browser tabs without asking
-      };
+    status: () => ({ platform: "win32", microphone: microphoneStatus(deps.microphoneAccess()), systemAudio: "authorized", crmTabs: "authorized" }),
+    async request(kind) {
+      if (kind === "microphone" && microphoneStatus(deps.microphoneAccess()) !== "authorized") deps.openExternal(MICROPHONE_SETTINGS_URL);
     },
-
-    async request(kind: PermissionKind): Promise<void> {
-      if (kind === "microphone") {
-        const status = mapMicrophoneStatus(deps.microphoneAccess());
-        if (status !== "authorized") {
-          // Open Windows microphone settings (whether denied or never_requested)
-          deps.openExternal("ms-settings:privacy-microphone");
-        }
-        // If "authorized", nothing to do
-      }
-      // systemAudio and crmTabs are always authorized, nothing to request
-    },
-
-    settingsUrl(kind: PermissionKind): string | null {
-      if (kind === "microphone") {
-        return "ms-settings:privacy-microphone";
-      }
-      // systemAudio and crmTabs have no settings page on Windows
-      return null;
-    },
+    settingsUrl: (kind) => (kind === "microphone" ? MICROPHONE_SETTINGS_URL : null),
   };
 }

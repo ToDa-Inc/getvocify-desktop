@@ -43,6 +43,9 @@ jobs:
           # Without the helper the Mac app has no call audio and no call detection: never ship that.
           bash native/mac-helper/build.sh
           test -x native/mac-helper/dist/vocify-mac-helper
+          # The island's non-activating window (a click must never bring the dashboard forward).
+          bash native/mac-panel/build.sh
+          test -f native/mac-panel/dist/mac_panel.node
 
       # Import the Developer ID certificate for signing and notarization.
       - name: Import Developer ID certificate

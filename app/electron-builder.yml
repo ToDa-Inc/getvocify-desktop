@@ -36,8 +36,8 @@ mac:
   target:
     - dmg
     - zip
-  # One app for Apple Silicon and Intel (dist:mac passes --universal); the helper is already universal, so the merge keeps it as is.
-  x64ArchFiles: Contents/Resources/mac-helper/vocify-mac-helper
+  # One app for Apple Silicon and Intel (dist:mac passes --universal); the native pieces are already universal, so the merge keeps them as they are.
+  x64ArchFiles: "Contents/Resources/{mac-helper/vocify-mac-helper,mac-panel/mac_panel.node}"
   icon: build/icon.png
   # Required for notarization and App Store compliance (Electron docs: Required Features).
   # https://www.electron.build/configuration/mac#required-features
@@ -48,6 +48,8 @@ mac:
   extraResources:
     - from: native/mac-helper/dist/vocify-mac-helper
       to: mac-helper/vocify-mac-helper
+    - from: native/mac-panel/dist/mac_panel.node
+      to: mac-panel/mac_panel.node
   # Minimum macOS version for App Transport Security and hardened runtime.
   minimumSystemVersion: "14.2"
   # Signing identity from env (CSC_NAME, CSC_KEY_PASSWORD, CSC_LINK); skipped if absent (unsigned/ad-hoc build).

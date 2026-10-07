@@ -21,6 +21,7 @@
     "test:real": "node test/build-shell-test.mjs && node island/build.mjs && electron test/real-input.mjs",
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "release:win": "npm run build && electron-builder --win nsis --x64 --publish always",
+    "build:mac-native": "bash native/mac-helper/build.sh && bash native/mac-panel/build.sh",
     "dist:mac": "npm run build && electron-builder --mac --universal --publish never",
     "release:mac": "npm run build && electron-builder --mac --universal --publish always"
   },

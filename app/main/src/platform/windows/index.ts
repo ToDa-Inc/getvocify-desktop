@@ -33,5 +33,7 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
       microphoneAccess: () => env.systemPreferences.getMediaAccessStatus("microphone"),
       openExternal: env.openExternal,
     }),
+    // A window that cannot take focus (focusable: false) is created WS_EX_NOACTIVATE: a click never activates the app.
+    island: { prepare: () => "non-activating (Windows: not focusable)" },
   };
 }

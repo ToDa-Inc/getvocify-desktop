@@ -53,10 +53,20 @@ export interface Permissions {
   settingsUrl(kind: PermissionKind): string | null;
 }
 
+/** The island's own window, as the OS sees it. */
+export type IslandWindow = { getNativeWindowHandle(): Buffer };
+
+/** The island must never activate Vocify when it is clicked (that brings the dashboard forward and takes the keyboard). */
+export interface IslandBehaviour {
+  /** Makes the island window non-activating; says what it did, for the log. */
+  prepare(window: IslandWindow): string;
+}
+
 /** One OS's implementations. `callDetector` is null on an OS that cannot detect calls yet. */
 export type Platform = {
   systemAudio: SystemAudio;
   callDetector: CallDetector | null;
   crmScreenReader: CrmScreenReader;
   permissions: Permissions;
+  island: IslandBehaviour;
 };

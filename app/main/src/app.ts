@@ -133,6 +133,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const platform = process.platform;
   // The Mac's native helper: shipped in the app's Resources, or built next to the sources in development.
   const macHelper = platform === "darwin" ? (app.isPackaged ? join(process.resourcesPath, "mac-helper", "vocify-mac-helper") : join(here, "../../native/mac-helper/dist/vocify-mac-helper")) : null;
+  const macPanel = platform === "darwin" ? (app.isPackaged ? join(process.resourcesPath, "mac-panel", "mac_panel.node") : join(here, "../../native/mac-panel/dist/mac_panel.node")) : null;
   const placement = (macHelper ? await measureMac(macHelper) : null) ?? measureElectron();
   const offsetY = options.islandOffsetY ?? 0;
   const dashboardHolder: { host: DashboardHost | null } = { host: null };
@@ -150,6 +151,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     },
     log,
     nativeHelperPath: macHelper,
+    nativePanelPath: macPanel,
   });
 
   /* ---------- who is on the call ---------- */
@@ -387,6 +389,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   await island.loadFile(join(here, "../../island/dist/index.html"));
   island.webContents.send("island:state", controller.state);
+  // Before it is ever shown: a click on the island must never activate Vocify (that brings the dashboard forward).
+  log(`island: ${os.island.prepare(island)}`);
   island.showInactive();
 
   /* ---------- wiring ---------- */

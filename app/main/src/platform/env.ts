@@ -12,4 +12,6 @@ export type PlatformEnv = {
   log(line: string): void;
   /** This OS's native helper (the Mac's vocify-mac-helper); null where there is none. */
   nativeHelperPath: string | null;
+  /** The Mac's in-process native module (native/mac-panel); null where there is none. */
+  nativePanelPath: string | null;
 };

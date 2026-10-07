@@ -4,6 +4,7 @@ import type { Platform } from "../types.ts";
 import { createAudioAccess } from "./audio-access.ts";
 import { createMacCallDetector } from "./call-detector.ts";
 import { createMacCrmScreenReader } from "./crm-screen-reader.ts";
+import { createMacIsland } from "./island.ts";
 import { spawnMacHelper } from "./helper.ts";
 import { createMacPermissions } from "./permissions.ts";
 import { createMacSystemAudio } from "./system-audio.ts";
@@ -37,5 +38,6 @@ export function createMacPlatform(env: PlatformEnv): Platform {
       crmTabs: env.crmTabsAnswer,
       audioAccess: access,
     }),
+    island: createMacIsland(env.nativePanelPath),
   };
 }

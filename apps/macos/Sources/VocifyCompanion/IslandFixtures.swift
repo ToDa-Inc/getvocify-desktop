@@ -38,6 +38,8 @@ enum IslandFixtures {
 
     static let call: [String: Fixture] = [
         "idle-callable": Fixture(mode: .idle, expanded: false, state: ["onScreen": ana]),
+        "idle-open-callable": Fixture(mode: .idle, expanded: true, state: ["onScreen": ana]),
+        "idle-open-needs-contact": Fixture(mode: .idle, expanded: true, state: ["onScreen": onScreen(["name": NSNull(), "phone": NSNull(), "state": "needs_contact"])]),
         "idle-no-phone": Fixture(mode: .idle, expanded: false, state: ["onScreen": onScreen(["phone": NSNull(), "state": "no_phone"])]),
         "confirm-callable": Fixture(mode: .dialConfirm, expanded: true, state: ["onScreen": ana]),
         "confirm-no-caller-id": Fixture(mode: .dialConfirm, expanded: true, state: ["onScreen": onScreen(["callerId": NSNull(), "state": "no_caller_id"])]),

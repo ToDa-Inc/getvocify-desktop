@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import VocifyCore
+import WebKit
 
 /// What the dashboard streams to the notch island through `shell:state`.
 @MainActor
@@ -802,6 +803,9 @@ final class MeetingPillController {
     private var focusReturn: NSRunningApplication?
     /// The Vocify call on show was answered: its end waits for the memo ("processing"), not back to rest.
     private var dialAnswered = false
+    /// While a call starts, the dashboard page sits in the island (see `lendPageForMic`); this is where it lives.
+    private var pageHome: NSView?
+    private var micFallback: Task<Void, Never>?
 
     /// A Vocify call is connecting, ringing or answered: nothing else may offer or start a recording.
     private var vocifyCallUp: Bool { DialIslandState.isCallUp(state.dial) }
@@ -1118,22 +1122,34 @@ final class MeetingPillController {
 
     /// Places the call through the dashboard; the island follows its `dial` state.
     func dial() {
-        guard state.mode == .dialConfirm, state.onScreen?.state == .callable, state.recorderReady else {
+        // From the confirm row, or straight from the open island at rest.
+        let offered = state.mode == .dialConfirm || (state.mode == .idle && state.expanded)
+        guard offered, state.onScreen?.state == .callable, state.recorderReady else {
             if !state.recorderReady { openApp() }
             return
         }
         dialAnswered = false
         transition(to: .dialing, expanded: true)
-        // WebKit only lets the window in use open the microphone, and Twilio opens it as the call starts:
-        // Vocify comes forward until the call rings, then the rep's browser is back in front (dialChanged).
+        // WebKit lets a page open the microphone only from the window in use: here, the island the rep just
+        // clicked. The page that runs the call sits in the island until the call rings (lendPageForMic).
         let front = NSWorkspace.shared.frontmostApplication
         if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { focusReturn = front }
-        bridge?.showMainWindow()
+        lendPageForMic()
         bridge?.emitCommand("dial")
+        micFallback?.cancel()
+        micFallback = Task { @MainActor [weak self] in
+            // Still not ringing: the page could not get the microphone from the island. Bring Vocify forward.
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard let self, !Task.isCancelled, self.state.dial?.phase == .connecting || (self.state.mode == .dialing && self.state.dial == nil) else { return }
+            DesktopBridge.callLog.notice("mic from the island: no ring after 4 s, bringing Vocify forward")
+            self.returnPage()
+            self.bridge?.showMainWindow()
+        }
         dialTimeout?.cancel()
         dialTimeout = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 8_000_000_000)
             guard let self, !Task.isCancelled, self.state.mode == .dialing, self.state.dial == nil else { return }
+            self.returnPage()
             self.focusReturn = nil
             self.transition(to: .idle, expanded: false)
             self.bridge?.showMainWindow()
@@ -1165,15 +1181,54 @@ final class MeetingPillController {
         bridge?.emitCommand("open-calling")
     }
 
+    /// Puts the dashboard page (2×2 pt, behind the island's content) in the island the rep just clicked and
+    /// gives it the keyboard, so WebKit sees the page in the window in use when Twilio asks for the mic.
+    /// Nothing changes on screen; macOS still shows its microphone indicator. Skipped when the dashboard
+    /// window is already the one in use.
+    private func lendPageForMic() {
+        guard pageHome == nil, let webView = bridge?.mainWebView, let panel,
+              webView.window?.isKeyWindow != true, let home = webView.superview, let content = panel.contentView
+        else { return }
+        pageHome = home
+        webView.removeFromSuperview()
+        webView.translatesAutoresizingMaskIntoConstraints = true
+        webView.frame = NSRect(x: 0, y: 0, width: 2, height: 2)
+        content.addSubview(webView, positioned: .below, relativeTo: nil)
+        panel.makeKey()
+        panel.makeFirstResponder(webView)
+        DesktopBridge.callLog.notice("mic from the island: page lent, island key \(panel.isKeyWindow, privacy: .public)")
+    }
+
+    /// The page back in the dashboard window, filling it as before.
+    private func returnPage() {
+        guard let home = pageHome, let webView = bridge?.mainWebView else { return }
+        pageHome = nil
+        webView.removeFromSuperview()
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        home.addSubview(webView)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: home.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: home.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: home.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: home.bottomAnchor),
+        ])
+        DesktopBridge.callLog.notice("mic from the island: page back in the dashboard")
+    }
+
     /// The dashboard moved the call on (from the island or its own dialer).
     private func dialChanged() {
         let dial = state.dial
         if dial != nil { dialTimeout?.cancel() }
         if dial?.phase == .active { dialAnswered = true }
-        // The microphone is open once the call rings (or it never will be): back to where the rep was.
-        if dial?.phase != .connecting, let app = focusReturn {
-            focusReturn = nil
-            app.activate()
+        // The microphone is open once the call rings (or it never will be): the page goes home, the rep's
+        // browser has the keyboard again.
+        if dial?.phase != .connecting {
+            micFallback?.cancel()
+            returnPage()
+            if let app = focusReturn {
+                focusReturn = nil
+                app.activate()
+            }
         }
         if vocifyCallUp {
             // The call's mic is held by WebKit (or Chromium); it is Vocify's own, not a call to offer.
@@ -1641,8 +1696,12 @@ struct IslandView: View {
                             .transition(.opacity)
                     }
                 case .dialConfirm:
+                    // The rep left the record while the row was open: the island goes back to rest, not blank.
                     if let onScreen = state.onScreen {
                         DialConfirmMenu(onScreen: onScreen, controller: controller)
+                            .transition(.opacity)
+                    } else {
+                        IdleMenu(ready: state.recorderReady, onScreen: nil, controller: controller)
                             .transition(.opacity)
                     }
                 case .dialing:
@@ -1651,7 +1710,7 @@ struct IslandView: View {
                             .transition(.opacity)
                     }
                 default:
-                    IdleMenu(ready: state.recorderReady, controller: controller)
+                    IdleMenu(ready: state.recorderReady, onScreen: state.onScreen, controller: controller)
                         .transition(.opacity)
                 }
             }
@@ -1828,14 +1887,40 @@ struct IslandView: View {
 }
 
 /// Opened from the mark when nothing is recording: the one thing to do here is record.
+/// At rest, open. With a CRM contact on screen it leads with who that is and Call, the way the
+/// confirm row does, and recording a meeting becomes the quiet icon beside it.
 private struct IdleMenu: View {
     let ready: Bool
+    let onScreen: OnScreenCall?
     let controller: MeetingPillController
 
     var body: some View {
         HStack(spacing: 8) {
-            QuietRecordButton(title: "Record meeting", ready: ready, action: controller.record)
-            Spacer(minLength: 0)
+            if let onScreen {
+                let copy = CallWording.confirm(onScreen)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(copy.title)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(IslandStyle.text)
+                        .lineLimit(1)
+                    Text(copy.line)
+                        .font(.system(size: 11.5).monospacedDigit())
+                        .foregroundStyle(IslandStyle.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if let button = copy.button {
+                    if onScreen.state == .noCallerId {
+                        PrimaryActionButton(title: button, symbol: "arrow.up.right", help: "Verify a number in Vocify", action: controller.openCallingSettings)
+                    } else {
+                        PrimaryActionButton(title: button, symbol: "phone.fill", help: "Call through Vocify", action: controller.dial)
+                    }
+                }
+                IconButton(symbol: "record.circle", help: "Record meeting", action: controller.record)
+            } else {
+                QuietRecordButton(title: "Record meeting", ready: ready, action: controller.record)
+                Spacer(minLength: 0)
+            }
             IconButton(symbol: "arrow.up.right", help: "Open Vocify", action: controller.openApp)
         }
         .padding(.horizontal, 14)

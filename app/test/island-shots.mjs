@@ -46,7 +46,7 @@ const measure = (win) => win.webContents.executeJavaScript(`(() => {
   const el = document.querySelector('.island');
   if (!el) return { missing: true };
   const r = el.getBoundingClientRect();
-  const overflow = [...document.querySelectorAll('.ear, .menu, .controls, .help, .lost-line')]
+  const overflow = [...document.querySelectorAll('.ear, .menu, .controls, .help, .lost-line, .stop-button, .primary-action')]
     .filter((e) => e.scrollWidth > e.clientWidth + 1)
     .map((e) => e.className + ' ' + e.scrollWidth + '>' + e.clientWidth);
   const t = document.querySelector('.transcript');

@@ -48,12 +48,13 @@ const inCall = {
   expanded: true,
   onScreen: ana,
   liveHelp: true,
+  typeMenu: { title: "Llamada en frío", placeholder: false, sparkle: true, rows: [] },
   dial: dial("active", { answeredAt: NOW - 65_000 }),
   clock: { startedAt: NOW - 65_000, pausedMs: 0, pausedAt: null },
   assist: { label: "Price", isQuestion: false, drafting: false, bridge: "Fair question.", sayThis: "Most teams make it back in the first month of calls.", thenAsk: "" },
   turns: [
     { id: "c1", you: true, label: null, text: "Hi Ana, it's Dani from Vocify.", pending: "" },
-    { id: "c2", you: false, label: "Ana", text: "Hi! Yes, I saw your email. How much is it?", pending: "" },
+    { id: "c2", you: false, label: "Ana Ruiz", text: "Hi! Yes, I saw your email. How much is it?", pending: "" },
   ],
 };
 

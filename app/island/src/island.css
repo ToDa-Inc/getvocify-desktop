@@ -111,7 +111,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .circle-button { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.11); color: var(--text); transition: background 120ms; }
 .circle-button:hover { background: rgba(255, 255, 255, 0.18); }
 
-.stop-button { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 14px; background: var(--danger); color: #fff; font-size: 12px; font-weight: 600; transition: background 120ms; }
+.stop-button { display: inline-flex; flex: none; white-space: nowrap; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 14px; background: var(--danger); color: #fff; font-size: 12px; font-weight: 600; transition: background 120ms; }
 .stop-button:hover { background: rgba(219, 75, 75, 0.85); }
 .stop-square { width: 8px; height: 8px; border-radius: 2px; background: #fff; }
 

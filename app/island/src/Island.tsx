@@ -425,7 +425,7 @@ function DialingMenu({ dial, act }: { dial: DialIslandState; act: Act }) {
 }
 
 /** An answered Vocify call: mute, keypad, hang up (in place of Pause and Stop). */
-function CallBar({ dial, keypadOpen, act }: { dial: DialIslandState; keypadOpen: boolean; act: Act }) {
+function CallBar({ dial, keypadOpen, showsName = true, act }: { dial: DialIslandState; keypadOpen: boolean; showsName?: boolean; act: Act }) {
   return (
     <>
       <CircleButton help={dial.muted ? "Unmute" : "Mute"} onClick={() => act({ name: "toggleMute" })}>
@@ -435,8 +435,9 @@ function CallBar({ dial, keypadOpen, act }: { dial: DialIslandState; keypadOpen:
         <Keypad size={10} />
       </CircleButton>
       <HangUpButton title="Hang up" onClick={() => act({ name: "hangup" })} />
-      {/* Who the call is with, whatever tab the rep has moved to since. */}
-      <span className="menu-title call-name" title={PhoneFormat.grouped(dial.phone)}>{dial.name ?? PhoneFormat.grouped(dial.phone)}</span>
+      {/* Who the call is with, whatever tab the rep has moved to since. The open call names them in the
+          conversation instead: this row also carries the call type and live help. */}
+      {showsName && <span className="menu-title call-name" title={PhoneFormat.grouped(dial.phone)}>{dial.name ?? PhoneFormat.grouped(dial.phone)}</span>}
     </>
   );
 }
@@ -502,7 +503,7 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
     <div className="open-island">
       <div className="controls">
         {state.dial ? (
-          <CallBar dial={state.dial} keypadOpen={state.keypadOpen} act={act} />
+          <CallBar dial={state.dial} keypadOpen={state.keypadOpen} showsName={false} act={act} />
         ) : (
           <>
             <CircleButton

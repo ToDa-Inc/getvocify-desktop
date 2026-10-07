@@ -798,6 +798,10 @@ final class MeetingPillController {
     private var screenObserver: NSObjectProtocol?
     /// Waiting for the dashboard to report the call the rep just placed from the island.
     private var dialTimeout: Task<Void, Never>?
+    /// The app the rep was in (their CRM's browser) when they pressed Call; it gets focus back once the call rings.
+    private var focusReturn: NSRunningApplication?
+    /// The Vocify call on show was answered: its end waits for the memo ("processing"), not back to rest.
+    private var dialAnswered = false
 
     /// A Vocify call is connecting, ringing or answered: nothing else may offer or start a recording.
     private var vocifyCallUp: Bool { DialIslandState.isCallUp(state.dial) }
@@ -1118,12 +1122,19 @@ final class MeetingPillController {
             if !state.recorderReady { openApp() }
             return
         }
+        dialAnswered = false
         transition(to: .dialing, expanded: true)
+        // WebKit only lets the window in use open the microphone, and Twilio opens it as the call starts:
+        // Vocify comes forward until the call rings, then the rep's browser is back in front (dialChanged).
+        let front = NSWorkspace.shared.frontmostApplication
+        if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { focusReturn = front }
+        bridge?.showMainWindow()
         bridge?.emitCommand("dial")
         dialTimeout?.cancel()
         dialTimeout = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 8_000_000_000)
             guard let self, !Task.isCancelled, self.state.mode == .dialing, self.state.dial == nil else { return }
+            self.focusReturn = nil
             self.transition(to: .idle, expanded: false)
             self.bridge?.showMainWindow()
         }
@@ -1158,6 +1169,12 @@ final class MeetingPillController {
     private func dialChanged() {
         let dial = state.dial
         if dial != nil { dialTimeout?.cancel() }
+        if dial?.phase == .active { dialAnswered = true }
+        // The microphone is open once the call rings (or it never will be): back to where the rep was.
+        if dial?.phase != .connecting, let app = focusReturn {
+            focusReturn = nil
+            app.activate()
+        }
         if vocifyCallUp {
             // The call's mic is held by WebKit (or Chromium); it is Vocify's own, not a call to offer.
             calls.ignoresWebKit = true
@@ -1171,7 +1188,9 @@ final class MeetingPillController {
             }
         case .dialing:
             guard let dial else {
-                rest()
+                let answered = dialAnswered
+                dialAnswered = false
+                if answered { finish() } else { rest() }
                 return
             }
             // Missed: open to say why until the dashboard clears it.

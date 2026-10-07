@@ -15,6 +15,7 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
     /// `defaults write com.vocify.app vocify.liveHelpLog -bool true`.
     /// Read: `log stream --predicate 'subsystem == "com.vocify.app" AND category == "live-help"'`.
     nonisolated static let helpLog = Logger(subsystem: "com.vocify.app", category: "live-help")
+    nonisolated static let callLog = Logger(subsystem: "com.vocify.app", category: "call-source")
     static var helpLogOn: Bool { UserDefaults.standard.bool(forKey: "vocify.liveHelpLog") }
     weak var mainWebView: WKWebView?
 
@@ -97,8 +98,15 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
             MeetingPillController.shared.state.nativeTranscript = false
             return ["transcript": transcript]
         case "permissions:status":
+            await refreshCrmTabsStatus(ask: false)
             return permissionSnapshot()
         case "permissions:request":
+            if args["type"] as? String == "crmTabs" {
+                // macOS asks once per running browser ("Vocify wants to control Google Chrome").
+                await refreshCrmTabsStatus(ask: true)
+                emitPermissionsChanged()
+                return permissionSnapshot()
+            }
             await requestPermission(type: args["type"] as? String)
             return permissionSnapshot()
         case "permissions:open", "permissions:guide":
@@ -106,6 +114,9 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
             return permissionSnapshot()
         case "permissions:appInfo":
             return appInfo()
+        case "shell:relaunch":
+            relaunch()
+            return ["ok": true]
         case "shell:state":
             if let state = args["state"] as? [String: Any] {
                 for (key, value) in state {
@@ -235,6 +246,13 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
         return ["ok": false, "reason": reason]
     }
 
+    /// Refreshed by `refreshCrmTabsStatus`; the consent check runs off the main thread.
+    private var crmTabsStatus = "unavailable"
+
+    private func refreshCrmTabsStatus(ask: Bool) async {
+        crmTabsStatus = CrmTabsAccess.aggregate(await CrmPageReader.access(ask: ask))
+    }
+
     private func permissionSnapshot() -> [String: Any] {
         let signing = AppSigning.info()
         let audio = SystemAudioPermission.probe()
@@ -242,6 +260,7 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
             "platform": "darwin",
             "microphone": microphoneAccessStatus(),
             "systemAudio": audio.status,
+            "crmTabs": crmTabsStatus,
             "signing": signing.isAdHoc ? "adhoc" : "signed",
             "signingAuthority": signing.authority ?? "",
             "systemAudioError": audio.lastError ?? "",
@@ -266,6 +285,24 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
                 ?? "Vocify",
             "bundleId": bundle.bundleIdentifier ?? "com.vocify.app",
         ]
+    }
+
+    /// Screen & System Audio Recording only applies after a restart. Reopens this exact copy once
+    /// it has quit; "Quit & Reopen" in Settings goes by bundle ID and can open another copy.
+    private func relaunch() {
+        let reopen = Process()
+        reopen.executableURL = URL(fileURLWithPath: "/bin/sh")
+        reopen.arguments = [
+            "-c",
+            "while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$0\"",
+            Bundle.main.bundlePath,
+        ]
+        do {
+            try reopen.run()
+        } catch {
+            return
+        }
+        NSApp.terminate(nil)
     }
 
     private func requestPermission(type: String?) async {
@@ -306,6 +343,12 @@ final class DesktopBridge: NSObject, WKScriptMessageHandlerWithReply {
     func emitCallPages(_ urls: [String]) {
         guard let mainWebView else { return }
         emit("call:pages", ["urls": urls], in: mainWebView)
+    }
+
+    /// The CRM pages in the frontmost browser changed; the dashboard turns them into the island's call offer.
+    func emitCrmScreen(_ urls: [String]) {
+        guard let mainWebView else { return }
+        emit("crm:screen", ["urls": urls], in: mainWebView)
     }
 
     /// The call type the rep chose in the island while recording; nil hands it back to Vocify.

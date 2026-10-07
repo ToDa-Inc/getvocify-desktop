@@ -38,7 +38,10 @@ export function createPlatform(deps: CreatePlatformDeps): Platform {
       callDetector: createWindowsCallDetector({
         read: deps.read || (() => Promise.resolve("")),
         now: () => Date.now(),
-        every: deps.every || ((ms, fn) => setInterval(fn, ms)),
+        every: deps.every || ((ms, fn) => {
+          const timer = setInterval(fn, ms);
+          return () => clearInterval(timer);
+        }),
         ownExePath: deps.ownExePath ?? null,
       }),
       crmScreenReader: createWindowsCrmScreenReader({

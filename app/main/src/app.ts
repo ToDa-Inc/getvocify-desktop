@@ -405,12 +405,13 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (mode === "available") {
       if (!windows) island.setFocusable(true);
     } else if (mode === "over") {
-      if (windows) island.setFocusable(true);
+      // Electron's setFocusable on Windows also drops focus: never call it when nothing changes (it would blur a field).
+      if (windows && !island.isFocusable()) island.setFocusable(true);
     } else if (mode === "now") {
       // Windows: the click in the field was input to this app, so it may bring its window to the front; a window created
       // "never activate" is not activated by the click itself. Each way is tried until the island has the keyboard.
       if (windows && !island.isFocused()) {
-        island.setFocusable(true);
+        if (!island.isFocusable()) island.setFocusable(true);
         island.focus();
         if (!island.isFocused()) {
           island.show();

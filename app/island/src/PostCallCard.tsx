@@ -394,13 +394,11 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable,
         data-open={open}
         title={hasOptions ? (change.multiple ? "Pick one or more" : "Pick another value") : editable ? "Edit the text" : "Edit it in Vocify"}
         onMouseEnter={editable && !hasOptions ? keyboardOver : undefined}
+        // On the press, before the text box opens: the keyboard is the island's by the time the caret goes in.
+        onMouseDown={editable && !hasOptions ? keyboardNow : undefined}
         onMouseLeave={editable && !hasOptions ? releaseKeyboardSoon : undefined}
         onClick={(event) => {
-          if (!hasOptions) {
-            if (!editable) return toggle();
-            keyboardNow();
-            return setEditing(true);
-          }
+          if (!hasOptions) return editable ? setEditing(true) : toggle();
           event.stopPropagation();
           if (value.current) toggleOptions(value.current);
         }}

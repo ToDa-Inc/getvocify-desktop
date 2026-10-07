@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import SwiftUI
 import WebKit
 import VocifyCore
@@ -28,7 +29,9 @@ final class DashboardUIDelegate: NSObject, WKUIDelegate {
         type: WKMediaCaptureType,
         decisionHandler: @escaping (WKPermissionDecision) -> Void
     ) {
-        decisionHandler(isTrustedMediaHost(origin.host) ? .grant : .deny)
+        let grant = isTrustedMediaHost(origin.host)
+        DesktopBridge.callLog.notice("media capture asked: host \(origin.host, privacy: .public) type \(type.rawValue, privacy: .public) mic \(AVCaptureDevice.authorizationStatus(for: .audio).rawValue, privacy: .public) -> \(grant ? "grant" : "deny", privacy: .public)")
+        decisionHandler(grant ? .grant : .deny)
     }
 
     /// `target=_blank` and `window.open` go to the default browser.
@@ -97,8 +100,13 @@ final class BridgeHolder: ObservableObject {
         webView.setValue(false, forKey: "drawsBackground")
         webView.uiDelegate = uiDelegate
         webView.navigationDelegate = navigationDelegate
+        // Safari ▸ Develop can inspect the dashboard only when asked for:
+        // `defaults write com.vocify.app vocify.webInspector -bool true`, then relaunch.
+        if UserDefaults.standard.bool(forKey: "vocify.webInspector") { webView.isInspectable = true }
+        DesktopBridge.callLog.notice("mic permission at launch: \(AVCaptureDevice.authorizationStatus(for: .audio).rawValue, privacy: .public) (0 not asked, 1 restricted, 2 denied, 3 allowed)")
         bridge.mainWebView = webView
         MeetingPillController.shared.watchCalls(bridge: bridge)
+        CrmScreenWatcher.shared.start(bridge: bridge)
         webView.load(URLRequest(url: entryURL()))
         cachedWebView = webView
         return webView

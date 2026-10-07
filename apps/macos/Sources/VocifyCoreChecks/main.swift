@@ -265,4 +265,49 @@ check(WaveSide.next(you: 0.5, them: 0.1, previous: .them) == .you, "the rep clea
 check(WaveSide.next(you: 0.1, them: 0.6, previous: .you) == .them, "them clearly louder turns it white")
 check(WaveSide.next(you: 0.32, them: 0.30, previous: .them) == .them, "a near tie keeps the colour")
 
+// Calling the CRM contact on screen (shell:state onScreen / dial, crm:screen).
+var screen = CrmScreenChange()
+check(screen.next(["a"]) == ["a"], "the first CRM page is sent")
+check(screen.next(["a"]) == nil, "the same pages are not sent again")
+check(screen.next([]) == [], "leaving the CRM record is sent once")
+check(screen.next([]) == nil, "and only once")
+check(CrmTabsAccess.aggregate(["denied", "granted"]) == "authorized", "one browser allowed is enough")
+check(CrmTabsAccess.aggregate([]) == "unavailable", "no browser open")
+check(CrmTabsAccess.aggregate(["not_asked", "denied"]) == "denied", "denied beats not asked")
+check(CrmTabsAccess.aggregate(["not_asked", "unavailable"]) == "never_requested", "nobody answered yet")
+// Same rule as the dashboard's formatCallerIdDisplay (src/lib/dial-target.ts).
+check(PhoneFormat.grouped("+34600111222") == "+34 600 11 12 22", "Spanish number grouped like the dashboard")
+check(PhoneFormat.grouped("+447700900123") == "+447700900123", "other countries as stored")
+let ana = OnScreenCall.decode(["provider": "hubspot", "crmLabel": "HubSpot", "name": "Ana Ruiz", "phone": "+34600111222", "callerId": "+34910000000", "state": "callable"])
+check(ana?.state == .callable && ana?.name == "Ana Ruiz", "decodes the callable contact")
+check(OnScreenCall.decode(nil) == nil && OnScreenCall.decode(["state": "weird"]) == nil, "rejects anything else")
+let anaConfirm = CallWording.confirm(ana!)
+check(anaConfirm.title == "Ana Ruiz" && anaConfirm.line == "+34 600 11 12 22" && anaConfirm.button == "Call", "confirm row: who and their number")
+check(CallWording.glyphHelp(ana!) == "Call Ana Ruiz", "glyph help")
+let noPhone = OnScreenCall.decode(["provider": "hubspot", "crmLabel": "HubSpot", "name": "Ana Ruiz", "state": "no_phone"])!
+check(CallWording.glyphHelp(noPhone) == "No phone in HubSpot" && CallWording.confirm(noPhone).button == nil, "no phone")
+let noCaller = OnScreenCall.decode(["provider": "hubspot", "crmLabel": "HubSpot", "name": "Ana Ruiz", "phone": "+34600111222", "state": "no_caller_id"])!
+check(CallWording.confirm(noCaller).line == "Add a caller ID to call" && CallWording.confirm(noCaller).button == "Add caller ID", "no caller id")
+let several = OnScreenCall.decode(["provider": "hubspot", "crmLabel": "HubSpot", "state": "needs_contact"])!
+check(CallWording.confirm(several).title == "HubSpot record with several contacts" && CallWording.confirm(several).line == "Open the contact to call", "several contacts")
+let ringing = DialIslandState.decode(["phase": "ringing", "name": "Ana Ruiz", "phone": "+34600111222", "muted": false])
+check(ringing?.phase == .ringing && CallWording.dialing(ringing!) == "Calling Ana Ruiz…", "dialing copy")
+let nameless = DialIslandState.decode(["phase": "connecting", "phone": "+34600111222", "muted": false])!
+check(CallWording.dialing(nameless) == "Calling +34 600 11 12 22…", "dialing a number")
+let missed = DialIslandState.decode(["phase": "ended", "phone": "+34600111222", "muted": false, "message": "Busy"])!
+check(CallWording.ended(missed) == "Busy", "the carrier's reason")
+check(CallWording.ended(DialIslandState.decode(["phase": "ended", "phone": "+34600111222", "muted": false])!) == "Call ended", "no reason")
+let liveDial = DialIslandState.decode(["phase": "active", "phone": "+34600111222", "muted": true, "answeredAt": 1_700_000_000_000.0])!
+check(liveDial.muted && liveDial.answeredAt == Date(timeIntervalSince1970: 1_700_000_000), "answered at, from ms")
+check(DialIslandState.decode(["phase": "active"]) == nil, "a dial needs its phone")
+check(DialIslandState.isCallUp(liveDial) && !DialIslandState.isCallUp(missed), "an ended dial is not a call")
+
+// The island's call offer follows the front window's active tab only (as the Chrome extension follows the focused tab).
+let hubspotA = "https://app.hubspot.com/contacts/1/record/0-1/2"
+let hubspotB = "https://app.hubspot.com/contacts/1/record/0-1/3"
+check(CrmPages.frontRecordURLs(fromScriptOutput: "\(hubspotA)\n\(hubspotB)\n") == [hubspotA], "front window's tab only")
+check(CrmPages.frontRecordURLs(fromScriptOutput: "https://mail.google.com/mail/u/0/\n\(hubspotB)\n").isEmpty, "a non-CRM front tab offers nobody, even with a CRM tab behind it")
+check(CrmPages.frontRecordURLs(fromScriptOutput: "\n\(hubspotA)\n") == [hubspotA], "blank lines are skipped")
+check(CrmPages.frontRecordURLs(fromScriptOutput: "").isEmpty, "no window")
+
 print("ok")

@@ -44,6 +44,17 @@ public enum CrmPages {
             .filter(isCrmURL)
     }
 
+    /// The front window's active tab, when it is a CRM page (the island's call offer). Script output lists
+    /// windows front first; like the Chrome extension, a tab behind it or in another window never counts.
+    public static func frontRecordURLs(fromScriptOutput output: String) -> [String] {
+        let front = output
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty }
+        guard let front, isCrmURL(front) else { return [] }
+        return [front]
+    }
+
     /// HubSpot or Pipedrive web app pages; everything else stays on the machine.
     public static func isCrmURL(_ url: String) -> Bool {
         guard let components = URLComponents(string: url),

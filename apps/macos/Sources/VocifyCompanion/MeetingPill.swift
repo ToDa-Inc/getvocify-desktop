@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import VocifyCore
+import WebKit
 
 /// What the dashboard streams to the notch island through `shell:state`.
 @MainActor
@@ -63,6 +64,11 @@ final class MeetingPillState: ObservableObject {
         case finishing
         /// The call is over: its memo is being written, then its CRM update is one click away.
         case postCall
+        /// The CRM contact on screen, its number and the caller ID, one click from calling.
+        case dialConfirm
+        /// A Vocify call is connecting or ringing, or just ended unanswered (the reason shows).
+        /// Answered, the island moves on to `recording` with the call bar.
+        case dialing
 
         var isStopped: Bool {
             if case .stopped = self { return true }
@@ -393,6 +399,12 @@ final class MeetingPillState: ObservableObject {
     var onCallAudioChange: ((Bool, Bool) -> Void)?
     /// Who the detected call is with, when the tab on screen is a CRM contact.
     @Published var callContact: String?
+    /// The CRM contact in the frontmost browser the island can offer to call (`shell:state` onScreen).
+    @Published var onScreen: OnScreenCall?
+    /// The Vocify call in progress, if any (`shell:state` dial).
+    @Published var dial: DialIslandState?
+    @Published var keypadOpen = false
+    var onDialChange: (() -> Void)?
     /// A dropdown that folds itself away; the line under it shows the time left.
     @Published var countdown: Countdown?
     @Published var geometry = IslandGeometry.measure(IslandGeometry.screen())
@@ -568,6 +580,18 @@ final class MeetingPillState: ObservableObject {
             let next = (state["liveType"] as? [String: Any]).flatMap(LiveType.init)
             if next != liveType { liveType = next }
         }
+        if state.keys.contains("onScreen") {
+            let next = OnScreenCall.decode(state["onScreen"])
+            if next != onScreen { onScreen = next }
+        }
+        if state.keys.contains("dial") {
+            let next = DialIslandState.decode(state["dial"])
+            if next != dial {
+                dial = next
+                if next?.phase != .active { keypadOpen = false }
+                onDialChange?()
+            }
+        }
         if state.keys.contains("callContact") {
             let name = ((state["callContact"] as? [String: Any])?["name"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -678,7 +702,7 @@ struct IslandGeometry: Equatable {
         guard !open else { return Self.ear }
         switch mode {
         case .idle: return Self.idleEar
-        case .call, .postCall, .finishing: return Self.callEar
+        case .call, .postCall, .finishing, .dialConfirm, .dialing: return Self.callEar
         default: return Self.ear
         }
     }
@@ -697,6 +721,8 @@ struct IslandGeometry: Equatable {
         case .stopped:
             return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
         case .finishing:
+            return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
+        case .dialConfirm, .dialing:
             return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
         case .starting:
             return closed
@@ -771,6 +797,18 @@ final class MeetingPillController {
     /// A call app can drop the mic for a moment (device switch); a hang-up lasts.
     private static let hangUpGrace: TimeInterval = 3
     private var screenObserver: NSObjectProtocol?
+    /// Waiting for the dashboard to report the call the rep just placed from the island.
+    private var dialTimeout: Task<Void, Never>?
+    /// The app the rep was in (their CRM's browser) when they pressed Call; it gets focus back once the call rings.
+    private var focusReturn: NSRunningApplication?
+    /// The Vocify call on show was answered: its end waits for the memo ("processing"), not back to rest.
+    private var dialAnswered = false
+    /// While a call starts, the dashboard page sits in the island (see `lendPageForMic`); this is where it lives.
+    private var pageHome: NSView?
+    private var micFallback: Task<Void, Never>?
+
+    /// A Vocify call is connecting, ringing or answered: nothing else may offer or start a recording.
+    private var vocifyCallUp: Bool { DialIslandState.isCallUp(state.dial) }
 
     /// Offers to record when a call starts. Called once the dashboard can receive commands.
     func watchCalls(bridge: DesktopBridge) {
@@ -780,9 +818,13 @@ final class MeetingPillController {
         state.onPostCallChange = { [weak self] in self?.postCallChanged() }
         state.onFinishChange = { [weak self] in self?.finishChanged() }
         state.onCallAudioChange = { [weak self] was, now in self?.callAudioChanged(was: was, now: now) }
+        state.onDialChange = { [weak self] in self?.dialChanged() }
         RecordShortcut.shared.onPress = { [weak self] in self?.shortcutPressed() }
         RecordShortcut.shared.activate()
         transition(to: .idle, expanded: false)
+        #if DEBUG
+        if let name = ProcessInfo.processInfo.environment["VOCIFY_ISLAND_FIXTURE"] { showFixture(name) }
+        #endif
         screenObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -795,7 +837,10 @@ final class MeetingPillController {
         self.bridge = bridge
         callHandled = true
         startTimeout?.cancel()
-        if case .call(let caller) = state.mode {
+        if vocifyCallUp {
+            // The dashboard ends a Vocify call; another app letting go of the mic says nothing about it.
+            recordingCaller = nil
+        } else if case .call(let caller) = state.mode {
             recordingCaller = caller
         } else if state.mode != .recording {
             recordingCaller = currentCaller
@@ -861,13 +906,22 @@ final class MeetingPillController {
             } else {
                 transition(to: .finishing, expanded: !state.expanded)
             }
+        case .dialConfirm:
+            transition(to: .idle, expanded: false)
+        case .dialing:
+            transition(to: .dialing, expanded: !state.expanded)
         case .starting, .stopped:
             break
         }
     }
 
     func collapse() {
-        if state.expanded { transition(to: state.mode, expanded: false) }
+        // The confirm row is only ever open: closing it is going back to rest.
+        if state.mode == .dialConfirm {
+            transition(to: .idle, expanded: false)
+        } else if state.expanded {
+            transition(to: state.mode, expanded: false)
+        }
     }
 
     /// The pointer holds a self-closing dropdown open; leaving lets the line run out again.
@@ -986,6 +1040,7 @@ final class MeetingPillController {
 
     /// The record shortcut: the same as pressing Record, or Stop while recording.
     func shortcutPressed() {
+        guard !vocifyCallUp else { return }
         switch state.mode {
         case .recording:
             stop()
@@ -1014,6 +1069,7 @@ final class MeetingPillController {
     /// Signed out, it opens Vocify to sign in instead of waiting on a recorder that isn't there.
     func record() {
         let previous = state.mode
+        guard !vocifyCallUp else { return }
         guard previous == .idle || { if case .call = previous { return true } else { return false } }() else { return }
         guard state.recorderReady else {
             openApp()
@@ -1039,6 +1095,167 @@ final class MeetingPillController {
     func dismissCall() {
         callHandled = true
         hide()
+    }
+
+    #if DEBUG
+    /// One call state, for side-by-side screenshots with the Electron island (same fixture names).
+    private func showFixture(_ name: String) {
+        guard let fixture = IslandFixtures.call[name] else {
+            fputs("Unknown island fixture \(name). Known: \(IslandFixtures.call.keys.sorted())\n", stderr)
+            return
+        }
+        state.recorderReady = true
+        state.apply(fixture.state)
+        state.keypadOpen = fixture.keypad
+        transition(to: fixture.mode, expanded: fixture.expanded)
+    }
+    #endif
+
+    // MARK: Calling the CRM contact on screen
+
+    /// The phone beside the mark: who would be called, and from which number.
+    func openDialConfirm() {
+        guard state.mode == .idle, state.onScreen != nil else { return }
+        transition(to: .dialConfirm, expanded: true)
+        startCountdown(Self.callLinger)
+    }
+
+    /// Places the call through the dashboard; the island follows its `dial` state.
+    func dial() {
+        // From the confirm row, or straight from the open island at rest.
+        let offered = state.mode == .dialConfirm || (state.mode == .idle && state.expanded)
+        guard offered, state.onScreen?.state == .callable, state.recorderReady else {
+            if !state.recorderReady { openApp() }
+            return
+        }
+        dialAnswered = false
+        transition(to: .dialing, expanded: true)
+        // WebKit lets a page open the microphone only from the window in use: here, the island the rep just
+        // clicked. The page that runs the call sits in the island until the call rings (lendPageForMic).
+        let front = NSWorkspace.shared.frontmostApplication
+        if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { focusReturn = front }
+        lendPageForMic()
+        bridge?.emitCommand("dial")
+        micFallback?.cancel()
+        micFallback = Task { @MainActor [weak self] in
+            // Still not ringing: the page could not get the microphone from the island. Bring Vocify forward.
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard let self, !Task.isCancelled, self.state.dial?.phase == .connecting || (self.state.mode == .dialing && self.state.dial == nil) else { return }
+            DesktopBridge.callLog.notice("mic from the island: no ring after 4 s, bringing Vocify forward")
+            self.returnPage()
+            self.bridge?.showMainWindow()
+        }
+        dialTimeout?.cancel()
+        dialTimeout = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            guard let self, !Task.isCancelled, self.state.mode == .dialing, self.state.dial == nil else { return }
+            self.returnPage()
+            self.focusReturn = nil
+            self.transition(to: .idle, expanded: false)
+            self.bridge?.showMainWindow()
+        }
+    }
+
+    /// Hangs up, or cancels while it rings. Answered, the island waits for the call's memo.
+    func hangUpCall() {
+        if state.mode == .recording { hide(finishing: true) }
+        bridge?.emitCommand("hangup")
+    }
+
+    func toggleMute() {
+        guard let dial = state.dial, dial.phase == .active else { return }
+        bridge?.emitCommand(dial.muted ? "unmute" : "mute")
+    }
+
+    func toggleKeypad() {
+        state.keypadOpen.toggle()
+    }
+
+    func sendDigit(_ digit: String) {
+        bridge?.emitCommand("digit:\(digit)")
+    }
+
+    /// No verified number to call from: the calling settings, in Vocify.
+    func openCallingSettings() {
+        transition(to: .idle, expanded: false)
+        bridge?.emitCommand("open-calling")
+    }
+
+    /// Puts the dashboard page (2×2 pt, behind the island's content) in the island the rep just clicked and
+    /// gives it the keyboard, so WebKit sees the page in the window in use when Twilio asks for the mic.
+    /// Nothing changes on screen; macOS still shows its microphone indicator. Skipped when the dashboard
+    /// window is already the one in use.
+    private func lendPageForMic() {
+        guard pageHome == nil, let webView = bridge?.mainWebView, let panel,
+              webView.window?.isKeyWindow != true, let home = webView.superview, let content = panel.contentView
+        else { return }
+        pageHome = home
+        webView.removeFromSuperview()
+        webView.translatesAutoresizingMaskIntoConstraints = true
+        webView.frame = NSRect(x: 0, y: 0, width: 2, height: 2)
+        content.addSubview(webView, positioned: .below, relativeTo: nil)
+        panel.makeKey()
+        panel.makeFirstResponder(webView)
+        DesktopBridge.callLog.notice("mic from the island: page lent, island key \(panel.isKeyWindow, privacy: .public)")
+    }
+
+    /// The page back in the dashboard window, filling it as before.
+    private func returnPage() {
+        guard let home = pageHome, let webView = bridge?.mainWebView else { return }
+        pageHome = nil
+        webView.removeFromSuperview()
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        home.addSubview(webView)
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: home.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: home.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: home.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: home.bottomAnchor),
+        ])
+        DesktopBridge.callLog.notice("mic from the island: page back in the dashboard")
+    }
+
+    /// The dashboard moved the call on (from the island or its own dialer).
+    private func dialChanged() {
+        let dial = state.dial
+        if dial != nil { dialTimeout?.cancel() }
+        if dial?.phase == .active { dialAnswered = true }
+        // The microphone is open once the call rings (or it never will be): the page goes home, the rep's
+        // browser has the keyboard again.
+        if dial?.phase != .connecting {
+            micFallback?.cancel()
+            returnPage()
+            if let app = focusReturn {
+                focusReturn = nil
+                app.activate()
+            }
+        }
+        if vocifyCallUp {
+            // The call's mic is held by WebKit (or Chromium); it is Vocify's own, not a call to offer.
+            calls.ignoresWebKit = true
+        } else if state.mode != .recording, state.mode != .starting {
+            calls.ignoresWebKit = false
+        }
+        switch state.mode {
+        case .idle, .dialConfirm, .call, .postCall:
+            if let dial, dial.phase != .ended {
+                transition(to: .dialing, expanded: true)
+            }
+        case .dialing:
+            guard let dial else {
+                let answered = dialAnswered
+                dialAnswered = false
+                if answered { finish() } else { rest() }
+                return
+            }
+            // Missed: open to say why until the dashboard clears it.
+            if dial.phase == .ended, !state.expanded { transition(to: .dialing, expanded: true) }
+        case .recording:
+            // Answered and now over (either side hung up): hold the island until its memo arrives.
+            if dial == nil { hide(finishing: true) }
+        case .starting, .stopped, .finishing:
+            break
+        }
     }
 
     private func postCallAction(_ type: String, _ details: [String: Any] = [:]) {
@@ -1235,7 +1452,7 @@ final class MeetingPillController {
         // A new call, or this one moved past its changes: its options no longer apply.
         if state.openOptions == nil || state.postCall?.stage != .ready { closeOptions() }
         switch state.mode {
-        case .recording, .starting, .call, .stopped:
+        case .recording, .starting, .call, .stopped, .dialConfirm, .dialing:
             return  // shown once the island is back at rest
         case .finishing:
             // The card just cleared, or is still the last call's: keep waiting for this one.
@@ -1272,6 +1489,8 @@ final class MeetingPillController {
 
     private func callChanged(_ caller: MicActivityMonitor.Caller?) {
         currentCaller = caller
+        // Our own call holds the mic: never offer to record it, or anything else, on top of it.
+        guard !vocifyCallUp else { return }
         if caller == nil {
             callHandled = false
             if state.mode != .recording, state.mode != .starting, !state.mode.isStopped { bridge?.emitCallEnded() }
@@ -1280,9 +1499,9 @@ final class MeetingPillController {
         case .recording:
             watchForHangUp(caller)
             return
-        case .starting, .stopped, .finishing:
+        case .starting, .stopped, .finishing, .dialing:
             return
-        case .idle, .call, .postCall:
+        case .idle, .call, .postCall, .dialConfirm:
             if let caller, !callHandled, bridge?.isListening != true, !isQuiet(caller) {
                 guard state.mode != .call(caller) else { return }
                 state.callContact = nil
@@ -1476,8 +1695,22 @@ struct IslandView: View {
                         PostCallMenu(state: state, postCall: postCall, controller: controller)
                             .transition(.opacity)
                     }
+                case .dialConfirm:
+                    // The rep left the record while the row was open: the island goes back to rest, not blank.
+                    if let onScreen = state.onScreen {
+                        DialConfirmMenu(onScreen: onScreen, controller: controller)
+                            .transition(.opacity)
+                    } else {
+                        IdleMenu(ready: state.recorderReady, onScreen: nil, controller: controller)
+                            .transition(.opacity)
+                    }
+                case .dialing:
+                    if let dial = state.dial {
+                        DialingMenu(dial: dial, controller: controller)
+                            .transition(.opacity)
+                    }
                 default:
-                    IdleMenu(ready: state.recorderReady, controller: controller)
+                    IdleMenu(ready: state.recorderReady, onScreen: state.onScreen, controller: controller)
                         .transition(.opacity)
                 }
             }
@@ -1521,6 +1754,10 @@ struct IslandView: View {
         switch state.mode {
         case .recording: return open ? "Hide transcript" : "Show transcript"
         case .idle: return open ? "Close" : "Record a meeting"
+        case .dialConfirm: return "Close"
+        case .dialing:
+            guard let dial = state.dial else { return "" }
+            return dial.phase == .ended ? CallWording.ended(dial) : CallWording.dialing(dial)
         case .call: return open ? "Close" : ""
         case .starting, .stopped: return ""
         case .finishing: return open ? "Close" : state.finish?.line ?? "Saving the call"
@@ -1559,6 +1796,10 @@ struct IslandView: View {
         case .idle:
             VocifyMarkIcon()
                 .opacity(lifted || open ? 1 : 0.85)
+        case .dialConfirm, .dialing:
+            Image(systemName: "phone.fill")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(state.dial?.phase == .ended ? IslandStyle.secondary : IslandStyle.beige)
         case .postCall:
             // Closed, the ear carries the status; open, the card does, so it is never shown twice.
             if open {
@@ -1621,8 +1862,20 @@ struct IslandView: View {
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(IslandStyle.secondary)
         case .idle:
-            OpenArrow(open: open)
-                .opacity(lifted || open ? 1 : 0.8)
+            if let onScreen = state.onScreen, !open {
+                CallGlyph(onScreen: onScreen, action: controller.openDialConfirm)
+            } else {
+                OpenArrow(open: open)
+                    .opacity(lifted || open ? 1 : 0.8)
+            }
+        case .dialConfirm:
+            OpenArrow(open: true)
+        case .dialing:
+            if open {
+                OpenArrow(open: true)
+            } else if state.dial?.phase != .ended {
+                HangUpDot(action: controller.hangUpCall)
+            }
         case .postCall:
             if open {
                 OpenArrow(open: true)
@@ -1634,14 +1887,40 @@ struct IslandView: View {
 }
 
 /// Opened from the mark when nothing is recording: the one thing to do here is record.
+/// At rest, open. With a CRM contact on screen it leads with who that is and Call, the way the
+/// confirm row does, and recording a meeting becomes the quiet icon beside it.
 private struct IdleMenu: View {
     let ready: Bool
+    let onScreen: OnScreenCall?
     let controller: MeetingPillController
 
     var body: some View {
         HStack(spacing: 8) {
-            QuietRecordButton(title: "Record meeting", ready: ready, action: controller.record)
-            Spacer(minLength: 0)
+            if let onScreen {
+                let copy = CallWording.confirm(onScreen)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(copy.title)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(IslandStyle.text)
+                        .lineLimit(1)
+                    Text(copy.line)
+                        .font(.system(size: 11.5).monospacedDigit())
+                        .foregroundStyle(IslandStyle.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if let button = copy.button {
+                    if onScreen.state == .noCallerId {
+                        PrimaryActionButton(title: button, symbol: "arrow.up.right", help: "Verify a number in Vocify", action: controller.openCallingSettings)
+                    } else {
+                        PrimaryActionButton(title: button, symbol: "phone.fill", help: "Call through Vocify", action: controller.dial)
+                    }
+                }
+                IconButton(symbol: "record.circle", help: "Record meeting", action: controller.record)
+            } else {
+                QuietRecordButton(title: "Record meeting", ready: ready, action: controller.record)
+                Spacer(minLength: 0)
+            }
             IconButton(symbol: "arrow.up.right", help: "Open Vocify", action: controller.openApp)
         }
         .padding(.horizontal, 14)
@@ -1669,6 +1948,188 @@ private struct CallMenu: View {
         }
         .padding(.horizontal, 14)
         .frame(maxHeight: .infinity)
+    }
+}
+
+/// The phone beside the mark: the CRM contact on screen can be called. Dimmed when it can't
+/// (no phone, no caller ID, several contacts); the confirm row then says why.
+private struct CallGlyph: View {
+    let onScreen: OnScreenCall
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "phone.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(onScreen.state == .callable ? IslandStyle.beige : IslandStyle.secondary.opacity(0.6))
+                .frame(width: 22, height: 22)
+                .background(Color.white.opacity(hovering ? 0.18 : 0), in: Circle())
+        }
+        .buttonStyle(PressScale())
+        .onHover { hovering = $0 }
+        .help(CallWording.glyphHelp(onScreen))
+        .accessibilityLabel(CallWording.glyphHelp(onScreen))
+    }
+}
+
+/// Who would be called and from which number; one click calls.
+private struct DialConfirmMenu: View {
+    let onScreen: OnScreenCall
+    let controller: MeetingPillController
+
+    var body: some View {
+        let copy = CallWording.confirm(onScreen)
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(copy.title)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(IslandStyle.text)
+                    .lineLimit(1)
+                Text(copy.line)
+                    .font(.system(size: 11.5).monospacedDigit())
+                    .foregroundStyle(IslandStyle.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if let button = copy.button {
+                if onScreen.state == .noCallerId {
+                    PrimaryActionButton(title: button, symbol: "arrow.up.right", help: "Verify a number in Vocify", action: controller.openCallingSettings)
+                } else {
+                    PrimaryActionButton(title: button, symbol: "phone.fill", help: "Call through Vocify", action: controller.dial)
+                }
+            }
+            IconButton(symbol: "xmark", help: "Close", action: controller.collapse)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxHeight: .infinity)
+    }
+}
+
+/// Connecting or ringing: who, and Cancel. Missed: why it ended. Answered without a live
+/// transcript (rare), the call bar alone.
+private struct DialingMenu: View {
+    let dial: DialIslandState
+    let controller: MeetingPillController
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if dial.phase == .active {
+                CallBar(dial: dial, keypadOpen: false, controller: controller)
+                Spacer(minLength: 0)
+            } else {
+                Text(dial.phase == .ended ? CallWording.ended(dial) : CallWording.dialing(dial))
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(dial.phase == .ended ? IslandStyle.secondary : IslandStyle.text)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if dial.phase != .ended {
+                    HangUpButton(title: "Cancel", action: controller.hangUpCall)
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(maxHeight: .infinity)
+    }
+}
+
+/// An answered Vocify call: how long, mute, keypad, hang up (in place of Pause and Stop).
+private struct CallBar: View {
+    let dial: DialIslandState
+    let keypadOpen: Bool
+    var showsName = true
+    let controller: MeetingPillController
+
+    var body: some View {
+        HStack(spacing: 8) {
+            CircleButton(
+                symbol: dial.muted ? "mic.slash.fill" : "mic.fill",
+                help: dial.muted ? "Unmute" : "Mute",
+                action: controller.toggleMute
+            )
+            CircleButton(
+                symbol: "circle.grid.3x3.fill",
+                help: keypadOpen ? "Hide keypad" : "Keypad",
+                action: controller.toggleKeypad
+            )
+            HangUpButton(title: "Hang up", action: controller.hangUpCall)
+                .fixedSize()
+            // Who the call is with, whatever tab the rep has moved to since. The open call names them in
+            // the conversation instead: this row also carries the call type and live help.
+            if showsName {
+                Text(dial.name ?? PhoneFormat.grouped(dial.phone))
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(IslandStyle.text)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(PhoneFormat.grouped(dial.phone))
+            }
+        }
+    }
+}
+
+/// Red like Stop: ends the call (or cancels it while it rings).
+private struct HangUpButton: View {
+    let title: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "phone.down.fill").font(.system(size: 10, weight: .semibold))
+                Text(title).font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 12)
+            .frame(height: 28)
+            .background(IslandStyle.danger.opacity(hovering ? 0.85 : 1), in: Capsule())
+        }
+        .buttonStyle(PressScale())
+        .onHover { hovering = $0 }
+        .help(title)
+        .accessibilityLabel(title)
+    }
+}
+
+/// The closed island while it rings: hang up without opening it.
+private struct HangUpDot: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "phone.down.fill")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(Color.white)
+                .frame(width: 22, height: 22)
+                .background(IslandStyle.danger.opacity(hovering ? 0.85 : 1), in: Circle())
+        }
+        .buttonStyle(PressScale())
+        .onHover { hovering = $0 }
+        .help("Cancel the call")
+        .accessibilityLabel("Cancel the call")
+    }
+}
+
+/// Digits for phone menus (press 1 for sales…), sent as the call's tones.
+private struct Keypad: View {
+    let action: (String) -> Void
+    private static let rows = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]
+
+    var body: some View {
+        VStack(spacing: 4) {
+            ForEach(Self.rows, id: \.self) { row in
+                HStack(spacing: 4) {
+                    ForEach(row, id: \.self) { digit in
+                        SmallAction(title: digit) { action(digit) }
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: 180)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -2637,12 +3098,16 @@ private struct OpenIsland: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                CircleButton(
-                    symbol: state.paused ? "play.fill" : "pause.fill",
-                    help: state.paused ? "Resume recording" : "Pause recording",
-                    action: controller.togglePause
-                )
-                StopButton { controller.stop() }
+                if let dial = state.dial {
+                    CallBar(dial: dial, keypadOpen: state.keypadOpen, showsName: false, controller: controller)
+                } else {
+                    CircleButton(
+                        symbol: state.paused ? "play.fill" : "pause.fill",
+                        help: state.paused ? "Resume recording" : "Pause recording",
+                        action: controller.togglePause
+                    )
+                    StopButton { controller.stop() }
+                }
                 if let menu = state.liveType?.menu {
                     Button { typeMenuOpen.toggle() } label: {
                         TypeTag(label: menu.title, open: true, placeholder: menu.placeholder, sparkle: menu.sparkle)
@@ -2658,6 +3123,11 @@ private struct OpenIsland: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 38)
+            if state.keypadOpen, state.dial != nil {
+                Keypad(action: controller.sendDigit)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 8)
+            }
             if typeMenuOpen, let menu = state.liveType?.menu {
                 TypeList(rows: menu.rows) { key in
                     controller.pickCallType(key)

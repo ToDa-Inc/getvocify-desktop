@@ -1,5 +1,4 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, screen, shell, systemPreferences, Tray } from "electron";
-import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { CallSource } from "../../core/callSource.ts";
 import { dirname, join } from "node:path";
@@ -20,6 +19,7 @@ import { callSourceForExe } from "./windows/call-sources.ts";
 import { createCrmScreenWatcher } from "./crm-screen-watcher.ts";
 import { runQuiet } from "./platform/exec.ts";
 import { createPlatform } from "./platform/index.ts";
+import { spawnMacHelper } from "./platform/mac/helper.ts";
 import type { DetectedCaller } from "./platform/types.ts";
 import { createPageReader, crmUrlsOf, encodePowerShell, type BrowserPage } from "./windows/browser-pages.ts";
 
@@ -72,72 +72,31 @@ export type AppHandle = {
 
 type Placement = { geometry: Geometry; midX: number; originX: number; originY: number };
 
-/** The notch comes from a Swift script for now; the Mac helper's `geometry.get` replaces it. Everywhere else the screen is measured from Electron. */
-function measureMac(): Promise<Placement | null> {
-  // Try the native helper first (Phase 2: the helper's `screen` command)
+/** The built-in screen's notch on a Mac, from vocify-mac-helper's `screen`. Everywhere else the screen is measured from Electron. */
+function measureMac(helperPath: string): Promise<Placement | null> {
   return new Promise((resolve) => {
-    // Import here to avoid circular dependencies
-    const { spawnMacHelper } = require("./platform/mac/helper.ts");
-
-    try {
-      const helper = spawnMacHelper("screen");
-      let output = "";
-
-      const onStdout = (chunk: Buffer) => {
-        output += chunk.toString();
-      };
-
-      const onExit = () => {
-        if (output) {
-          try {
-            const raw = JSON.parse(output) as { width?: number; height?: number; originX?: number; originY?: number; menuBar?: number; notchWidth?: number; barHeight?: number; midX?: number };
-            if (raw.width && raw.height) {
-              return resolve({
-                geometry: { notchWidth: raw.notchWidth ?? 0, barHeight: raw.barHeight ?? Math.max(raw.menuBar ?? 0, 30), screenHeight: raw.height },
-                midX: raw.midX ?? raw.width / 2,
-                originX: raw.originX ?? 0,
-                originY: raw.originY ?? 0,
-              });
-            }
-          } catch {
-            // Fall through to Swift fallback
-          }
-        }
-        // If helper fails or returns invalid JSON, fall back to Swift
-        swiftFallback(resolve);
-      };
-
-      helper.stdout.on("data", onStdout);
-      helper.on("exit", onExit);
-
-      // Timeout after 2 seconds
-      setTimeout(() => {
-        if (!helper.killed) helper.kill();
-      }, 2000);
-    } catch {
-      // If helper spawn fails, use Swift fallback
-      swiftFallback(resolve);
-    }
+    const helper = spawnMacHelper(helperPath, "screen");
+    let output = "";
+    const timer = setTimeout(() => helper.kill(), 5000);
+    helper.stdout.on("data", (chunk) => void (output += chunk.toString()));
+    helper.on("exit", () => {
+      clearTimeout(timer);
+      try {
+        const raw = JSON.parse(output) as { width?: number; height?: number; originX?: number; originY?: number; menuBar?: number; notchWidth?: number; barHeight?: number; midX?: number };
+        if (!raw.width || !raw.height) return resolve(null);
+        resolve({
+          geometry: { notchWidth: raw.notchWidth ?? 0, barHeight: raw.barHeight ?? Math.max(raw.menuBar ?? 0, 30), screenHeight: raw.height },
+          midX: raw.midX ?? raw.width / 2,
+          originX: raw.originX ?? 0,
+          originY: raw.originY ?? 0,
+        });
+      } catch {
+        resolve(null);
+      }
+    });
   });
 }
 
-function swiftFallback(resolve: (value: Placement | null) => void): void {
-  execFile("/usr/bin/swift", [join(here, "../native/screen.swift")], { timeout: 60000 }, (error, stdout) => {
-    if (error) return resolve(null);
-    try {
-      const raw = JSON.parse(stdout) as { width?: number; height?: number; originX?: number; originY?: number; menuBar?: number; notchWidth?: number; barHeight?: number; midX?: number };
-      if (!raw.width || !raw.height) return resolve(null);
-      resolve({
-        geometry: { notchWidth: raw.notchWidth ?? 0, barHeight: raw.barHeight ?? Math.max(raw.menuBar ?? 0, 30), screenHeight: raw.height },
-        midX: raw.midX ?? raw.width / 2,
-        originX: raw.originX ?? 0,
-        originY: raw.originY ?? 0,
-      });
-    } catch {
-      resolve(null);
-    }
-  });
-}
 
 function measureElectron(): Placement {
   const display = screen.getPrimaryDisplay();
@@ -172,7 +131,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   settings.set("restartedForUpdate", false);
   const drafts = new Drafts(join(options.userDataDir, "meetings"));
   const platform = process.platform;
-  const placement = (platform === "darwin" ? await measureMac() : null) ?? measureElectron();
+  // The Mac's native helper: shipped in the app's Resources, or built next to the sources in development.
+  const macHelper = platform === "darwin" ? (app.isPackaged ? join(process.resourcesPath, "mac-helper", "vocify-mac-helper") : join(here, "../../native/mac-helper/dist/vocify-mac-helper")) : null;
+  const placement = (macHelper ? await measureMac(macHelper) : null) ?? measureElectron();
   const offsetY = options.islandOffsetY ?? 0;
   const dashboardHolder: { host: DashboardHost | null } = { host: null };
 
@@ -188,6 +149,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       set: (value) => settings.set("crmTabs", value),
     },
     log,
+    nativeHelperPath: macHelper,
   });
 
   /* ---------- who is on the call ---------- */
@@ -468,6 +430,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     log,
     crmTabs: platform === "darwin" ? () => os.permissions.status().crmTabs : undefined,
     askCrmTabs: platform === "darwin" ? () => os.permissions.request("crmTabs") : undefined,
+    systemAudioAccess: platform === "darwin" ? () => os.permissions.status().systemAudio : undefined,
+    askSystemAudio: platform === "darwin" ? () => os.permissions.request("systemAudio") : undefined,
   });
   // Only the dashboard window may talk to the shell, and only through the bridge.
   ipcMain.handle("vocify", (event, op: unknown, args: unknown) => {

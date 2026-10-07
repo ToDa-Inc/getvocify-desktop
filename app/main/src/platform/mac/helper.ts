@@ -1,41 +1,65 @@
 import { spawn } from "node:child_process";
-import { join } from "node:path";
-import type { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
+import { EventEmitter } from "node:events";
 
-/** The shape of a child process for the native helper. */
-export interface HelperChild extends EventEmitter {
-  stdout: NodeJS.ReadableStream;
-  stderr: NodeJS.ReadableStream;
+export type HelperCommand = "audio" | "audio-permission" | "mic" | "screen";
+
+/** A running `vocify-mac-helper` (see native/mac-helper/PROTOCOL.md), as much of a child process as the Mac code uses. */
+export type HelperChild = {
+  stdout: { on(event: "data", listener: (chunk: Buffer) => void): unknown };
+  stderr: { on(event: "data", listener: (chunk: Buffer) => void): unknown };
   stdin: { end(): void };
-  killed: boolean;
-  kill(signal?: NodeJS.Signals | number): boolean;
-  on(event: "exit", listener: (code: number | null, signal?: NodeJS.Signals) => void): this;
+  on(event: "exit", listener: (code: number | null) => void): unknown;
+  kill(): void;
+};
+
+/** Calls `onEvent` with each JSON line of a stream, whatever pieces the lines arrive in; other lines are ignored. */
+export function jsonLines(onEvent: (event: Record<string, unknown>) => void): (chunk: Buffer) => void {
+  let partial = "";
+  return (chunk) => {
+    partial += chunk.toString();
+    const lines = partial.split("\n");
+    partial = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line);
+        if (event && typeof event === "object") onEvent(event);
+      } catch {
+        // not a status line
+      }
+    }
+  };
 }
 
 /**
- * Spawns vocify-mac-helper for a given command.
- * The binary path depends on the environment:
- * - In production (packaged): process.resourcesPath + /mac-helper/vocify-mac-helper
- * - In dev: app/native/mac-helper/dist/vocify-mac-helper (relative to app root)
+ * Starts the helper at `path` for `command`. A helper that is missing or cannot start exits at once (code 127) instead of
+ * throwing or raising an unhandled `error` event, so a Mac without it degrades to "no call audio, no call detection".
  */
-export function spawnMacHelper(command: "audio" | "audio-permission" | "mic" | "screen"): HelperChild {
-  // Determine the helper binary path
-  let helperPath: string;
+export function spawnMacHelper(path: string, command: HelperCommand): HelperChild {
+  if (!existsSync(path)) return exitedHelper();
+  const child = spawn(path, [command], { stdio: ["pipe", "pipe", "pipe"] });
+  let exited = false;
+  child.on("exit", () => void (exited = true));
+  child.on("error", () => {
+    if (exited) return;
+    exited = true;
+    child.emit("exit", 127);
+  });
+  // A helper that already quit cannot take stdin: never let that throw.
+  child.stdin.on("error", () => {});
+  return {
+    stdout: child.stdout,
+    stderr: child.stderr,
+    stdin: { end: () => void child.stdin.end() },
+    on: (event, listener) => child.on(event, listener),
+    kill: () => void child.kill(),
+  };
+}
 
-  // Check if running in packaged mode (has __dirname and process.resourcesPath)
-  if (process.resourcesPath && typeof process.resourcesPath === "string") {
-    // Production: packaged app has resources
-    helperPath = join(process.resourcesPath, "mac-helper", "vocify-mac-helper");
-  } else {
-    // Development: relative to app root
-    // __dirname is app/main/src/platform/mac, so go up to app/main, then to app/
-    const appRoot = join(__dirname, "..", "..", "..", "..");
-    helperPath = join(appRoot, "native", "mac-helper", "dist", "vocify-mac-helper");
-  }
-
-  const child = spawn(helperPath, [command], {
-    stdio: ["pipe", "pipe", "pipe"],
-  }) as unknown as HelperChild;
-
-  return child;
+function exitedHelper(): HelperChild {
+  const events = new EventEmitter();
+  setImmediate(() => events.emit("exit", 127));
+  const silent = { on: () => undefined };
+  return { stdout: silent, stderr: silent, stdin: { end: () => {} }, on: (event, listener) => events.on(event, listener), kill: () => {} };
 }

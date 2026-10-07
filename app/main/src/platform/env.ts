@@ -10,4 +10,6 @@ export type PlatformEnv = {
   /** Where the rep's answer to "Vocify wants to control your browser" is kept (Mac). */
   crmTabsAnswer: { get(): Status | undefined; set(value: Status): void };
   log(line: string): void;
+  /** This OS's native helper (the Mac's vocify-mac-helper); null where there is none. */
+  nativeHelperPath: string | null;
 };

@@ -38,6 +38,10 @@ export type BridgeDeps = {
   crmTabs?(): string;
   /** Mac: reads each running supported browser once, which makes macOS ask for Automation consent. */
   askCrmTabs?(): Promise<void>;
+  /** Mac: Screen & System Audio Recording as the native helper knows it. Absent where call audio needs no permission. */
+  systemAudioAccess?(): string;
+  /** Mac: asks for it (a capture makes macOS ask; a known refusal opens System Settings). */
+  askSystemAudio?(): Promise<void>;
   /** The CRM links open in the rep's browsers (Windows: read from the address bars). Absent where it cannot be read. */
   readCrmPages?(): Promise<{ urls: string[]; browsers: { name: string; bundleId: string; access: string }[] }>;
 };
@@ -87,7 +91,12 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
   const permissions = () => {
     // Windows reads the address bars without asking; a Mac needs the rep's Automation consent per browser.
     const crmTabs = deps.platform === "win32" ? "authorized" : deps.crmTabs?.();
-    const real: Record<string, unknown> = { ...permissionSnapshot(deps.platform, deps.microphoneAccess(), deps.reportedPlatform), ...(crmTabs ? { crmTabs } : {}) };
+    const systemAudio = deps.systemAudioAccess?.();
+    const real: Record<string, unknown> = {
+      ...permissionSnapshot(deps.platform, deps.microphoneAccess(), deps.reportedPlatform),
+      ...(systemAudio ? { systemAudio } : {}),
+      ...(crmTabs ? { crmTabs } : {}),
+    };
     if (!deps.testPermissions) return real;
     return {
       ...real,
@@ -141,6 +150,10 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
         }
         if (args.type === "crmTabs") {
           await deps.askCrmTabs?.();
+          return permissions();
+        }
+        if (args.type === "systemAudio" && deps.askSystemAudio && !deps.testPermissions) {
+          await deps.askSystemAudio();
           return permissions();
         }
         if (args.type === "microphone") {

@@ -1,7 +1,10 @@
 import { CallSource } from "../../../../core/callSource.ts";
 import { CrmPages } from "../../../../core/crmPages.ts";
 import type { CallDetector, DetectedCaller } from "../types.ts";
-import type { HelperChild } from "./helper.ts";
+import { jsonLines, type HelperChild } from "./helper.ts";
+
+/** One app holding a microphone, as `vocify-mac-helper mic` lists it. */
+type MicApp = { bundleId: string; name: string; pid: number; path: string };
 
 /** macOS call detection via the native helper's mic command. */
 export function createMacCallDetector(deps: {
@@ -16,43 +19,30 @@ export function createMacCallDetector(deps: {
   let lastRestartTime = 0;
 
   const startHelper = () => {
-    if (helper && !helper.killed) return;
-
-    helper = deps.spawn("mic");
-
-    const handleStdout = (chunk: Buffer) => {
-      const text = chunk.toString();
-      const lines = text.split("\n").filter((l) => l);
-
-      for (const line of lines) {
-        try {
-          const event = JSON.parse(line);
-          if (event.event === "mic" && Array.isArray(event.apps)) {
-            updateCaller(event.apps);
-          }
-        } catch {
-          // Ignore malformed JSON
-        }
-      }
-    };
-
-    const handleExit = () => {
+    if (helper) return;
+    const started = deps.spawn("mic");
+    helper = started;
+    started.stdout.on(
+      "data",
+      jsonLines((event) => {
+        if (helper === started && event.event === "mic" && Array.isArray(event.apps)) updateCaller(event.apps as MicApp[]);
+      }),
+    );
+    started.on("exit", () => {
+      if (helper !== started) return;
+      helper = null;
       if (!running) return;
-
-      // Restart helper at most once per minute
+      // A helper that died is restarted at most once a minute (as the Windows page reader).
       const now = Date.now();
-      if (now - lastRestartTime > 60000) {
+      if (now - lastRestartTime > 60_000) {
         lastRestartTime = now;
         startHelper();
       }
-    };
-
-    helper.stdout.on("data", handleStdout);
-    helper.on("exit", handleExit);
+    });
   };
 
   /** Update current caller state based on running apps. */
-  const updateCaller = (apps: Array<{ bundleId: string; name: string; pid: number; path: string }>) => {
+  const updateCaller = (apps: MicApp[]) => {
     const caller = selectCallApp(apps, deps.ownBundleId);
     const callerChanged = !callersEqual(caller, currentCaller);
     if (callerChanged || lastReportedCaller === undefined) {
@@ -83,10 +73,10 @@ export function createMacCallDetector(deps: {
     stop(): void {
       running = false;
       onChange = null;
-      if (helper && !helper.killed) {
-        helper.kill();
-      }
+      const stopping = helper;
       helper = null;
+      stopping?.stdin.end();
+      stopping?.kill();
       currentCaller = null;
     },
   };

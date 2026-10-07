@@ -59,15 +59,7 @@ permissionsContract("Mac", () => {
         return fakeOsascript(screen)(file, args);
       },
       crmTabs: { get: () => crmTabs, set: (value) => void (crmTabs = value) },
-      spawn: (command) => {
-        const helper = fakeHelper();
-        if (command === "audio-permission") {
-          setImmediate(() => line(helper.stdout, { status: "authorized" }));
-        } else if (command === "audio") {
-          setImmediate(() => line(helper.stderr, { event: "started" }));
-        }
-        return helper as unknown as HelperChild;
-      },
+      audioAccess: { status: () => "authorized", ask: async () => {} },
     }),
     platform: "darwin",
     microphoneIs: (raw) => void (microphone = raw),
@@ -108,6 +100,7 @@ systemAudioContract("Mac", () => {
   });
   return {
     audio,
+    captures: true,
     osPlays: async (bytes) => {
       // In uneven pieces, as a pipe delivers them.
       for (let sent = 0; sent < bytes; sent += 1234) {
@@ -135,6 +128,7 @@ systemAudioContract("Mac without permission", () => ({
       return helper as unknown as HelperChild;
     },
   }),
+  captures: false,
   osPlays: async () => {},
   osEnds: async () => {},
 }));

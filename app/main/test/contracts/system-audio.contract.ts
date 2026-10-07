@@ -5,6 +5,8 @@ import type { SystemAudio } from "../../src/platform/types.ts";
 /** What every OS's call-audio capture must do, driven through the OS edge each implementation fakes. */
 export type SystemAudioHarness = {
   audio: SystemAudio;
+  /** Whether this OS, as set up by the harness, can capture: a refusal where capture is expected is a failure. */
+  captures: boolean;
   /** The OS delivers `bytes` of captured audio, in whatever pieces it likes. */
   osPlays(bytes: number): Promise<void>;
   /** The OS capture ends on its own. */
@@ -15,7 +17,7 @@ export function systemAudioContract(name: string, harness: () => SystemAudioHarn
   test(`${name} system audio: capture starts, or says why not, and never throws`, async () => {
     const h = harness();
     const result = await h.audio.start();
-    assert.equal(typeof result.ok, "boolean");
+    assert.equal(result.ok, h.captures, `start: ${JSON.stringify(result)}`);
     if (!result.ok) assert.ok(result.reason, "a refusal says why");
     await h.audio.stop();
   });
@@ -24,8 +26,8 @@ export function systemAudioContract(name: string, harness: () => SystemAudioHarn
     const h = harness();
     const sizes: number[] = [];
     h.audio.onPcm((pcm) => sizes.push(pcm.byteLength));
-    const { ok } = await h.audio.start();
-    if (!ok) return; // nothing to deliver on an OS that cannot capture; the test above covers the refusal
+    if (!h.captures) return; // nothing to deliver where capture is refused; the test above covers the refusal
+    assert.equal((await h.audio.start()).ok, true);
     await h.osPlays(3200 * 3 + 1000);
     assert.deepEqual(sizes, [3200, 3200, 3200]);
     await h.audio.stop();
@@ -35,8 +37,8 @@ export function systemAudioContract(name: string, harness: () => SystemAudioHarn
     const h = harness();
     const sizes: number[] = [];
     h.audio.onPcm((pcm) => sizes.push(pcm.byteLength));
-    const { ok } = await h.audio.start();
-    if (!ok) return;
+    if (!h.captures) return;
+    assert.equal((await h.audio.start()).ok, true);
     assert.equal((await h.audio.start()).ok, false, "a second start while capturing is refused");
     await h.audio.stop();
     await h.osPlays(3200 * 2);
@@ -47,8 +49,8 @@ export function systemAudioContract(name: string, harness: () => SystemAudioHarn
     const h = harness();
     const lost: string[] = [];
     h.audio.onLost((reason) => lost.push(reason));
-    const { ok } = await h.audio.start();
-    if (!ok) return;
+    if (!h.captures) return;
+    assert.equal((await h.audio.start()).ok, true);
     await h.osEnds();
     assert.equal(lost.length, 1);
     assert.ok(lost[0]);

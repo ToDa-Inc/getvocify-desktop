@@ -351,6 +351,14 @@ test("bridge: drafts, saas, shortcut and the CRM stub answer in the dashboard's 
   assert.deepEqual(t.logs, ["dashboard error at /x: boom"]);
 });
 
+test("bridge: a call's steps reach the app's log; other dashboard events do not", async () => {
+  const t = bridgeSetup();
+  await t.call("log:event", { name: "call:ringing", details: {} });
+  await t.call("log:event", { name: "call:live-memo", details: { memoId: "m1" } });
+  await t.call("log:event", { name: "assist:answer", details: { label: "Price" } });
+  assert.deepEqual(t.logs, ["call:ringing {}", 'call:live-memo {"memoId":"m1"}']);
+});
+
 test("bridge: call audio starts, its frames and its loss go to the page, and stopping releases it", async () => {
   const t = bridgeSetup();
   assert.deepEqual(await t.call("system-audio:start", {}), { ok: true, backend: "wasapi-loopback" });

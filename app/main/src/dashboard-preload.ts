@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
     relaunch: () => call("shell:relaunch"),
     command: (name: string) => void call("shell:command", { name }),
     onCommand: on("shell:command"),
+    /** Dashboard events for the app's log (a call's steps); fire and forget. */
+    log: (name: string, details?: Record<string, unknown>) => void call("log:event", { name, details: details ?? {} }),
     onCallType: on("call:type"),
     onPostCallAction: on("postcall:action"),
   },

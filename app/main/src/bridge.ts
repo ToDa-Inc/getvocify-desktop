@@ -101,6 +101,12 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
       case "log:error":
         deps.log(`dashboard ${String(args.kind ?? "error")} at ${String(args.path ?? "")}: ${String(args.text ?? "")}`);
         return null;
+      case "log:event": {
+        // A call's steps (dial, ringing, live memo…): the only way to see why a call didn't start on a rep's machine.
+        const name = String(args.name ?? "");
+        if (name.startsWith("call:")) deps.log(`${name} ${JSON.stringify(args.details ?? {})}`);
+        return null;
+      }
       case "saas:request": {
         const result: SaasResult = await saasRequest(args.payload, deps.fetch);
         return result;

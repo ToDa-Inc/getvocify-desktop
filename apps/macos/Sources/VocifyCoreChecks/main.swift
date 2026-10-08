@@ -356,4 +356,19 @@ check(CrmPages.frontRecordURLs(fromScriptOutput: "https://mail.google.com/mail/u
 check(CrmPages.frontRecordURLs(fromScriptOutput: "\n\(hubspotA)\n") == [hubspotA], "blank lines are skipped")
 check(CrmPages.frontRecordURLs(fromScriptOutput: "").isEmpty, "no window")
 
+// A meeting announced a minute before it starts (shell:state meeting, from the calendar).
+let soon = IslandMeeting.decode([
+    "id": "ev-1", "who": "Marta García", "title": "Demo Vocify", "startsAt": "2026-10-08T09:30:00+00:00",
+    "url": "https://meet.google.com/abc-defg-hij", "platform": "meet",
+    "brief": ["state": "ready", "lines": ["Asked for pricing for 12 seats."]],
+])!
+let startsAt = soon.startsAt
+check(soon.who == "Marta García" && soon.url?.host == "meet.google.com" && soon.briefLines == 1, "meeting decodes")
+check(MeetingWording.line(soon, now: startsAt.addingTimeInterval(-60)) == "Demo Vocify · in 1 min · Google Meet", "a minute before")
+check(MeetingWording.when(startsAt, now: startsAt.addingTimeInterval(10)) == "now", "starting now")
+check(MeetingWording.when(startsAt, now: startsAt.addingTimeInterval(190)) == "started 3 min ago", "already started")
+check(IslandMeeting.decode(["id": "ev-2", "who": "Ana", "startsAt": "2026-10-08T09:30:00.123+00:00", "url": "javascript:alert(1)"])?.url == nil, "only web links open")
+check(IslandMeeting.decode(["id": "ev-3", "who": " ", "startsAt": "2026-10-08T09:30:00Z"]) == nil, "needs who")
+check(IslandMeeting.decode(["id": "ev-4", "who": "Ana", "startsAt": "tomorrow"]) == nil, "needs a start")
+
 print("ok")

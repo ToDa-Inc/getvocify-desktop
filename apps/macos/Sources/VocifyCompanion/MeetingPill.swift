@@ -402,6 +402,11 @@ final class MeetingPillState: ObservableObject {
     /// The CRM contact in the frontmost browser the island can offer to call (`shell:state` onScreen).
     @Published var onScreen: OnScreenCall?
     var onOnScreenChange: (() -> Void)?
+    /// A meeting with someone from outside about to start (`shell:state` meeting, from the calendar).
+    @Published var meeting: IslandMeeting?
+    var onMeetingChange: (() -> Void)?
+    /// The meeting the rep closed: not shown again.
+    var dismissedMeetingID: String?
     /// The Vocify call in progress, if any (`shell:state` dial).
     @Published var dial: DialIslandState?
     @Published var keypadOpen = false
@@ -431,7 +436,12 @@ final class MeetingPillState: ObservableObject {
 
     func size(for mode: Mode, open: Bool) -> CGSize {
         // The call offer's brief lines (open idle island and the confirm row only).
-        let briefLines = mode == .idle || mode == .dialConfirm ? (onScreen?.briefLines ?? 0) : 0
+        let briefLines: Int
+        switch mode {
+        case .idle: briefLines = meeting?.briefLines ?? onScreen?.briefLines ?? 0
+        case .dialConfirm: briefLines = onScreen?.briefLines ?? 0
+        default: briefLines = 0
+        }
         return geometry.size(mode, open: open, postCallBody: postCallBodyHeight, briefLines: briefLines)
     }
 
@@ -582,6 +592,13 @@ final class MeetingPillState: ObservableObject {
         if state.keys.contains("liveType") {
             let next = (state["liveType"] as? [String: Any]).flatMap(LiveType.init)
             if next != liveType { liveType = next }
+        }
+        if state.keys.contains("meeting") {
+            let next = IslandMeeting.decode(state["meeting"]).flatMap { $0.id == dismissedMeetingID ? nil : $0 }
+            if next != meeting {
+                meeting = next
+                onMeetingChange?()
+            }
         }
         if state.keys.contains("onScreen") {
             let next = OnScreenCall.decode(state["onScreen"])
@@ -804,6 +821,10 @@ final class MeetingPillController {
     private var quiet: (bundleID: String, until: Date)?
     private static let afterCallQuiet: TimeInterval = 120
     private static let idleLinger: TimeInterval = 5
+    /// A meeting's heads-up stays open this long (the pointer on it holds it).
+    private static let meetingLinger: TimeInterval = 60
+    /// Meetings already announced: each opens the island once.
+    private var announcedMeetings = Set<String>()
     private static let callLinger: TimeInterval = 8
     private static let postCallLinger: TimeInterval = 14
     private static let doneLinger: TimeInterval = 3
@@ -833,6 +854,7 @@ final class MeetingPillController {
         state.onCallAudioChange = { [weak self] was, now in self?.callAudioChanged(was: was, now: now) }
         state.onDialChange = { [weak self] in self?.dialChanged() }
         state.onOnScreenChange = { [weak self] in self?.fitOffer() }
+        state.onMeetingChange = { [weak self] in self?.meetingChanged() }
         RecordShortcut.shared.onPress = { [weak self] in self?.shortcutPressed() }
         RecordShortcut.shared.activate()
         transition(to: .idle, expanded: false)
@@ -893,6 +915,30 @@ final class MeetingPillController {
         } else {
             transition(to: .idle, expanded: false)
         }
+    }
+
+    /// A meeting is about to start: the resting island opens once to say who it is with.
+    /// Busy (a call, a recording), it is not interrupted; the meeting waits in the open idle island.
+    private func meetingChanged() {
+        if let meeting = state.meeting, state.mode == .idle, !announcedMeetings.contains(meeting.id) {
+            announcedMeetings.insert(meeting.id)
+            transition(to: .idle, expanded: true)
+            startCountdown(Self.meetingLinger)
+        } else {
+            fitOffer()
+        }
+    }
+
+    func joinMeeting() {
+        guard let url = state.meeting?.url else { return }
+        NSWorkspace.shared.open(url)
+        collapse()
+    }
+
+    func dismissMeeting() {
+        state.dismissedMeetingID = state.meeting?.id
+        state.meeting = nil
+        collapse()
     }
 
     /// The offer's brief came, went or changed length while the island is open: the window follows.
@@ -1731,7 +1777,7 @@ struct IslandView: View {
                             .transition(.opacity)
                     }
                 default:
-                    IdleMenu(ready: state.recorderReady, onScreen: state.onScreen, controller: controller)
+                    IdleMenu(ready: state.recorderReady, onScreen: state.onScreen, meeting: state.meeting, controller: controller)
                         .transition(.opacity)
                 }
             }
@@ -1913,9 +1959,18 @@ struct IslandView: View {
 private struct IdleMenu: View {
     let ready: Bool
     let onScreen: OnScreenCall?
+    var meeting: IslandMeeting? = nil
     let controller: MeetingPillController
 
     var body: some View {
+        if let meeting {
+            MeetingSoonMenu(meeting: meeting, controller: controller)
+        } else {
+            offerRow
+        }
+    }
+
+    private var offerRow: some View {
         HStack(spacing: 8) {
             if let onScreen {
                 let copy = CallWording.confirm(onScreen)
@@ -1945,6 +2000,37 @@ private struct IdleMenu: View {
             IconButton(symbol: "arrow.up.right", help: "Open Vocify", action: controller.openApp)
         }
         .offer(brief: onScreen?.brief)
+    }
+}
+
+/// A meeting about to start (from the calendar): who it is with, its title, when and where, and
+/// what happened with them lately; Join opens the call, Record starts the recording.
+private struct MeetingSoonMenu: View {
+    let meeting: IslandMeeting
+    let controller: MeetingPillController
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(meeting.who)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(IslandStyle.text)
+                    .lineLimit(1)
+                TimelineView(.periodic(from: .now, by: 15)) { context in
+                    Text(MeetingWording.line(meeting, now: context.date))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(IslandStyle.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            if meeting.url != nil {
+                PrimaryActionButton(title: "Join", symbol: "video.fill", help: "Open the meeting", action: controller.joinMeeting)
+            }
+            IconButton(symbol: "record.circle", help: "Record meeting", action: controller.record)
+            IconButton(symbol: "xmark", help: "Dismiss", action: controller.dismissMeeting)
+        }
+        .offer(brief: meeting.brief)
     }
 }
 

@@ -20,8 +20,8 @@ export type OnScreenCall = {
 
 export type OnScreenBrief = { state: "loading" } | { state: "ready"; lines: string[] };
 
-/** The island is a glance: two lines at most. */
-const BRIEF_LINES = 2;
+/** The summary's lines the island keeps (two show folded, all when opened). */
+const BRIEF_LINES = 3;
 
 function decodeBrief(raw: unknown): OnScreenBrief | null {
   if (typeof raw !== "object" || raw === null) return null;

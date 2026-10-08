@@ -182,6 +182,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   /* ---------- the island's brain ---------- */
 
   let reportedSize: { width: number; height: number } | null = null;
+  let reportedKind: string | null = null;
   const controller = new IslandController(
     {
       now: () => Date.now(),
@@ -309,7 +310,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   const targetSize = (state: IslandState) => {
     const open = state.expanded && state.mode.kind !== "starting";
-    if (state.mode.kind === "postCall" && open && reportedSize) return reportedSize;
+    // Sized by the page: the after-call card, and an offer or call carrying the brief. Only a size reported for this
+    // same kind of island counts, so the card's height never leaks onto the next offer.
+    const natural = state.mode.kind === "postCall" || offerBriefLines(state) > 0;
+    if (open && natural && reportedSize && reportedKind === state.mode.kind) return reportedSize;
     return islandSize(state.geometry, state.mode.kind, open, undefined, offerBriefLines(state));
   };
 
@@ -499,6 +503,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   ipcMain.on("island:resize", (event, size: { width: number; height: number }) => {
     if (!fromIsland(event.sender) || !size || !(size.width > 0) || !(size.height > 0)) return;
     reportedSize = { width: Math.round(size.width), height: Math.round(size.height) };
+    reportedKind = controller.state.mode.kind;
     fit(targetSize(controller.state), true);
   });
 

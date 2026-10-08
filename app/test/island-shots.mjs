@@ -38,7 +38,7 @@ async function open(fixture) {
   if (!started) errors.push("island script never started (window.__setIslandState missing)");
   if (started) await win.webContents.executeJavaScript(`window.__setIslandState(${JSON.stringify(fixture.state)}); true`);
   // A card sized from its content animates to its height after it is measured.
-  await (fixture.fit ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
+  await (fixture.fit || fixture.natural ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
   return { win, errors };
 }
 
@@ -70,6 +70,18 @@ const measure = (win) => win.webContents.executeJavaScript(`(() => {
     atBottom: t ? t.scrollHeight - t.scrollTop - t.clientHeight < 2 : null,
     clipped,
     title: document.querySelector('.topbar')?.title ?? '',
+    offer: (() => {
+      const offer = document.querySelector('.offer');
+      if (!offer) return null;
+      const lines = [...document.querySelectorAll('.offer-brief-line')];
+      return {
+        bottom: Math.ceil(offer.getBoundingClientRect().bottom),
+        cut: lines.filter((line) => line.scrollHeight > line.clientHeight + 1).length,
+        more: !!document.querySelector('.offer-brief-more'),
+        lines: lines.length,
+        reported: (window.__islandSizes || []).at(-1)?.height ?? null,
+      };
+    })(),
   };
 })()`);
 
@@ -90,17 +102,18 @@ async function main() {
   await anchor.loadURL("data:text/html,<title>anchor</title>");
 
 for (const fixture of fixtures) {
+  if (process.env.ISLAND_PROGRESS) console.log(`fixture ${fixture.name}`);
   const { win, errors } = await open(fixture);
   const problems = [];
   for (const selector of fixture.steps ?? []) {
     const clicked = await win.webContents.executeJavaScript(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`);
     if (!clicked) problems.push(`step target missing: ${selector}`);
-    await (fixture.fit ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
+    await (fixture.fit || fixture.natural ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
   }
   const m = await measure(win);
   if (m.missing) problems.push("island did not render");
   else {
-    if (m.width !== fixture.expect.width || (!fixture.fit && m.height !== fixture.expect.height)) {
+    if (m.width !== fixture.expect.width || (!fixture.fit && !fixture.natural && m.height !== fixture.expect.height)) {
       problems.push(`size ${m.width}x${m.height}, expected ${fixture.expect.width}x${fixture.expect.height}`);
     }
     if (!m.inViewport) problems.push("island outside its window");
@@ -115,6 +128,17 @@ for (const fixture of fixtures) {
       else {
         if (m.card.overflow > 1) problems.push(`card content ${m.card.overflow}px taller than its box`);
         if (Math.abs(m.height - (m.card.bar + m.card.cardHeight)) > 1) problems.push(`island ${m.height}px but bar + card is ${m.card.bar + m.card.cardHeight}px`);
+      }
+    }
+    if (fixture.natural) {
+      // As tall as what it shows: the brief is never cut off at the bottom, and the window follows.
+      if (!m.offer) problems.push("no call offer rendered");
+      else {
+        if (m.offer.bottom > m.height + 1) problems.push(`the brief reaches ${m.offer.bottom}px but the island is ${m.height}px: it is cut off`);
+        if (m.offer.reported !== m.height) problems.push(`the window was told ${m.offer.reported}px for a ${m.height}px island`);
+        if (fixture.expect.cut !== undefined && m.offer.cut !== fixture.expect.cut) problems.push(`${m.offer.cut} brief line(s) cut, expected ${fixture.expect.cut}`);
+        if (fixture.expect.more !== undefined && m.offer.more !== fixture.expect.more) problems.push(fixture.expect.more ? "nothing offers the rest of the brief" : "'more' shown with nothing more to show");
+        if (fixture.expect.lines !== undefined && m.offer.lines !== fixture.expect.lines) problems.push(`${m.offer.lines} brief line(s) shown, expected ${fixture.expect.lines}`);
       }
     }
     if (m.overflow.length) problems.push(`content wider than its box: ${m.overflow.join("; ")}`);

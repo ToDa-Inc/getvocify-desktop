@@ -30,7 +30,8 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
   // A dropdown over the card reaches past it: the window must be as tall as the dropdown, the island's shape is not.
   const [popupBottom, setPopupBottom] = useState<number | null>(null);
   const column = useRef<HTMLDivElement>(null);
-  const natural = kind === "postCall" && open;
+  // As tall as its content: the after-call card, and a call offer or call carrying the contact's brief (it wraps).
+  const natural = open && (kind === "postCall" || offerBriefLines(state) > 0);
   const shape = islandSize(state.geometry, kind, open, undefined, offerBriefLines(state));
   const size = natural && cardHeight !== null ? { width: shape.width, height: cardHeight } : shape;
   const radius = cornerRadius(kind, open);
@@ -74,6 +75,7 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
       data-mode={kind}
       data-material={state.material}
       data-reduce-motion={state.reduceMotion}
+      data-natural={natural}
       onMouseEnter={() => {
         setHovered(true);
         act({ name: "pointer", inside: true });
@@ -286,18 +288,52 @@ function Offer({ onScreen, children }: { onScreen: OnScreenCall | null; children
   );
 }
 
-/** The brief's lines under a row: one line each, full text on hover; one quiet line while it loads. */
+/** At rest the brief shows its first lines, each wrapped up to two rows; "more" shows all of it, in full. */
+const BRIEF_FOLDED_LINES = 2;
+
+/** The brief's lines under a row; one quiet line while it loads. */
 function BriefLines({ lines, loading }: { lines?: string[]; loading?: boolean }) {
-  return (
-    <div className="offer-brief" aria-live="polite">
-      {loading ? (
+  const all = lines ?? [];
+  const [open, setOpen] = useState(false);
+  const [cut, setCut] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const key = all.join("\n");
+  // Another contact's brief starts folded.
+  useEffect(() => setOpen(false), [key]);
+  // "more" only when something is actually hidden: a line past the first two, or a line cut at two rows.
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el || open) return;
+    const clipped = [...el.querySelectorAll<HTMLElement>(".offer-brief-line")].some((line) => line.scrollHeight > line.clientHeight + 1);
+    setCut(clipped || all.length > BRIEF_FOLDED_LINES);
+  }, [key, open, all.length]);
+  if (loading) {
+    return (
+      <div className="offer-brief" aria-live="polite">
         <span className="offer-brief-line" data-loading="true">Reading recent activity…</span>
-      ) : (
-        (lines ?? []).map((line) => (
-          <span key={line} className="offer-brief-line" title={line}>
-            {line}
-          </span>
-        ))
+      </div>
+    );
+  }
+  const shown = open ? all : all.slice(0, BRIEF_FOLDED_LINES);
+  return (
+    <div className="offer-brief" ref={box} data-open={open} aria-live="polite">
+      {shown.map((line) => (
+        <span key={line} className="offer-brief-line">
+          {line}
+        </span>
+      ))}
+      {(cut || open) && (
+        <button
+          type="button"
+          className="offer-brief-more"
+          aria-expanded={open}
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen((was) => !was);
+          }}
+        >
+          {open ? "less" : "more"}
+        </button>
       )}
     </div>
   );

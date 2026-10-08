@@ -69,11 +69,11 @@ test("the call offer follows the front window's active tab only", () => {
   assert.deepEqual(CrmPages.frontRecordURLs(""), []);
 });
 
-test("the offer's recent-activity brief: two lines at most, loading as one line, anything else as none", () => {
+test("the offer's recent-activity brief: three lines at most, loading as one line, anything else as none", () => {
   const base = { provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", phone: "+34600111222", callerId: "+34910000000", state: "callable" };
   const ready = decodeOnScreen({ ...base, brief: { state: "ready", lines: ["One.", " ", "Two.", "Three."] } })!;
-  assert.deepEqual(ready.brief, { state: "ready", lines: ["One.", "Two."] });
-  assert.equal(briefLinesShown(ready), 2);
+  assert.deepEqual(ready.brief, { state: "ready", lines: ["One.", "Two.", "Three."] });
+  assert.equal(briefLinesShown(ready), 3);
   const loading = decodeOnScreen({ ...base, brief: { state: "loading" } })!;
   assert.equal(briefLinesShown(loading), 1);
   assert.equal(decodeOnScreen({ ...base, brief: { state: "ready", lines: [] } })!.brief, null);
@@ -82,9 +82,9 @@ test("the offer's recent-activity brief: two lines at most, loading as one line,
   assert.equal(briefLinesShown(null), 0);
 });
 
-test("a call keeps the contact's brief: two lines at most, none when missing", () => {
-  const dial = decodeDial({ phase: "ringing", name: "Ana Ruiz", phone: "+34600111222", brief: ["One.", "", "Two.", "Three."] })!;
-  assert.deepEqual(dial.brief, ["One.", "Two."]);
+test("a call keeps the contact's brief: three lines at most, none when missing", () => {
+  const dial = decodeDial({ phase: "ringing", name: "Ana Ruiz", phone: "+34600111222", brief: ["One.", "", "Two.", "Three.", "Four."] })!;
+  assert.deepEqual(dial.brief, ["One.", "Two.", "Three."]);
   assert.equal(decodeDial({ phase: "ringing", name: "Ana Ruiz", phone: "+34600111222" })!.brief, null);
   assert.equal(decodeDial({ phase: "ringing", name: "Ana Ruiz", phone: "+34600111222", brief: "junk" })!.brief, null);
 });

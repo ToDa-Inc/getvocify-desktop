@@ -35,7 +35,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .island[data-reduce-motion="true"] { transition-duration: 120ms; }
 
 .column { position: relative; display: flex; flex-direction: column; height: 100%; }
-.island[data-mode="postCall"][data-open="true"] .column { height: auto; }
+.island[data-mode="postCall"][data-open="true"] .column, .island[data-natural="true"] .column { height: auto; }
 
 /* glass */
 .bg { position: absolute; inset: 0; }
@@ -130,8 +130,11 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 /* the call offer, and what happened with the contact lately under it (geometry.ts BRIEF_LINE / BRIEF_BOTTOM) */
 .offer { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .offer-row { flex: none; height: 56px; }
-.offer-brief { display: flex; flex-direction: column; padding: 0 14px 8px; margin-top: -10px; animation: offer-brief-in 200ms ease-out; }
-.offer-brief-line { height: 16px; line-height: 16px; font-size: 11.5px; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.offer-brief { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 0 14px 10px; margin-top: -10px; animation: offer-brief-in 200ms ease-out; }
+.offer-brief-line { line-height: 16px; font-size: 11.5px; color: var(--secondary); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; user-select: text; }
+.offer-brief[data-open="true"] .offer-brief-line { display: block; -webkit-line-clamp: unset; }
+.offer-brief-more { font-size: 11px; color: var(--beige); padding: 0; margin-top: 1px; }
+.offer-brief-more:hover { text-decoration: underline; }
 .offer-brief-line[data-loading="true"] { opacity: 0.7; }
 @keyframes offer-brief-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .offer-brief { animation: none; } }

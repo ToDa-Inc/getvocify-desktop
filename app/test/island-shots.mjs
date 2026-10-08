@@ -73,12 +73,16 @@ const measure = (win) => win.webContents.executeJavaScript(`(() => {
     offer: (() => {
       const offer = document.querySelector('.offer');
       if (!offer) return null;
-      const lines = [...document.querySelectorAll('.offer-brief-line')];
+      const lines = [...document.querySelectorAll('.recent-line')];
+      const texts = [...document.querySelectorAll('.recent-text')];
       return {
         bottom: Math.ceil(offer.getBoundingClientRect().bottom),
-        cut: lines.filter((line) => line.scrollHeight > line.clientHeight + 1).length,
-        more: !!document.querySelector('.offer-brief-more'),
+        cut: texts.filter((line) => line.scrollHeight > line.clientHeight + 1 || line.scrollWidth > line.clientWidth + 1).length,
         lines: lines.length,
+        whens: document.querySelectorAll('.recent-when').length,
+        icons: lines.filter((line) => line.querySelector('.recent-icon svg')).length,
+        loading: !!document.querySelector('.recent-loading'),
+        sideways: document.documentElement.scrollWidth > innerWidth || offer.scrollWidth > offer.clientWidth + 1,
         reported: (window.__islandSizes || []).at(-1)?.height ?? null,
       };
     })(),
@@ -136,9 +140,13 @@ for (const fixture of fixtures) {
       else {
         if (m.offer.bottom > m.height + 1) problems.push(`the brief reaches ${m.offer.bottom}px but the island is ${m.height}px: it is cut off`);
         if (m.offer.reported !== m.height) problems.push(`the window was told ${m.offer.reported}px for a ${m.height}px island`);
-        if (fixture.expect.cut !== undefined && m.offer.cut !== fixture.expect.cut) problems.push(`${m.offer.cut} brief line(s) cut, expected ${fixture.expect.cut}`);
-        if (fixture.expect.more !== undefined && m.offer.more !== fixture.expect.more) problems.push(fixture.expect.more ? "nothing offers the rest of the brief" : "'more' shown with nothing more to show");
+        // Every line in full: nothing cut, nothing hidden behind "more", nothing scrolling sideways.
+        if (m.offer.cut) problems.push(`${m.offer.cut} brief line(s) cut`);
+        if (m.offer.sideways) problems.push("the brief scrolls sideways");
         if (fixture.expect.lines !== undefined && m.offer.lines !== fixture.expect.lines) problems.push(`${m.offer.lines} brief line(s) shown, expected ${fixture.expect.lines}`);
+        if (fixture.expect.whens !== undefined && m.offer.whens !== fixture.expect.whens) problems.push(`${m.offer.whens} brief date(s) shown, expected ${fixture.expect.whens}`);
+        if (fixture.expect.icons !== undefined && m.offer.icons !== fixture.expect.icons) problems.push(`${m.offer.icons} brief icon(s) shown, expected ${fixture.expect.icons}`);
+        if (fixture.expect.loading !== undefined && m.offer.loading !== fixture.expect.loading) problems.push(fixture.expect.loading ? "no placeholder while the brief loads" : "a loading placeholder with the brief ready");
       }
     }
     if (m.overflow.length) problems.push(`content wider than its box: ${m.overflow.join("; ")}`);

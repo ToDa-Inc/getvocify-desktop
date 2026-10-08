@@ -76,6 +76,12 @@ export const Users = ({ size = 10.5, stroke = 2.2, style, className }: IconProps
 export const RecordCircle = ({ size = 12, stroke = 2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none" /></svg>
 );
+export const CheckCircle = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><circle cx="12" cy="12" r="9" /><path d="m8.5 12.2 2.4 2.4 4.6-4.8" /></svg>
+);
+export const Building = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M3 21h18M10 7h4M10 11h4M10 15h4" /></svg>
+);
 export const ExclamationCircle = ({ size = 10.5, stroke = 2.2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5.5M12 16.5v.01" /></svg>
 );
@@ -94,6 +100,10 @@ const filled = (size: number, style?: CSSProperties, className?: string) => ({
 });
 export const Phone = ({ size = 11, style, className }: IconProps) => (
   <svg {...filled(size, style, className)}><path d={HANDSET} /></svg>
+);
+/** The handset drawn as a line, for lists that pair it with other line icons. */
+export const PhoneOutline = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><path d={HANDSET} /></svg>
 );
 export const PhoneDown = ({ size = 11, style, className }: IconProps) => (
   <svg {...filled(size, style, className)}><path d={HANDSET} transform="rotate(135 12 12)" /></svg>

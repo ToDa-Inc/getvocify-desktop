@@ -35,9 +35,10 @@ export function earWidth(kind: Kind, open: boolean): number {
 export type Size = { width: number; height: number };
 
 /** The island's shape in px. Same numbers as `IslandGeometry.size` in MeetingPill.swift. */
-/** One line of the call offer's brief (11.5 px text), and the room under the lines. */
-export const BRIEF_LINE = 16;
-export const BRIEF_BOTTOM = 8;
+/** The call offer's recent activity until the page measures it: the hairline and "Recent activity" label, then a
+ * line each (12 px text; a long one wraps and the measured height takes over). */
+export const BRIEF_HEAD = 25;
+export const BRIEF_LINE = 20;
 
 /**
  * `briefLines`: the lines of the contact's recent-activity brief under the call offer (open idle island and the
@@ -46,7 +47,7 @@ export const BRIEF_BOTTOM = 8;
 export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody = 44, briefLines = 0): Size {
   const closed = { width: gap(g) + earWidth(kind, false) * 2, height: g.barHeight };
   const wide = (min: number) => Math.max(gap(g) + EAR * 2, min);
-  const brief = briefLines > 0 ? briefLines * BRIEF_LINE + BRIEF_BOTTOM : 0;
+  const brief = briefLines > 0 ? BRIEF_HEAD + briefLines * BRIEF_LINE : 0;
   switch (kind) {
     case "idle":
     case "dialConfirm":

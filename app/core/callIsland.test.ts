@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import { briefLinesShown, CallWording, CrmScreenChange, CrmTabsAccess, decodeDial, decodeOnScreen, isVocifyCallUp, PhoneFormat } from "./callIsland.ts";
+import { briefLinesShown, briefWhen, CallWording, CrmScreenChange, CrmTabsAccess, decodeDial, decodeOnScreen, isVocifyCallUp, PhoneFormat } from "./callIsland.ts";
 
 // Same checks as the Mac app (apps/macos/Sources/VocifyCoreChecks/main.swift), so both islands say the same.
 
@@ -70,9 +70,28 @@ test("the call offer follows the front window's active tab only", () => {
 });
 
 test("the offer's recent-activity brief: three lines at most, loading as one line, anything else as none", () => {
-  const base = { provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", phone: "+34600111222", callerId: "+34910000000", state: "callable" };
-  const ready = decodeOnScreen({ ...base, brief: { state: "ready", lines: ["One.", " ", "Two.", "Three."] } })!;
-  assert.deepEqual(ready.brief, { state: "ready", lines: ["One.", "Two.", "Three."] });
+  const base = { provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", phone: "+34600111222", callerId: "+34900", state: "callable" };
+  const ready = decodeOnScreen({
+    ...base,
+    brief: {
+      state: "ready",
+      lines: [
+        { text: "Demo done.", type: "meeting", at: "2026-10-02T04:00:00Z" },
+        { text: " ", type: "note", at: null },
+        { text: "Proposal to send.", type: "task", at: "2026-10-05T04:00:00Z" },
+        { text: "Logistics, 120 people.", type: "company", at: null },
+        { text: "A fourth.", type: "call", at: null },
+      ],
+    },
+  })!;
+  assert.deepEqual(ready.brief, {
+    state: "ready",
+    lines: [
+      { text: "Demo done.", type: "meeting", at: "2026-10-02T04:00:00Z" },
+      { text: "Proposal to send.", type: "task", at: "2026-10-05T04:00:00Z" },
+      { text: "Logistics, 120 people.", type: "company", at: null },
+    ],
+  });
   assert.equal(briefLinesShown(ready), 3);
   const loading = decodeOnScreen({ ...base, brief: { state: "loading" } })!;
   assert.equal(briefLinesShown(loading), 1);
@@ -82,9 +101,48 @@ test("the offer's recent-activity brief: three lines at most, loading as one lin
   assert.equal(briefLinesShown(null), 0);
 });
 
+test("a brief line shows no kind or date it was not given (plain text from an older dashboard, an unknown kind)", () => {
+  const base = { provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", phone: "+34600111222", callerId: "+34900", state: "callable" };
+  const brief = decodeOnScreen({ ...base, brief: { state: "ready", lines: ["Demo done.", { text: "Spoke.", type: "fax", at: "soon" }] } })!.brief;
+  assert.deepEqual(brief, {
+    state: "ready",
+    lines: [
+      { text: "Demo done.", type: null, at: null },
+      { text: "Spoke.", type: null, at: null },
+    ],
+  });
+});
+
 test("a call keeps the contact's brief: three lines at most, none when missing", () => {
-  const dial = decodeDial({ phase: "ringing", name: "Ana Ruiz", phone: "+34600111222", brief: ["One.", "", "Two.", "Three.", "Four."] })!;
-  assert.deepEqual(dial.brief, ["One.", "Two.", "Three."]);
+  const dial = decodeDial({
+    phase: "ringing",
+    name: "Ana Ruiz",
+    phone: "+34600111222",
+    brief: [{ text: "One.", type: "call", at: "2026-10-02T04:00:00Z" }, "", "Two.", "Three.", "Four."],
+  })!;
+  assert.deepEqual(dial.brief, [
+    { text: "One.", type: "call", at: "2026-10-02T04:00:00Z" },
+    { text: "Two.", type: null, at: null },
+    { text: "Three.", type: null, at: null },
+  ]);
   assert.equal(decodeDial({ phase: "ringing", name: "Ana Ruiz", phone: "+34600111222" })!.brief, null);
   assert.equal(decodeDial({ phase: "ringing", name: "Ana Ruiz", phone: "+34600111222", brief: "junk" })!.brief, null);
+});
+
+test("when a brief line happened, in the rep's own calendar days; a task's date is when it is due", () => {
+  // 8 Oct 2026, 15:00 local time.
+  const now = new Date(2026, 9, 8, 15, 0);
+  const at = (month: number, day: number, hour = 10, year = 2026) => new Date(year, month, day, hour).toISOString();
+  assert.equal(briefWhen({ type: "call", at: at(9, 8, 9) }, now), "today");
+  assert.equal(briefWhen({ type: "call", at: at(9, 7, 23) }, now), "yesterday");
+  assert.equal(briefWhen({ type: "note", at: at(9, 5) }, now), "3 days ago");
+  assert.equal(briefWhen({ type: "note", at: at(8, 24) }, now), "2 weeks ago");
+  assert.equal(briefWhen({ type: "meeting", at: at(7, 20) }, now), "Aug 20");
+  assert.equal(briefWhen({ type: "email", at: at(11, 3, 10, 2025) }, now), "Dec 3, 2025");
+  assert.equal(briefWhen({ type: "meeting", at: at(9, 9) }, now), "tomorrow");
+  assert.equal(briefWhen({ type: "meeting", at: at(9, 12) }, now), "in 4 days");
+  assert.equal(briefWhen({ type: "task", at: at(9, 9) }, now), "due tomorrow");
+  assert.equal(briefWhen({ type: "task", at: at(9, 6) }, now), "due 2 days ago");
+  assert.equal(briefWhen({ type: "company", at: null }, now), null);
+  assert.equal(briefWhen({ type: null, at: "junk" }, now), null);
 });

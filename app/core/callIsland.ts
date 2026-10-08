@@ -18,7 +18,15 @@ export type OnScreenCall = {
   brief?: OnScreenBrief | null;
 };
 
-export type OnScreenBrief = { state: "loading" } | { state: "ready"; lines: string[] };
+export type OnScreenBrief = { state: "loading" } | { state: "ready"; lines: BriefLine[] };
+
+/** What a brief line is about: the kind of the newest interaction it cites. */
+export type BriefKind = "call" | "email" | "note" | "meeting" | "task" | "vocify_conversation" | "company";
+
+/** A brief line, with the kind and date (ISO) of the newest interaction it cites; null when not given. */
+export type BriefLine = { text: string; type: BriefKind | null; at: string | null };
+
+const BRIEF_KINDS = new Set<string>(["call", "email", "note", "meeting", "task", "vocify_conversation", "company"]);
 
 /** The summary's lines the island keeps (two show folded, all when opened). */
 const BRIEF_LINES = 3;
@@ -27,9 +35,52 @@ function decodeBrief(raw: unknown): OnScreenBrief | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
   if (r.state === "loading") return { state: "loading" };
-  if (r.state !== "ready" || !Array.isArray(r.lines)) return null;
-  const lines = r.lines.map(text).filter((line): line is string => line !== null).slice(0, BRIEF_LINES);
-  return lines.length ? { state: "ready", lines } : null;
+  if (r.state !== "ready") return null;
+  const lines = briefLines(r.lines);
+  return lines ? { state: "ready", lines } : null;
+}
+
+/** A dashboard before kinds and dates sent plain strings: those show as text alone. */
+function briefLine(raw: unknown): BriefLine | null {
+  if (typeof raw === "string") return text(raw) ? { text: text(raw)!, type: null, at: null } : null;
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  const lineText = text(r.text);
+  if (!lineText) return null;
+  const type = typeof r.type === "string" && BRIEF_KINDS.has(r.type) ? (r.type as BriefKind) : null;
+  const at = typeof r.at === "string" && !Number.isNaN(Date.parse(r.at)) ? r.at : null;
+  return { text: lineText, type, at };
+}
+
+function briefLines(raw: unknown): BriefLine[] | null {
+  if (!Array.isArray(raw)) return null;
+  const lines = raw.map(briefLine).filter((line): line is BriefLine => line !== null).slice(0, BRIEF_LINES);
+  return lines.length ? lines : null;
+}
+
+const DAY_MS = 24 * 3600 * 1000;
+
+/** When a brief line happened, counted in the rep's calendar days ("yesterday", "3 days ago", "Aug 20"); a task's
+ * date is its due date. Null when the line has no date. */
+export function briefWhen(line: Pick<BriefLine, "type" | "at">, now: Date = new Date()): string | null {
+  if (!line.at) return null;
+  const date = new Date(line.at);
+  if (Number.isNaN(date.getTime())) return null;
+  const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((midnight(date) - midnight(now)) / DAY_MS);
+  const ago = -days;
+  let when: string;
+  if (days === 0) when = "today";
+  else if (days === -1) when = "yesterday";
+  else if (days === 1) when = "tomorrow";
+  else if (ago > 1 && ago < 7) when = `${ago} days ago`;
+  else if (ago >= 7 && ago < 28) when = Math.floor(ago / 7) === 1 ? "1 week ago" : `${Math.floor(ago / 7)} weeks ago`;
+  else if (days > 1 && days < 7) when = `in ${days} days`;
+  else {
+    const sameYear = date.getFullYear() === now.getFullYear();
+    when = date.toLocaleDateString("en-US", sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
+  }
+  return line.type === "task" ? `due ${when}` : when;
 }
 
 /** How many brief lines the offer shows (a loading brief takes one). */
@@ -50,7 +101,7 @@ export type DialIslandState = {
   /** Why an unanswered call ended, in the rep's language. */
   message: string | null;
   /** What happened with the contact lately, kept for the whole call. */
-  brief: string[] | null;
+  brief: BriefLine[] | null;
 };
 
 const STATES = new Set<OnScreenState>(["callable", "no_phone", "needs_contact", "no_caller_id"]);
@@ -85,12 +136,6 @@ export function decodeDial(raw: unknown): DialIslandState | null {
     message: text(r.message),
     brief: briefLines(r.brief),
   };
-}
-
-function briefLines(raw: unknown): string[] | null {
-  if (!Array.isArray(raw)) return null;
-  const lines = raw.map(text).filter((line): line is string => line !== null).slice(0, BRIEF_LINES);
-  return lines.length ? lines : null;
 }
 
 /** While a Vocify call is up the island must not offer or start any other recording. */

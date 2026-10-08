@@ -2,8 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { cornerRadius, earWidth, islandSize, offerBriefLines } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
-import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Keypad, Mic, MicSlash, Pause, Phone, PhoneDown, Play, RecordCircle, Sparkle, Waveform } from "./icons.tsx";
-import { CallWording, PhoneFormat, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
+import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Waveform } from "./icons.tsx";
+import { briefWhen, CallWording, PhoneFormat, type BriefKind, type BriefLine, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
 import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuView } from "./types.ts";
@@ -264,7 +264,7 @@ function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onP
       return state.postCall ? <PostCallCard postCall={state.postCall} act={act} onPopupExtent={onPopupExtent} /> : null;
     case "dialConfirm":
       // The rep left the record while the row was open: the island goes back to rest, not blank.
-      return state.onScreen ? <DialConfirmMenu onScreen={state.onScreen} act={act} /> : <IdleMenu ready={state.recorderReady} onScreen={null} act={act} />;
+      return state.onScreen ? <DialConfirmMenu onScreen={state.onScreen} ready={state.recorderReady} act={act} /> : <IdleMenu ready={state.recorderReady} onScreen={null} act={act} />;
     case "dialing":
       return state.dial ? <DialingMenu dial={state.dial} act={act} /> : null;
     default:
@@ -274,75 +274,86 @@ function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onP
 
 /* ---------- menus ---------- */
 
-/** At rest, open. With a CRM contact on screen it leads with who that is and Call, the way the
- * confirm row does, and recording a meeting becomes the quiet icon beside it. */
-/** The call offer's row, and under it what happened with the contact lately (at most two lines; one while it loads). */
+/** The call offer's row and, under a hairline, what happened with the contact lately. */
 function Offer({ onScreen, children }: { onScreen: OnScreenCall | null; children: ReactNode }) {
   const brief = onScreen?.brief;
   if (!brief) return <div className="menu">{children}</div>;
   return (
     <div className="offer">
       <div className="menu offer-row">{children}</div>
-      {brief.state === "loading" ? <BriefLines loading /> : <BriefLines lines={brief.lines} />}
+      <div className="offer-brief">
+        <div className="recent-label">Recent activity</div>
+        {brief.state === "loading" ? <RecentLoading /> : <RecentLines lines={brief.lines} />}
+      </div>
     </div>
   );
 }
 
-/** At rest the brief shows its first lines, each wrapped up to two rows; "more" shows all of it, in full. */
-const BRIEF_FOLDED_LINES = 2;
-
-/** The brief's lines under a row; one quiet line while it loads. */
-function BriefLines({ lines, loading }: { lines?: string[]; loading?: boolean }) {
-  const all = lines ?? [];
-  const [open, setOpen] = useState(false);
-  const [cut, setCut] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  const key = all.join("\n");
-  // Another contact's brief starts folded.
-  useEffect(() => setOpen(false), [key]);
-  // "more" only when something is actually hidden: a line past the first two, or a line cut at two rows.
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el || open) return;
-    const clipped = [...el.querySelectorAll<HTMLElement>(".offer-brief-line")].some((line) => line.scrollHeight > line.clientHeight + 1);
-    setCut(clipped || all.length > BRIEF_FOLDED_LINES);
-  }, [key, open, all.length]);
-  if (loading) {
-    return (
-      <div className="offer-brief" aria-live="polite">
-        <span className="offer-brief-line" data-loading="true">Reading recent activity…</span>
-      </div>
-    );
-  }
-  const shown = open ? all : all.slice(0, BRIEF_FOLDED_LINES);
+/** Two quiet bars while the summary is read (the words are for screen readers). */
+function RecentLoading() {
   return (
-    <div className="offer-brief" ref={box} data-open={open} aria-live="polite">
-      {shown.map((line) => (
-        <span key={line} className="offer-brief-line">
-          {line}
-        </span>
-      ))}
-      {(cut || open) && (
-        <button
-          type="button"
-          className="offer-brief-more"
-          aria-expanded={open}
-          onClick={(event) => {
-            event.stopPropagation();
-            setOpen((was) => !was);
-          }}
-        >
-          {open ? "less" : "more"}
-        </button>
-      )}
+    <div className="recent-loading" aria-live="polite">
+      <span className="sr-only">Reading recent activity</span>
+      <span className="recent-bar" />
+      <span className="recent-bar" style={{ width: "62%" }} />
     </div>
   );
+}
+
+/** Every line in full: what it is about, the line, and when; a line without a kind or date shows the text alone. */
+function RecentLines({ lines }: { lines: BriefLine[] }) {
+  const now = new Date(useNow(60_000, true));
+  return (
+    <div className="recent-lines" aria-live="polite">
+      {lines.map((line) => {
+        const when = briefWhen(line, now);
+        return (
+          <div key={line.text} className="recent-line">
+            <span className="recent-icon" title={line.type ? BRIEF_KIND_LABEL[line.type] : undefined}>
+              {line.type && <BriefKindIcon kind={line.type} />}
+            </span>
+            <span className="recent-text">{line.text}</span>
+            {when && <span className="recent-when">{when}</span>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const BRIEF_KIND_LABEL: Record<BriefKind, string> = {
+  call: "Call",
+  email: "Email",
+  note: "Note",
+  meeting: "Meeting",
+  task: "Task",
+  vocify_conversation: "Vocify conversation",
+  company: "Company",
+};
+
+function BriefKindIcon({ kind }: { kind: BriefKind }) {
+  switch (kind) {
+    case "call":
+      return <PhoneOutline size={11} />;
+    case "email":
+      return <Mail size={11} />;
+    case "note":
+      return <FileText size={11} />;
+    case "meeting":
+      return <Calendar size={11} />;
+    case "task":
+      return <CheckCircle size={11} />;
+    case "vocify_conversation":
+      return <Waveform size={11} />;
+    case "company":
+      return <Building size={11} />;
+  }
 }
 
 const BRIEF_HIDDEN_KEY = "vocify.island.briefHidden";
 
-/** During the call: the contact's brief above live help, which the rep can fold to its heading (remembered). */
-function CallBriefSection({ lines }: { lines: string[] }) {
+/** During the call: the contact's recent activity above live help, which the rep can fold to its heading (remembered). */
+function CallBriefSection({ lines }: { lines: BriefLine[] }) {
   const [hidden, setHidden] = useState(() => {
     try {
       return localStorage.getItem(BRIEF_HIDDEN_KEY) === "1";
@@ -364,23 +375,18 @@ function CallBriefSection({ lines }: { lines: string[] }) {
     <div className="help call-brief">
       <button
         type="button"
-        className="help-heading call-brief-toggle"
+        className="recent-label call-brief-toggle"
         aria-expanded={!hidden}
-        title={hidden ? "Show the brief" : "Hide the brief"}
+        title={hidden ? "Show recent activity" : "Hide recent activity"}
         onClick={(event) => {
           event.stopPropagation();
           toggle();
         }}
       >
-        <span>Brief</span>
+        <span>Recent activity</span>
         <ChevronDown size={8} style={{ transform: hidden ? "rotate(-90deg)" : "none", transition: "transform 150ms" }} />
       </button>
-      {!hidden &&
-        lines.map((line) => (
-          <div key={line} className="call-brief-line">
-            {line}
-          </div>
-        ))}
+      {!hidden && <RecentLines lines={lines} />}
     </div>
   );
 }
@@ -391,9 +397,7 @@ function IdleMenu({ ready, onScreen, act }: { ready: boolean; onScreen: OnScreen
       {onScreen ? (
         <>
           <OnScreenOffer onScreen={onScreen} act={act} />
-          <IconButton help="Record meeting" className="record-icon" onClick={() => act({ name: "record" })}>
-            <RecordCircle size={12} />
-          </IconButton>
+          <QuietRecordButton title="Record" ready={ready} besideCall onClick={() => act({ name: "record" })} />
         </>
       ) : (
         <>
@@ -505,16 +509,12 @@ function OnScreenOffer({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) 
 }
 
 /** Who would be called and from which number; one click calls. */
-function DialConfirmMenu({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) {
+function DialConfirmMenu({ onScreen, ready, act }: { onScreen: OnScreenCall; ready: boolean; act: Act }) {
+  // Closing is the bar's chevron, as everywhere else on the island.
   return (
     <Offer onScreen={onScreen}>
       <OnScreenOffer onScreen={onScreen} act={act} />
-      <IconButton help="Record meeting" className="record-icon" onClick={() => act({ name: "record" })}>
-        <RecordCircle size={12} />
-      </IconButton>
-      <IconButton help="Close" onClick={() => act({ name: "toggle" })}>
-        <Close size={11} />
-      </IconButton>
+      <QuietRecordButton title="Record" ready={ready} besideCall onClick={() => act({ name: "record" })} />
     </Offer>
   );
 }
@@ -541,7 +541,10 @@ function DialingMenu({ dial, act }: { dial: DialIslandState; act: Act }) {
   return (
     <div className="offer">
       <div className="menu offer-row">{row}</div>
-      <BriefLines lines={dial.brief} />
+      <div className="offer-brief">
+        <div className="recent-label">Recent activity</div>
+        <RecentLines lines={dial.brief} />
+      </div>
     </div>
   );
 }
@@ -940,11 +943,13 @@ function TypingDots() {
   );
 }
 
-function QuietRecordButton({ title, ready, onClick }: { title: string; ready: boolean; onClick: () => void }) {
+/** `besideCall`: next to Call, as tall as it and quieter, so Call stays the main action. */
+function QuietRecordButton({ title, ready, besideCall = false, onClick }: { title: string; ready: boolean; besideCall?: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       className="quiet-record"
+      data-beside-call={besideCall}
       title={ready ? "Records your mic as You and the call as Them" : "Opens Vocify to sign in"}
       onClick={(event) => {
         event.stopPropagation();

@@ -33,12 +33,13 @@ async function open(fixture) {
   win.webContents.on("render-process-gone", (_e, details) => errors.push(`renderer gone: ${details.reason}`));
   await win.loadFile(dist);
   await win.webContents.insertCSS(`html,body{background:${WALLPAPER} !important}`);
-  await win.webContents.executeJavaScript(`window.__fixedNow=${NOW}; true`);
+  // Each fixture starts from nothing remembered (a folded section from an earlier run must not carry over).
+  await win.webContents.executeJavaScript(`try { localStorage.clear(); } catch {} window.__fixedNow=${NOW}; true`);
   const started = await win.webContents.executeJavaScript(`new Promise(r=>{let n=0;const t=()=>window.__setIslandState?r(true):++n>300?r(false):setTimeout(t,10);t()})`);
   if (!started) errors.push("island script never started (window.__setIslandState missing)");
   if (started) await win.webContents.executeJavaScript(`window.__setIslandState(${JSON.stringify(fixture.state)}); true`);
   // A card sized from its content animates to its height after it is measured.
-  await (fixture.fit ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
+  await (fixture.fit || fixture.natural ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
   return { win, errors };
 }
 
@@ -69,7 +70,30 @@ const measure = (win) => win.webContents.executeJavaScript(`(() => {
     overflow,
     atBottom: t ? t.scrollHeight - t.scrollTop - t.clientHeight < 2 : null,
     clipped,
+    briefRows: document.querySelectorAll('.call-brief .recent-line').length,
+    repeatedLabels: (() => {
+      const labels = [...document.querySelectorAll('.recent-label')].map((label) => label.textContent.trim().toLowerCase());
+      return labels.filter((label, i) => labels.indexOf(label) !== i);
+    })(),
     title: document.querySelector('.topbar')?.title ?? '',
+    offer: (() => {
+      const offer = document.querySelector('.offer');
+      if (!offer) return null;
+      const lines = [...document.querySelectorAll('.recent-line')];
+      const texts = [...document.querySelectorAll('.recent-text')];
+      return {
+        bottom: Math.ceil(offer.getBoundingClientRect().bottom),
+        cut: texts.filter((line) => line.scrollHeight > line.clientHeight + 1 || line.scrollWidth > line.clientWidth + 1).length,
+        lines: lines.length,
+        whens: document.querySelectorAll('.recent-when').length,
+        icons: lines.filter((line) => line.querySelector('.recent-icon svg')).length,
+        loading: !!document.querySelector('.recent-loading'),
+        who: document.querySelectorAll('.recent-who').length,
+        toggles: document.querySelectorAll('.company-toggle').length,
+        sideways: document.documentElement.scrollWidth > innerWidth || offer.scrollWidth > offer.clientWidth + 1,
+        reported: (window.__islandSizes || []).at(-1)?.height ?? null,
+      };
+    })(),
   };
 })()`);
 
@@ -90,17 +114,18 @@ async function main() {
   await anchor.loadURL("data:text/html,<title>anchor</title>");
 
 for (const fixture of fixtures) {
+  if (process.env.ISLAND_PROGRESS) console.log(`fixture ${fixture.name}`);
   const { win, errors } = await open(fixture);
   const problems = [];
   for (const selector of fixture.steps ?? []) {
     const clicked = await win.webContents.executeJavaScript(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`);
     if (!clicked) problems.push(`step target missing: ${selector}`);
-    await (fixture.fit ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
+    await (fixture.fit || fixture.natural ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
   }
   const m = await measure(win);
   if (m.missing) problems.push("island did not render");
   else {
-    if (m.width !== fixture.expect.width || (!fixture.fit && m.height !== fixture.expect.height)) {
+    if (m.width !== fixture.expect.width || (!fixture.fit && !fixture.natural && m.height !== fixture.expect.height)) {
       problems.push(`size ${m.width}x${m.height}, expected ${fixture.expect.width}x${fixture.expect.height}`);
     }
     if (!m.inViewport) problems.push("island outside its window");
@@ -117,8 +142,27 @@ for (const fixture of fixtures) {
         if (Math.abs(m.height - (m.card.bar + m.card.cardHeight)) > 1) problems.push(`island ${m.height}px but bar + card is ${m.card.bar + m.card.cardHeight}px`);
       }
     }
+    if (fixture.natural) {
+      // As tall as what it shows: the brief is never cut off at the bottom, and the window follows.
+      if (!m.offer) problems.push("no call offer rendered");
+      else {
+        if (m.offer.bottom > m.height + 1) problems.push(`the brief reaches ${m.offer.bottom}px but the island is ${m.height}px: it is cut off`);
+        if (m.offer.reported !== m.height) problems.push(`the window was told ${m.offer.reported}px for a ${m.height}px island`);
+        // Every line in full: nothing cut, nothing hidden behind "more", nothing scrolling sideways.
+        if (m.offer.cut) problems.push(`${m.offer.cut} brief line(s) cut`);
+        if (m.offer.sideways) problems.push("the brief scrolls sideways");
+        if (fixture.expect.lines !== undefined && m.offer.lines !== fixture.expect.lines) problems.push(`${m.offer.lines} brief line(s) shown, expected ${fixture.expect.lines}`);
+        if (fixture.expect.whens !== undefined && m.offer.whens !== fixture.expect.whens) problems.push(`${m.offer.whens} brief date(s) shown, expected ${fixture.expect.whens}`);
+        if (fixture.expect.icons !== undefined && m.offer.icons !== fixture.expect.icons) problems.push(`${m.offer.icons} brief icon(s) shown, expected ${fixture.expect.icons}`);
+        if (fixture.expect.who !== undefined && m.offer.who !== fixture.expect.who) problems.push(`${m.offer.who} line(s) name who it was with, expected ${fixture.expect.who}`);
+        if (fixture.expect.toggles !== undefined && m.offer.toggles !== fixture.expect.toggles) problems.push(`${m.offer.toggles} company toggle(s), expected ${fixture.expect.toggles}`);
+        if (fixture.expect.loading !== undefined && m.offer.loading !== fixture.expect.loading) problems.push(fixture.expect.loading ? "no placeholder while the brief loads" : "a loading placeholder with the brief ready");
+      }
+    }
     if (m.overflow.length) problems.push(`content wider than its box: ${m.overflow.join("; ")}`);
     if (m.atBottom === false) problems.push("transcript not scrolled to the latest line");
+    if (m.repeatedLabels.length) problems.push(`label shown twice: ${m.repeatedLabels.join(", ")}`);
+    if (fixture.expect.briefRows !== undefined && m.briefRows !== fixture.expect.briefRows) problems.push(`${m.briefRows} row(s) in the call's brief, expected ${fixture.expect.briefRows}`);
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);
   }
   if (errors.length) problems.push(`console errors: ${errors.join(" | ")}`);

@@ -222,7 +222,7 @@ test("a saved shortcut is restored on the next launch, and 'off' stays off", () 
 
 /* ---------- the bridge ---------- */
 
-function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void> } = {}) {
+function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void>; systemAudioAccess?: () => string; askSystemAudio?: () => Promise<void> } = {}) {
   const emitted: { channel: string; payload: unknown }[] = [];
   const opened: string[] = [];
   const logs: string[] = [];
@@ -259,6 +259,8 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
     testPermissions: options.testPermissions,
     crmTabs: options.crmTabs,
     askCrmTabs: options.askCrmTabs,
+    systemAudioAccess: options.systemAudioAccess,
+    askSystemAudio: options.askSystemAudio,
     controller,
     loopback,
     drafts: new Drafts(join(tmp(), "meetings")),
@@ -414,6 +416,23 @@ test("bridge: on a Mac the CRM tab permission is asked from first-run setup, and
   assert.equal(after.crmTabs, "authorized");
   await b.call("crm:open-automation-settings", {});
   assert.deepEqual(b.opened, ["x-apple.systempreferences:com.apple.preference.security?Privacy_Automation"]);
+});
+
+test("bridge: on a Mac the call audio permission is the native helper's, and asking for it goes through the helper", async () => {
+  let status = "never_requested";
+  let asked = 0;
+  const b = bridgeSetup({
+    platform: "darwin",
+    systemAudioAccess: () => status,
+    askSystemAudio: async () => {
+      asked += 1;
+      status = "authorized";
+    },
+  });
+  assert.equal(((await b.call("permissions:status", {})) as { systemAudio?: string }).systemAudio, "never_requested");
+  const after = (await b.call("permissions:request", { type: "systemAudio" })) as { systemAudio?: string };
+  assert.equal(asked, 1);
+  assert.equal(after.systemAudio, "authorized");
 });
 
 test("bridge: a build that cannot read browsers does not mention the CRM tab", async () => {

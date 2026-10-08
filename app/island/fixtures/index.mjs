@@ -25,6 +25,7 @@ const base = {
   finish: null,
   onScreen: null,
   dial: null,
+  meeting: null,
   keypadOpen: false,
   material: "vibrancy",
   reduceMotion: true,
@@ -42,6 +43,22 @@ const turns = [
 ];
 
 const ana = { provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", phone: "+34600111222", callerId: "+34910000000", state: "callable" };
+const ago = (days) => new Date(NOW - days * 24 * 3600 * 1000).toISOString();
+const BRIEF = [
+  { text: "Proposal still to send", type: "task", at: ago(-2) },
+  { text: "Demo with the ops team; asked for pricing for 12 seats", type: "meeting", at: ago(1) },
+  { text: "Budget for Q4 confirmed", type: "vocify_conversation", at: ago(9) },
+];
+// Others at the contact's company (who and when come from what was read).
+const ACME = {
+  name: "Acme SL",
+  latest: { type: "call", at: ago(21), who: "Toni García (CFO)" },
+  people: 2,
+  lines: [
+    { text: "Asked for a demo for the ops team; wants reporting first", type: "call", at: ago(21), who: "Toni García (CFO)" },
+    { text: "Renewal of their current tool is in March", type: "note", at: ago(60), who: null },
+  ],
+};
 const dial = (phase, extra = {}) => ({ phase, name: "Ana Ruiz", phone: "+34600111222", answeredAt: null, muted: false, message: null, ...extra });
 const inCall = {
   mode: { kind: "recording" },
@@ -243,11 +260,28 @@ export const fixtures = [
   { name: "idle-callable", state: { onScreen: ana }, expect: { width: 257, height: 32 } },
   { name: "idle-open-callable", state: { mode: { kind: "idle" }, expanded: true, onScreen: ana }, expect: { width: 380, height: 88 } },
   { name: "idle-open-needs-contact", state: { mode: { kind: "idle" }, expanded: true, onScreen: { ...ana, name: null, phone: null, state: "needs_contact" } }, expect: { width: 380, height: 88 } },
+  // the contact's recent activity under the offer: every line in full, with what it is about and when (from the
+  // interaction it cites); a line without them (an older dashboard, the company) is text alone
+  { name: "idle-open-brief", state: { mode: { kind: "idle" }, expanded: true, onScreen: { ...ana, brief: { state: "ready", lines: BRIEF } } }, expect: { width: 380, lines: 3, whens: 3, icons: 3 }, natural: true },
+  { name: "confirm-brief", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, brief: { state: "ready", lines: BRIEF } } }, expect: { width: 380, lines: 3, whens: 3, icons: 3 }, natural: true },
+  { name: "confirm-brief-long", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, brief: { state: "ready", lines: [{ text: "Asked for pricing for 12 seats, whether onboarding can start before the end of the quarter, and who signs off on a pilot of this size.", type: "email", at: ago(1) }, { text: "Logistics, 120 people.", type: "company", at: null }] } } }, expect: { width: 380, lines: 2, whens: 1, icons: 2 }, natural: true },
+  { name: "idle-open-brief-plain", state: { mode: { kind: "idle" }, expanded: true, onScreen: { ...ana, brief: { state: "ready", lines: ["Demo with the ops team yesterday."] } } }, expect: { width: 380, lines: 1, whens: 0, icons: 0 }, natural: true },
+  // what others at the company said: who and when at rest, what they discussed on request
+  { name: "confirm-brief-company", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, brief: { state: "ready", lines: BRIEF, company: ACME } } }, expect: { width: 380, lines: 4, whens: 4, icons: 4, who: 0 }, natural: true },
+  { name: "confirm-brief-company-open", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, brief: { state: "ready", lines: BRIEF, company: ACME } } }, expect: { width: 380, lines: 5, whens: 5, icons: 5, who: 1 }, natural: true, steps: [".company-toggle"] },
+  { name: "confirm-company-only", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, brief: { state: "ready", lines: [], company: { ...ACME, people: 1, lines: [] } } } }, expect: { width: 380, lines: 1, whens: 1, icons: 1, who: 0, toggles: 0 }, natural: true },
+  { name: "confirm-brief-loading", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, brief: { state: "loading" } } }, expect: { width: 380, lines: 0, loading: true }, natural: true },
+  // a meeting about to start carries the same brief as a call offer
+  { name: "idle-open-meeting", state: { mode: { kind: "idle" }, expanded: true, meeting: { id: "ev-1", who: "Marta García", title: "Demo Vocify", startsAt: NOW + 60_000, url: "https://meet.google.com/abc-defg-hij", platform: "meet", brief: { state: "ready", lines: BRIEF.slice(0, 2), company: ACME } } }, expect: { width: 380, lines: 3, whens: 3, icons: 3 }, natural: true },
   { name: "idle-no-phone", state: { onScreen: { ...ana, phone: null, state: "no_phone" } }, expect: { width: 257, height: 32 } },
   { name: "confirm-callable", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: ana }, expect: { width: 380, height: 88 } },
   { name: "confirm-no-caller-id", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, callerId: null, state: "no_caller_id" } }, expect: { width: 380, height: 88 } },
   { name: "confirm-needs-contact", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, name: null, phone: null, state: "needs_contact" } }, expect: { width: 380, height: 88 } },
   { name: "dialing-ringing", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ringing") }, expect: { width: 380, height: 88 } },
+  // the brief stays with the call: under "Calling…", and above live help once answered (collapsible)
+  { name: "dialing-ringing-brief", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ringing", { brief: BRIEF, companyBrief: ACME }) }, expect: { width: 380, lines: 4, whens: 4, icons: 4 }, natural: true },
+  { name: "in-call-brief", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, brief: BRIEF, companyBrief: ACME }) }, expect: { width: 460, height: 400, briefRows: 4 } },
+  { name: "in-call-brief-hidden", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, brief: BRIEF }) }, expect: { width: 460, height: 400, briefRows: 0 }, steps: [".call-brief-toggle"] },
   { name: "in-call", state: inCall, expect: { width: 460, height: 400 } },
   { name: "in-call-muted-keypad", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, muted: true }), keypadOpen: true }, expect: { width: 460, height: 400 } },
   { name: "dial-ended-no-answer", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ended", { message: "No answer" }) }, expect: { width: 380, height: 88 } },
@@ -272,10 +306,16 @@ export const interactions = [
   { name: "save-sends-a-picked-value", fixture: "postcall-open-ready", before: [".change-row .change-value", ".option-row:nth-child(2)"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: ["contact:needs_review"], edits: { "contact:title": "manager" } } }] },
   { name: "call-glyph-opens-confirm", fixture: "idle-callable", click: ".call-glyph", expect: [{ name: "openDialConfirm" }] },
   { name: "open-island-calls", fixture: "idle-open-callable", click: ".primary-action", expect: [{ name: "dial" }] },
-  { name: "open-island-records", fixture: "idle-open-callable", click: ".menu .icon-button", expect: [{ name: "record" }] },
+  { name: "open-island-records", fixture: "idle-open-callable", click: ".menu .quiet-record", expect: [{ name: "record" }] },
+  { name: "open-island-opens-vocify", fixture: "idle-open-callable", click: ".menu .icon-button", expect: [{ name: "openApp" }] },
+  { name: "brief-offer-still-calls", fixture: "idle-open-brief", click: ".primary-action", expect: [{ name: "dial" }] },
+  { name: "confirm-records", fixture: "confirm-callable", click: ".menu .quiet-record", expect: [{ name: "record" }] },
+  { name: "brief-confirm-records", fixture: "confirm-brief", click: ".menu .quiet-record", expect: [{ name: "record" }] },
+  { name: "brief-offer-records", fixture: "idle-open-brief", click: ".menu .quiet-record", expect: [{ name: "record" }] },
   { name: "confirm-calls", fixture: "confirm-callable", click: ".primary-action", expect: [{ name: "dial" }] },
   { name: "no-caller-id-opens-settings", fixture: "confirm-no-caller-id", click: ".primary-action", expect: [{ name: "openCalling" }] },
   { name: "ringing-cancels", fixture: "dialing-ringing", click: ".stop-button", expect: [{ name: "hangup" }] },
+  { name: "ringing-with-brief-cancels", fixture: "dialing-ringing-brief", click: ".stop-button", expect: [{ name: "hangup" }] },
   { name: "in-call-mutes", fixture: "in-call", click: ".controls .circle-button", expect: [{ name: "toggleMute" }] },
   { name: "in-call-hangs-up", fixture: "in-call", click: ".controls .stop-button", expect: [{ name: "hangup" }] },
   { name: "keypad-sends-digit", fixture: "in-call-muted-keypad", click: ".keypad-key", expect: [{ name: "digit", digit: "1" }] },

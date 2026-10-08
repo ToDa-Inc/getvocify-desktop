@@ -2,7 +2,7 @@ export type Status = "authorized" | "denied" | "never_requested";
 
 /** Windows: Settings > Privacy & security > Microphone > "Let desktop apps access your microphone". */
 export const MICROPHONE_SETTINGS_URL = "ms-settings:privacy-microphone";
-const MAC_MICROPHONE_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
+export const MAC_MICROPHONE_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
 /** Where the Mac app's call audio is allowed (Screen & System Audio Recording). Windows has no such setting. */
 export const MAC_SYSTEM_AUDIO_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
 

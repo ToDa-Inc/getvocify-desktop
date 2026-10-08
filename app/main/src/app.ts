@@ -1,29 +1,27 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, screen, shell, systemPreferences, Tray } from "electron";
-import { execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { CallSource } from "../../core/callSource.ts";
-import { CrmPages } from "../../core/crmPages.ts";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { islandSize } from "../../island/src/geometry.ts";
+import { islandSize, offerBriefLines } from "../../island/src/geometry.ts";
 import type { Geometry, IslandAction, IslandState } from "../../island/src/types.ts";
 import { createBridge } from "./bridge.ts";
 import { signInHostsFor, type ReportedPlatform } from "./config.ts";
 import { IslandController, type Caller } from "./controller.ts";
 import { DashboardHost } from "./dashboard.ts";
 import { Drafts } from "./drafts.ts";
-import { createLoopback } from "./loopback/loopback.ts";
 import { createLogger } from "./logger.ts";
 import { JsonSettings } from "./settings.ts";
 import { ShortcutManager } from "./shortcut.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { trayItems } from "./tray-menu.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
-import { crmUrlsOf, createPageReader, encodePowerShell, READER_LOOP_SCRIPT, WATCHED_BROWSERS, type BrowserPage } from "./windows/browser-pages.ts";
-import { createPageReaderProcess, type ReaderChild } from "./windows/page-reader-process.ts";
-import { createMacPageReader, type MacAccess } from "./mac/browser-pages.ts";
 import { createCrmScreenWatcher } from "./crm-screen-watcher.ts";
-import { MIC_CONSENT_KEY, MicWatcher, type DetectedCaller } from "./windows/mic-use.ts";
+import { runQuiet } from "./platform/exec.ts";
+import { createPlatform } from "./platform/index.ts";
+import { spawnMacHelper } from "./platform/mac/helper.ts";
+import type { DetectedCaller } from "./platform/types.ts";
+import { createPageReader, crmUrlsOf, encodePowerShell, type BrowserPage } from "./windows/browser-pages.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** The app's icon (the Vocify mark): the dock on a Mac, the taskbar and title bar and the tray on Windows. */
@@ -74,13 +72,17 @@ export type AppHandle = {
 
 type Placement = { geometry: Geometry; midX: number; originX: number; originY: number };
 
-/** The notch comes from a Swift script for now; the Mac helper's `geometry.get` replaces it. Everywhere else the screen is measured from Electron. */
-function measureMac(): Promise<Placement | null> {
+/** The built-in screen's notch on a Mac, from vocify-mac-helper's `screen`. Everywhere else the screen is measured from Electron. */
+function measureMac(helperPath: string): Promise<Placement | null> {
   return new Promise((resolve) => {
-    execFile("/usr/bin/swift", [join(here, "../native/screen.swift")], { timeout: 60000 }, (error, stdout) => {
-      if (error) return resolve(null);
+    const helper = spawnMacHelper(helperPath, "screen");
+    let output = "";
+    const timer = setTimeout(() => helper.kill(), 5000);
+    helper.stdout.on("data", (chunk) => void (output += chunk.toString()));
+    helper.on("exit", () => {
+      clearTimeout(timer);
       try {
-        const raw = JSON.parse(stdout) as { width?: number; height?: number; originX?: number; originY?: number; menuBar?: number; notchWidth?: number; barHeight?: number; midX?: number };
+        const raw = JSON.parse(output) as { width?: number; height?: number; originX?: number; originY?: number; menuBar?: number; notchWidth?: number; barHeight?: number; midX?: number };
         if (!raw.width || !raw.height) return resolve(null);
         resolve({
           geometry: { notchWidth: raw.notchWidth ?? 0, barHeight: raw.barHeight ?? Math.max(raw.menuBar ?? 0, 30), screenHeight: raw.height },
@@ -94,6 +96,7 @@ function measureMac(): Promise<Placement | null> {
     });
   });
 }
+
 
 function measureElectron(): Placement {
   const display = screen.getPrimaryDisplay();
@@ -128,23 +131,32 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   settings.set("restartedForUpdate", false);
   const drafts = new Drafts(join(options.userDataDir, "meetings"));
   const platform = process.platform;
-  const placement = (platform === "darwin" ? await measureMac() : null) ?? measureElectron();
+  // The Mac's native helper: shipped in the app's Resources, or built next to the sources in development.
+  const macHelper = platform === "darwin" ? (app.isPackaged ? join(process.resourcesPath, "mac-helper", "vocify-mac-helper") : join(here, "../../native/mac-helper/dist/vocify-mac-helper")) : null;
+  const macPanel = platform === "darwin" ? (app.isPackaged ? join(process.resourcesPath, "mac-panel", "mac_panel.node") : join(here, "../../native/mac-panel/dist/mac_panel.node")) : null;
+  const placement = (macHelper ? await measureMac(macHelper) : null) ?? measureElectron();
   const offsetY = options.islandOffsetY ?? 0;
   const dashboardHolder: { host: DashboardHost | null } = { host: null };
-  const loopback = createLoopback();
+
+  // The OS's own services (call audio, call detection, the CRM tab, permissions), built for this OS in one place.
+  const os = createPlatform(platform, {
+    systemPreferences,
+    openExternal: (url) => void shell.openExternal(url),
+    crmTabsAnswer: {
+      get: () => {
+        const stored = settings.get("crmTabs");
+        return stored === "authorized" || stored === "denied" ? stored : undefined;
+      },
+      set: (value) => settings.set("crmTabs", value),
+    },
+    log,
+    nativeHelperPath: macHelper,
+    nativePanelPath: macPanel,
+  });
 
   /* ---------- who is on the call ---------- */
 
-  const run = (file: string, args: string[], timeout: number) =>
-    new Promise<string>((resolve, reject) => {
-      execFile(file, args, { timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
-        // A non-zero exit (`reg query` on a key that does not exist yet) is an empty answer; a program that is missing or
-        // that timed out is a failure to report.
-        if (error && typeof (error as { code?: unknown }).code !== "number") reject(error);
-        else resolve(error ? "" : stdout);
-      });
-    });
-  const pageReader = createPageReader((script) => run("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(script)], 10_000), () => Date.now());
+  const pageReader = createPageReader((script) => runQuiet("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(script)], 10_000), () => Date.now());
 
   // The app's own icon, as the Swift island shows it: asked of the system once per app, kept as a small image.
   const icons = new Map<string, string | null>();
@@ -170,6 +182,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   /* ---------- the island's brain ---------- */
 
   let reportedSize: { width: number; height: number } | null = null;
+  let reportedKind: string | null = null;
   const controller = new IslandController(
     {
       now: () => Date.now(),
@@ -184,24 +197,55 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
         if (!island.isDestroyed()) island.webContents.send("island:levels", levels);
       },
       saveRecorderReady: (ready) => settings.set("recorderReady", ready),
+      openExternal: (url) => void shell.openExternal(url),
       // A call was detected: name where it happens and send the CRM pages on screen, so the dashboard can name the contact.
       lookUpCallContact: (caller) => {
-        if (platform !== "win32") return;
-        void pageReader.read().then((pages) => {
-          // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
-          if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
-          dashboard.emit("call:source", (sourceOf(caller, pages) ?? null)?.json ?? null);
-          const urls = crmUrlsOf(pages);
-          if (urls.length > 0) dashboard.emit("call:pages", { urls });
-        });
+        if (platform === "win32") {
+          void pageReader.read().then((pages) => {
+            // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
+            if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
+            dashboard.emit("call:source", (sourceOf(caller, pages) ?? null)?.json ?? null);
+            const urls = crmUrlsOf(pages);
+            if (urls.length > 0) dashboard.emit("call:pages", { urls });
+          });
+        } else if (platform === "darwin") {
+          // On Mac, use the CRM screen reader to get the browser's CRM pages
+          void os.crmScreenReader.front().then((app) => {
+            if (!app) return;
+            return os.crmScreenReader.read(app as string).then((urls) => {
+              // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
+              if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
+              const pageSource = urls && urls.length > 0 ? CallSource.page(urls as string[]) : null;
+              const appId = caller?.appId ?? undefined;
+              const source = CallSource.app(appId) ?? pageSource;
+              dashboard.emit("call:source", source?.json ?? null);
+              if (urls && urls.length > 0) dashboard.emit("call:pages", { urls });
+            });
+          });
+        }
       },
       // Recording without a detected call: name the app holding the mic, if any, without reading browsers needlessly.
       lookUpCallSource: (caller) => {
-        if (platform !== "win32") return;
-        const native = callSourceForExe(caller?.appId);
-        if (native) return dashboard.emit("call:source", native.json);
-        if (!caller) return;
-        void pageReader.read().then((pages) => dashboard.emit("call:source", (CallSource.page(pages.map((p) => p.url)) ?? null)?.json ?? null));
+        if (platform === "win32") {
+          const native = callSourceForExe(caller?.appId);
+          if (native) return dashboard.emit("call:source", native.json);
+          if (!caller) return;
+          void pageReader.read().then((pages) => dashboard.emit("call:source", (CallSource.page(pages.map((p) => p.url)) ?? null)?.json ?? null));
+        } else if (platform === "darwin") {
+          // On Mac, use CallSource.app for the app name
+          const appId = caller?.appId ?? undefined;
+          const source = CallSource.app(appId);
+          if (source) return dashboard.emit("call:source", source.json);
+          if (!caller) return;
+          // If no known app, try to read the CRM pages in the browser
+          void os.crmScreenReader.front().then((app) => {
+            if (!app) return;
+            return os.crmScreenReader.read(app as string).then((urls) => {
+              const pageSource = urls && urls.length > 0 ? CallSource.page(urls as string[]) : null;
+              dashboard.emit("call:source", pageSource?.json ?? null);
+            });
+          });
+        }
       },
     },
     placement.geometry,
@@ -244,41 +288,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   /* ---------- the CRM contact on screen (the island's call offer) ---------- */
 
-  // osascript's refusal (-1743) must reach the reader, so this exec keeps the error, unlike `run`.
-  const execStrict = (file: string, args: string[], timeout: number) =>
-    new Promise<string>((resolve, reject) => {
-      execFile(file, args, { timeout, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => (error ? reject(new Error(`${error.message} ${stderr}`)) : resolve(stdout)));
-    });
-  const macReader = createMacPageReader(execStrict);
-  const macAccess = (): MacAccess | undefined => {
-    const stored = settings.get("crmTabs");
-    return stored === "authorized" || stored === "denied" ? stored : undefined;
-  };
-  const screenReader =
-    platform === "win32"
-      ? createPageReaderProcess(
-          () =>
-            spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(READER_LOOP_SCRIPT)], {
-              windowsHide: true,
-              stdio: ["pipe", "pipe", "ignore"],
-            }) as unknown as ReaderChild,
-          () => Date.now(),
-        )
-      : null;
   const crmScreen = createCrmScreenWatcher({
-    front: () => (screenReader ? screenReader.front() : macReader.front()),
-    // On a Mac only once the rep allowed it from first-run setup: reading a browser is what makes macOS ask.
-    isBrowser: (app) => (screenReader ? WATCHED_BROWSERS.has(app) : macReader.isBrowser(app) && macAccess() === "authorized"),
-    read: async (app) => {
-      if (screenReader) {
-        // The active tab of the window in front only, as the Chrome extension follows the focused tab.
-        const page = await screenReader.frontPage();
-        return page ? CrmPages.frontRecordURLs(page.url) : [];
-      }
-      const { urls, access } = await macReader.read(app);
-      if (access === "denied") settings.set("crmTabs", "denied");
-      return urls;
-    },
+    front: () => os.crmScreenReader.front(),
+    isBrowser: (app) => os.crmScreenReader.isBrowser(app),
+    read: (app) => os.crmScreenReader.read(app),
     emit: (urls) => dashboard.emit("crm:screen", { urls }),
     every: (ms, fn) => {
       const timer = setInterval(fn, ms);
@@ -298,8 +311,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   const targetSize = (state: IslandState) => {
     const open = state.expanded && state.mode.kind !== "starting";
-    if (state.mode.kind === "postCall" && open && reportedSize) return reportedSize;
-    return islandSize(state.geometry, state.mode.kind, open);
+    // Sized by the page: the after-call card, and an offer or call carrying the brief. Only a size reported for this
+    // same kind of island counts, so the card's height never leaks onto the next offer.
+    const natural = state.mode.kind === "postCall" || offerBriefLines(state) > 0;
+    if (open && natural && reportedSize && reportedKind === state.mode.kind) return reportedSize;
+    return islandSize(state.geometry, state.mode.kind, open, undefined, offerBriefLines(state));
   };
 
   const initial = islandSize(placement.geometry, "idle", false);
@@ -368,7 +384,24 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       }, 800);
     });
   }
+  /** While a call is recorded, who the meeting app shows speaking goes to the dashboard (it names the other side's lines). */
+  let readingSpeakers = false;
+  function followSpeakers(state: IslandState): void {
+    const recording = state.mode.kind === "recording" || state.mode.kind === "stopped";
+    if (recording && !readingSpeakers && os.speakers) {
+      readingSpeakers = true;
+      const zoom = controller.recordingAppId === "us.zoom.xos";
+      const ask = zoom && settings.get("askedAccessibility") !== true;
+      if (ask) settings.set("askedAccessibility", true);
+      os.speakers.start({ askAccessibility: ask }, (names) => dashboard.emit("meeting:speakers", { names }));
+    } else if (!recording && readingSpeakers) {
+      readingSpeakers = false;
+      os.speakers?.stop();
+    }
+  }
+
   function pushState(state: IslandState): void {
+    followSpeakers(state);
     if (island.isDestroyed()) return;
     island.webContents.send("island:state", state);
     fit(targetSize(state), false);
@@ -378,6 +411,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   await island.loadFile(join(here, "../../island/dist/index.html"));
   island.webContents.send("island:state", controller.state);
+  // Before it is ever shown: a click on the island must never activate Vocify (that brings the dashboard forward).
+  log(`island: ${os.island.prepare(island)}`);
   island.showInactive();
 
   /* ---------- wiring ---------- */
@@ -402,7 +437,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     reportedPlatform: options.reportedPlatform,
     testPermissions: options.testPermissions === true,
     controller,
-    loopback,
+    loopback: os.systemAudio,
     drafts,
     shortcut,
     emit: (channel, payload) => dashboard.emit(channel, payload),
@@ -419,14 +454,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       return { status: response.status, text: () => response.text() };
     },
     log,
-    crmTabs: platform === "darwin" ? () => macAccess() ?? "never_requested" : undefined,
-    askCrmTabs:
-      platform === "darwin"
-        ? async () => {
-            const answer = await macReader.askAll();
-            if (answer === "authorized" || answer === "denied") settings.set("crmTabs", answer);
-          }
-        : undefined,
+    crmTabs: platform === "darwin" ? () => os.permissions.status().crmTabs : undefined,
+    askCrmTabs: platform === "darwin" ? () => os.permissions.request("crmTabs") : undefined,
+    systemAudioAccess: platform === "darwin" ? () => os.permissions.status().systemAudio : undefined,
+    askSystemAudio: platform === "darwin" ? () => os.permissions.request("systemAudio") : undefined,
   });
   // Only the dashboard window may talk to the shell, and only through the bridge.
   ipcMain.handle("vocify", (event, op: unknown, args: unknown) => {
@@ -490,12 +521,13 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   ipcMain.on("island:resize", (event, size: { width: number; height: number }) => {
     if (!fromIsland(event.sender) || !size || !(size.width > 0) || !(size.height > 0)) return;
     reportedSize = { width: Math.round(size.width), height: Math.round(size.height) };
+    reportedKind = controller.state.mode.kind;
     fit(targetSize(controller.state), true);
   });
 
   shortcut.activate();
 
-  // Call detection: the microphone-use record Windows keeps (see windows/mic-use.ts). Polled once a second.
+  // Call detection: the OS reports which app holds the microphone (none on a Mac until the native helper).
   let detection = Promise.resolve();
   const report = (detected: DetectedCaller | null) => {
     // In order, and with the app's icon ready before the island hears of the call.
@@ -503,22 +535,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       controller.callChanged(detected ? { name: detected.name, appId: detected.appId, icon: await iconFor(detected.path) } : null);
     });
   };
-  const micWatcher =
-    platform === "win32"
-      ? new MicWatcher({
-          read: () => run("reg.exe", ["query", MIC_CONSENT_KEY, "/s"], 5000),
-          now: () => Date.now(),
-          every: (ms, fn) => {
-            const timer = setInterval(fn, ms);
-            return () => clearInterval(timer);
-          },
-          ownExePath: process.execPath,
-          onCaller: report,
-          onError: (error) => log(`call detection read failed: ${String(error)}`),
-        })
-      : null;
-  micWatcher?.start();
-  app.on("will-quit", () => micWatcher?.halt());
+  os.callDetector?.start(report);
+  app.on("will-quit", () => os.callDetector?.stop());
 
   const reposition = () => {
     const next = platform === "darwin" ? placement : measureElectron();

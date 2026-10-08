@@ -1,4 +1,5 @@
 import { decodeDial, decodeOnScreen, isVocifyCallUp } from "../../core/callIsland.ts";
+import { decodeMeeting } from "../../core/meetingHeadsUp.ts";
 import { LostAudio } from "../../core/islandWording.ts";
 import { StopGrace, type StopStep } from "../../core/stopGrace.ts";
 import { TypeMenu } from "../../core/typeMenu.ts";
@@ -15,6 +16,8 @@ import { parseAssist, parseClock, parseContact, parseFinish, parseLiveType, pars
 
 const AFTER_CALL_QUIET = 120;
 const IDLE_LINGER = 5;
+/** A meeting's heads-up stays open this long (the pointer on it holds it). */
+const MEETING_LINGER = 60;
 const CALL_LINGER = 8;
 const POST_CALL_LINGER = 14;
 const DONE_LINGER = 3;
@@ -25,6 +28,9 @@ const MIN_HOLD_AFTER_LEAVE = 1.5;
 const LEVEL_FADE_SECONDS = 0.5;
 /** Waiting for the dashboard to report the call the rep just placed from the island. */
 const DIAL_TIMEOUT = 8;
+/** What the island says when the dashboard never took a call, and for how long (s). */
+const DIAL_FAILED = "Couldn't start the call";
+const DIAL_FAILED_HOLD = 4;
 const DIGIT = /^[0-9*#]$/;
 /** Waiting on a memo that never came (nothing was said, the upload failed): the dashboard says why in its window, and the island goes back to rest. */
 const FINISH_GIVE_UP = 30;
@@ -49,9 +55,11 @@ export type Effects = {
   lookUpCallSource?(caller: Caller | null): void;
   /** A call was detected: read the CRM page on screen and the call source. */
   lookUpCallContact?(caller: Caller | null): void;
+  /** Opens a web link in the default browser (a meeting's call link). */
+  openExternal?(url: string): void;
 };
 
-type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout";
+type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout" | "dialFailedHold";
 
 export class IslandController {
   private effects: Effects;
@@ -78,6 +86,10 @@ export class IslandController {
   private shownSide: "you" | "them" = "them";
   /** The Vocify call on show was answered: its end waits for the memo ("processing"), not back to rest. */
   private dialAnswered = false;
+  /** Meetings already announced: each opens the island once. */
+  private announcedMeetings = new Set<string>();
+  /** The meeting the rep closed: not shown again. */
+  private dismissedMeeting: string | null = null;
   /** True when a native recorder draws the transcript itself; the dashboard's overlay then must not overwrite it. */
   nativeTranscript = false;
 
@@ -103,6 +115,7 @@ export class IslandController {
       finish: null,
       onScreen: null,
       dial: null,
+      meeting: null,
       keypadOpen: false,
       material: options.material,
       reduceMotion: options.reduceMotion,
@@ -111,6 +124,11 @@ export class IslandController {
 
   get state(): IslandState {
     return this.current;
+  }
+
+  /** The app the call being recorded happens in (what Record was pressed on, else what holds the mic). */
+  get recordingAppId(): string | null {
+    return this.recordingCaller?.appId ?? this.currentCaller?.appId ?? null;
   }
 
   /** The dashboard says it is recording (`shell:state` listening). */
@@ -187,6 +205,15 @@ export class IslandController {
         patch.typeMenu = this.typeMenuView();
       }
     }
+    let meetingChanged = false;
+    if (has("meeting")) {
+      const decoded = decodeMeeting(update.meeting);
+      const next = decoded && decoded.id === this.dismissedMeeting ? null : decoded;
+      if (JSON.stringify(next) !== JSON.stringify(this.current.meeting)) {
+        patch.meeting = next;
+        meetingChanged = true;
+      }
+    }
     if (has("onScreen")) {
       const next = decodeOnScreen(update.onScreen);
       if (JSON.stringify(next) !== JSON.stringify(this.current.onScreen)) patch.onScreen = next;
@@ -228,6 +255,17 @@ export class IslandController {
     if (postCallChanged) this.postCallChanged();
     if (finishChanged) this.finishChanged();
     if (dialChanged) this.dialChanged();
+    if (meetingChanged) this.meetingChanged();
+  }
+
+  /** A meeting is about to start: the resting island opens once to say who it is with.
+   * Busy (a call, a recording), it is not interrupted; the meeting waits in the open idle island. */
+  private meetingChanged(): void {
+    const meeting = this.current.meeting;
+    if (!meeting || this.mode !== "idle" || this.announcedMeetings.has(meeting.id)) return;
+    this.announcedMeetings.add(meeting.id);
+    this.transition({ kind: "idle" }, true);
+    this.startCountdown(MEETING_LINGER);
   }
 
   private typeMenuView(): IslandState["typeMenu"] {
@@ -308,6 +346,13 @@ export class IslandController {
       case "openCalling":
         this.transition({ kind: "idle" }, false);
         return this.effects.emit("shell:command", "open-calling");
+      case "joinMeeting":
+        if (this.current.meeting?.url) this.effects.openExternal?.(this.current.meeting.url);
+        return this.collapse();
+      case "dismissMeeting":
+        this.dismissedMeeting = this.current.meeting?.id ?? null;
+        this.set({ meeting: null });
+        return this.collapse();
     }
   }
 
@@ -331,8 +376,14 @@ export class IslandController {
     this.effects.emit("shell:command", "dial");
     this.start("dialTimeout", DIAL_TIMEOUT, () => {
       if (this.mode !== "dialing" || this.current.dial !== null) return;
-      this.transition({ kind: "idle" }, false);
-      this.effects.showMainWindow();
+      // The dashboard never took the call: say so where the rep clicked, for a moment. Never open the dashboard for it.
+      const offer = this.current.onScreen;
+      this.set({ dial: { phase: "ended", name: offer?.name ?? null, phone: offer?.phone ?? "", answeredAt: null, muted: false, message: DIAL_FAILED, brief: null, companyBrief: null } });
+      this.start("dialFailedHold", DIAL_FAILED_HOLD, () => {
+        if (this.mode !== "dialing" || this.current.dial?.message !== DIAL_FAILED) return;
+        this.set({ dial: null });
+        this.rest();
+      });
     });
   }
 
@@ -510,7 +561,8 @@ export class IslandController {
   record(): void {
     const previous = this.current.mode;
     if (this.vocifyCallUp) return;
-    if (previous.kind !== "idle" && previous.kind !== "call") return;
+    // The confirm row offers Record next to Call, as the open island at rest does.
+    if (previous.kind !== "idle" && previous.kind !== "call" && previous.kind !== "dialConfirm") return;
     if (!this.current.recorderReady) return this.effects.showMainWindow();
     if (previous.kind === "call") this.recordingCaller = this.shownCaller;
     else this.effects.lookUpCallSource?.(this.currentCaller);
@@ -518,7 +570,7 @@ export class IslandController {
     this.effects.emit("shell:command", "listen");
     this.start("startTimeout", START_TIMEOUT, () => {
       if (this.mode !== "starting") return;
-      this.transition(previous, false);
+      this.transition(previous.kind === "dialConfirm" ? { kind: "idle" } : previous, false);
       this.effects.showMainWindow();
     });
   }

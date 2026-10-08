@@ -14,7 +14,121 @@ export type OnScreenCall = {
   /** The verified number the call goes out from. */
   callerId: string | null;
   state: OnScreenState;
+  /** What happened with the contact lately (the dashboard's recent-activity summary): loading, or its lines. */
+  brief?: OnScreenBrief | null;
 };
+
+export type OnScreenBrief = { state: "loading" } | { state: "ready"; lines: BriefLine[]; company?: CompanyBrief | null };
+
+/** What was already said with other people at the contact's company: who and when last (from what was read), how
+ * many people, and the summary's lines about it, each with who it was with. */
+export type CompanyBrief = {
+  name: string | null;
+  latest: { type: BriefKind | null; at: string | null; who: string | null } | null;
+  people: number;
+  lines: BriefLine[];
+};
+
+/** What a brief line is about: the kind of the newest interaction it cites. */
+export type BriefKind = "call" | "email" | "note" | "meeting" | "task" | "vocify_conversation" | "company";
+
+/** A brief line, with the kind and date (ISO) of the newest interaction it cites; null when not given. */
+export type BriefLine = { text: string; type: BriefKind | null; at: string | null; who?: string | null };
+
+const BRIEF_KINDS = new Set<string>(["call", "email", "note", "meeting", "task", "vocify_conversation", "company"]);
+
+/** The summary's lines the island keeps. */
+const BRIEF_LINES = 3;
+const COMPANY_LINES = 2;
+
+/** A brief as the dashboard sends it, for a call offer or a meeting about to start. */
+export function decodeBrief(raw: unknown): OnScreenBrief | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  if (r.state === "loading") return { state: "loading" };
+  if (r.state !== "ready") return null;
+  const lines = briefLines(r.lines) ?? [];
+  const company = decodeCompanyBrief(r.company);
+  if (!lines.length && !company) return null;
+  return company ? { state: "ready", lines, company } : { state: "ready", lines };
+}
+
+export function decodeCompanyBrief(raw: unknown): CompanyBrief | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  const latest = typeof r.latest === "object" && r.latest !== null ? (r.latest as Record<string, unknown>) : null;
+  const lines = briefLines(r.lines, COMPANY_LINES) ?? [];
+  if (!latest && !lines.length) return null;
+  return {
+    name: text(r.name),
+    latest: latest ? { type: kind(latest.type), at: date(latest.at), who: text(latest.who) } : null,
+    people: typeof r.people === "number" && r.people >= 0 ? Math.floor(r.people) : 0,
+    lines,
+  };
+}
+
+/** A dashboard before kinds and dates sent plain strings: those show as text alone. */
+function briefLine(raw: unknown): BriefLine | null {
+  if (typeof raw === "string") return text(raw) ? { text: text(raw)!, type: null, at: null } : null;
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  const lineText = text(r.text);
+  if (!lineText) return null;
+  const line: BriefLine = { text: lineText, type: kind(r.type), at: date(r.at) };
+  return "who" in r ? { ...line, who: text(r.who) } : line;
+}
+
+function kind(value: unknown): BriefKind | null {
+  return typeof value === "string" && BRIEF_KINDS.has(value) ? (value as BriefKind) : null;
+}
+
+function date(value: unknown): string | null {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : null;
+}
+
+function briefLines(raw: unknown, limit = BRIEF_LINES): BriefLine[] | null {
+  if (!Array.isArray(raw)) return null;
+  const lines = raw.map(briefLine).filter((line): line is BriefLine => line !== null).slice(0, limit);
+  return lines.length ? lines : null;
+}
+
+const DAY_MS = 24 * 3600 * 1000;
+
+/** When a brief line happened, counted in the rep's calendar days ("yesterday", "3 days ago", "Aug 20"); a task's
+ * date is its due date. Null when the line has no date. */
+export function briefWhen(line: Pick<BriefLine, "type" | "at">, now: Date = new Date()): string | null {
+  if (!line.at) return null;
+  const date = new Date(line.at);
+  if (Number.isNaN(date.getTime())) return null;
+  const midnight = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((midnight(date) - midnight(now)) / DAY_MS);
+  const ago = -days;
+  let when: string;
+  if (days === 0) when = "today";
+  else if (days === -1) when = "yesterday";
+  else if (days === 1) when = "tomorrow";
+  else if (ago > 1 && ago < 7) when = `${ago} days ago`;
+  else if (ago >= 7 && ago < 28) when = Math.floor(ago / 7) === 1 ? "1 week ago" : `${Math.floor(ago / 7)} weeks ago`;
+  else if (days > 1 && days < 7) when = `in ${days} days`;
+  else {
+    const sameYear = date.getFullYear() === now.getFullYear();
+    when = date.toLocaleDateString("en-US", sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
+  }
+  return line.type === "task" ? `due ${when}` : when;
+}
+
+/** How many brief lines the offer shows (a loading brief takes one). */
+export function briefLinesShown(onScreen: OnScreenCall | null | undefined): number {
+  return briefLinesOf(onScreen?.brief);
+}
+
+/** How many lines a brief takes on the island (a loading brief takes one). */
+export function briefLinesOf(brief: OnScreenBrief | null | undefined): number {
+  if (!brief) return 0;
+  if (brief.state === "loading") return 1;
+  // The company part: its label and its latest row (its lines open on request).
+  return brief.lines.length + (brief.company ? 2 : 0);
+}
 
 /** A Vocify call in progress, or one that ended unanswered. */
 export type DialIslandState = {
@@ -26,6 +140,10 @@ export type DialIslandState = {
   muted: boolean;
   /** Why an unanswered call ended, in the rep's language. */
   message: string | null;
+  /** What happened with the contact lately, kept for the whole call. */
+  brief: BriefLine[] | null;
+  /** And with other people at its company. */
+  companyBrief: CompanyBrief | null;
 };
 
 const STATES = new Set<OnScreenState>(["callable", "no_phone", "needs_contact", "no_caller_id"]);
@@ -42,7 +160,7 @@ export function decodeOnScreen(raw: unknown): OnScreenCall | null {
   const provider = text(r.provider);
   const crmLabel = text(r.crmLabel);
   if (!STATES.has(state) || !provider || !crmLabel) return null;
-  return { provider, crmLabel, name: text(r.name), phone: text(r.phone), callerId: text(r.callerId), state };
+  return { provider, crmLabel, name: text(r.name), phone: text(r.phone), callerId: text(r.callerId), state, brief: decodeBrief(r.brief) };
 }
 
 export function decodeDial(raw: unknown): DialIslandState | null {
@@ -58,6 +176,8 @@ export function decodeDial(raw: unknown): DialIslandState | null {
     answeredAt: typeof r.answeredAt === "number" ? r.answeredAt : null,
     muted: r.muted === true,
     message: text(r.message),
+    brief: briefLines(r.brief),
+    companyBrief: decodeCompanyBrief(r.companyBrief),
   };
 }
 

@@ -641,14 +641,28 @@ test("Call is not taken from the closed island", () => {
   assert.equal(t.mode(), "idle");
 });
 
-test("a dial the dashboard never reports returns to idle after 8 s", () => {
+test("a dial the dashboard never reports says so on the island for a moment, and never opens the dashboard", () => {
   const t = setup();
   t.controller.applyShellState({ onScreen: ana });
   t.controller.act({ name: "openDialConfirm" });
   t.controller.act({ name: "dial" });
   t.advance(8.1);
+  assert.equal(t.mode(), "dialing");
+  assert.deepEqual([t.controller.state.dial?.phase, t.controller.state.dial?.message], ["ended", "Couldn't start the call"]);
+  assert.equal(t.log.mainWindow, 0);
+  t.advance(4.1);
   assert.equal(t.mode(), "idle");
-  assert.equal(t.log.mainWindow, 1);
+  assert.equal(t.controller.state.dial, null);
+  assert.equal(t.log.mainWindow, 0);
+});
+
+test("the confirm row also records, as the open island at rest does", () => {
+  const t = setup();
+  t.controller.applyShellState({ onScreen: ana });
+  t.controller.act({ name: "openDialConfirm" });
+  t.controller.act({ name: "record" });
+  assert.equal(t.mode(), "starting");
+  assert.ok(t.commands().includes("listen"));
 });
 
 test("closing the confirm row goes back to rest", () => {
@@ -741,4 +755,57 @@ test("a missed call ending goes back to rest, not to processing", () => {
   t.controller.applyShellState({ dial: dialState("ended", { message: "No answer" }) });
   t.controller.applyShellState({ dial: null });
   assert.equal(t.mode(), "idle");
+});
+
+/* ---------- a meeting about to start (shell:state meeting, from the calendar) ---------- */
+
+const soonMeeting = (id = "ev-1") => ({
+  id,
+  who: "Marta García",
+  title: "Demo Vocify",
+  startsAt: new Date(1_700_000_060_000).toISOString(),
+  url: "https://meet.google.com/abc-defg-hij",
+  platform: "meet",
+});
+
+test("a meeting about to start opens the resting island once, for a minute", () => {
+  const t = setup();
+  t.controller.applyShellState({ meeting: soonMeeting() });
+  assert.equal(t.mode(), "idle");
+  assert.equal(t.controller.state.expanded, true);
+  assert.equal(t.controller.state.meeting?.who, "Marta García");
+  t.advance(59);
+  assert.equal(t.controller.state.expanded, true);
+  t.advance(2);
+  assert.equal(t.controller.state.expanded, false);
+  // The dashboard sends it again on its next refresh: not announced twice.
+  t.controller.applyShellState({ meeting: null });
+  t.controller.applyShellState({ meeting: soonMeeting() });
+  assert.equal(t.controller.state.expanded, false);
+});
+
+test("on a call the meeting does not interrupt", () => {
+  const t = setup();
+  t.controller.callChanged(zoom);
+  t.advance(1);
+  const before = t.mode();
+  t.controller.applyShellState({ meeting: soonMeeting() });
+  assert.equal(t.mode(), before);
+  assert.equal(t.controller.state.meeting?.id, "ev-1");
+});
+
+test("Join opens the meeting's link; closing it hides that meeting for good", () => {
+  const opened: string[] = [];
+  const t = setup();
+  (t.controller as unknown as { effects: Effects }).effects.openExternal = (url) => void opened.push(url);
+  t.controller.applyShellState({ meeting: soonMeeting() });
+  t.controller.act({ name: "joinMeeting" });
+  assert.deepEqual(opened, ["https://meet.google.com/abc-defg-hij"]);
+  assert.equal(t.controller.state.expanded, false);
+  t.controller.act({ name: "dismissMeeting" });
+  assert.equal(t.controller.state.meeting, null);
+  t.controller.applyShellState({ meeting: soonMeeting() });
+  assert.equal(t.controller.state.meeting, null);
+  t.controller.applyShellState({ meeting: soonMeeting("ev-2") });
+  assert.equal(t.controller.state.meeting?.id, "ev-2");
 });

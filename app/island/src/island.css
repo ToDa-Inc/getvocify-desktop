@@ -35,7 +35,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 .island[data-reduce-motion="true"] { transition-duration: 120ms; }
 
 .column { position: relative; display: flex; flex-direction: column; height: 100%; }
-.island[data-mode="postCall"][data-open="true"] .column { height: auto; }
+.island[data-mode="postCall"][data-open="true"] .column, .island[data-natural="true"] .column { height: auto; }
 
 /* glass */
 .bg { position: absolute; inset: 0; }
@@ -99,6 +99,9 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 /* buttons */
 .quiet-record { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 15px; background: rgba(255, 255, 255, 0.10); font-size: 12.5px; font-weight: 500; color: var(--text); white-space: nowrap; transition: background 120ms, transform 120ms; }
 .quiet-record:hover { background: rgba(255, 255, 255, 0.17); }
+.quiet-record[data-beside-call="true"] { height: 26px; padding: 0 10px; gap: 6px; font-size: 12px; background: rgba(255, 255, 255, 0.07); color: var(--secondary); }
+.quiet-record[data-beside-call="true"]:hover { background: rgba(255, 255, 255, 0.13); color: var(--text); }
+.quiet-record[data-beside-call="true"] .red-dot { width: 6px; height: 6px; }
 .red-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
 
 .record-dot { width: 22px; height: 22px; border-radius: 50%; background: rgba(255, 255, 255, 0.11); display: inline-flex; align-items: center; justify-content: center; transition: background 120ms; }
@@ -127,6 +130,29 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .menu-title { font-size: 12.5px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .menu-title-wrap { font-size: 12.5px; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .menu-title[data-dim="true"] { color: var(--secondary); }
+/* the call offer, and under a hairline what happened with the contact lately (geometry.ts BRIEF_*) */
+.offer { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.offer-row { flex: none; height: 56px; }
+.offer-brief { display: flex; flex-direction: column; gap: 5px; margin: 0 14px; padding: 8px 0 11px; border-top: 0.5px solid rgba(255, 255, 255, 0.08); animation: offer-brief-in 200ms ease-out; }
+.recent-label { display: inline-flex; align-items: center; gap: 4px; font-size: 9.5px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: rgba(255, 255, 255, 0.45); }
+.recent-lines { display: flex; flex-direction: column; gap: 4px; }
+.recent-line { display: flex; align-items: flex-start; gap: 7px; min-width: 0; }
+.recent-icon { flex: none; width: 12px; height: 16px; display: inline-flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.45); }
+.recent-text { flex: 1; min-width: 0; font-size: 12px; line-height: 16px; color: var(--secondary); overflow-wrap: anywhere; user-select: text; }
+.recent-when { flex: none; font-size: 11px; line-height: 16px; color: rgba(255, 255, 255, 0.45); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.recent-who { color: var(--text); }
+.recent-sep { color: rgba(255, 255, 255, 0.45); }
+.company-brief { display: flex; flex-direction: column; gap: 5px; }
+.recent-lines + .company-brief { margin-top: 6px; }
+.company-toggle { align-self: flex-start; padding: 0; }
+.company-toggle:hover { color: var(--secondary); }
+.recent-loading { display: flex; flex-direction: column; gap: 6px; padding: 3px 0 2px; }
+.recent-bar { display: block; width: 88%; height: 9px; border-radius: 4.5px; background: rgba(255, 255, 255, 0.08); animation: recent-pulse 1.4s ease-in-out infinite; }
+@keyframes offer-brief-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes recent-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .offer-brief, .recent-bar { animation: none; } }
+.island[data-reduce-motion="true"] .offer-brief, .island[data-reduce-motion="true"] .recent-bar { animation: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* open recording */
 .open-island { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -161,6 +187,10 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .help-drafting { display: flex; align-items: center; gap: 6px; height: 17px; }
 .help-say { font-size: 12.5px; font-weight: 500; color: var(--text); }
 .help-empty { font-size: 11.5px; color: rgba(255, 255, 255, 0.58); }
+/* the contact's brief during a call, above live help; folds to its heading */
+.call-brief { padding-bottom: 4px; }
+.call-brief-toggle { align-self: flex-start; padding: 0; margin-bottom: 1px; }
+.call-brief-toggle:hover { color: var(--secondary); }
 .dim { color: var(--secondary); font-size: 12px; }
 .dots { display: inline-flex; gap: 4px; }
 .dots span { width: 5px; height: 5px; border-radius: 50%; background: rgba(255, 255, 255, 0.5); animation: typing 1.57s ease-in-out infinite; }

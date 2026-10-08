@@ -73,8 +73,17 @@ export const Calendar = ({ size = 10, stroke = 2, style, className }: IconProps)
 export const Users = ({ size = 10.5, stroke = 2.2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><circle cx="9" cy="8" r="3.2" /><path d="M3 19.5c.8-3 3.2-4.6 6-4.6s5.2 1.6 6 4.6M15.5 5.2a3 3 0 0 1 0 5.6M18 14.6c1.6.6 2.6 2.2 3 4.9" /></svg>
 );
+export const Video = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 10.5" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
+);
 export const RecordCircle = ({ size = 12, stroke = 2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.5" fill="currentColor" stroke="none" /></svg>
+);
+export const CheckCircle = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><circle cx="12" cy="12" r="9" /><path d="m8.5 12.2 2.4 2.4 4.6-4.8" /></svg>
+);
+export const Building = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16M3 21h18M10 7h4M10 11h4M10 15h4" /></svg>
 );
 export const ExclamationCircle = ({ size = 10.5, stroke = 2.2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><circle cx="12" cy="12" r="9" /><path d="M12 7.5v5.5M12 16.5v.01" /></svg>
@@ -94,6 +103,10 @@ const filled = (size: number, style?: CSSProperties, className?: string) => ({
 });
 export const Phone = ({ size = 11, style, className }: IconProps) => (
   <svg {...filled(size, style, className)}><path d={HANDSET} /></svg>
+);
+/** The handset drawn as a line, for lists that pair it with other line icons. */
+export const PhoneOutline = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><path d={HANDSET} /></svg>
 );
 export const PhoneDown = ({ size = 11, style, className }: IconProps) => (
   <svg {...filled(size, style, className)}><path d={HANDSET} transform="rotate(135 12 12)" /></svg>

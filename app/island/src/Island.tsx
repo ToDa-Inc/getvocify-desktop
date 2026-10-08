@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { cornerRadius, earWidth, islandSize } from "./geometry.ts";
+import { cornerRadius, earWidth, islandSize, offerBriefLines } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
-import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Keypad, Mic, MicSlash, Pause, Phone, PhoneDown, Play, RecordCircle, Sparkle, Waveform } from "./icons.tsx";
-import { CallWording, PhoneFormat, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
+import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Video, Waveform } from "./icons.tsx";
+import { briefWhen, CallWording, PhoneFormat, type BriefKind, type BriefLine, type CompanyBrief, type DialIslandState, type OnScreenBrief, type OnScreenCall } from "../../core/callIsland.ts";
+import { MeetingWording, type IslandMeeting } from "../../core/meetingHeadsUp.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
 import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuView } from "./types.ts";
@@ -30,8 +31,9 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
   // A dropdown over the card reaches past it: the window must be as tall as the dropdown, the island's shape is not.
   const [popupBottom, setPopupBottom] = useState<number | null>(null);
   const column = useRef<HTMLDivElement>(null);
-  const natural = kind === "postCall" && open;
-  const shape = islandSize(state.geometry, kind, open);
+  // As tall as its content: the after-call card, and a call offer or call carrying the contact's brief (it wraps).
+  const natural = open && (kind === "postCall" || offerBriefLines(state) > 0);
+  const shape = islandSize(state.geometry, kind, open, undefined, offerBriefLines(state));
   const size = natural && cardHeight !== null ? { width: shape.width, height: cardHeight } : shape;
   const radius = cornerRadius(kind, open);
   const [hovered, setHovered] = useState(false);
@@ -74,6 +76,7 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
       data-mode={kind}
       data-material={state.material}
       data-reduce-motion={state.reduceMotion}
+      data-natural={natural}
       onMouseEnter={() => {
         setHovered(true);
         act({ name: "pointer", inside: true });
@@ -262,27 +265,219 @@ function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onP
       return state.postCall ? <PostCallCard postCall={state.postCall} act={act} onPopupExtent={onPopupExtent} /> : null;
     case "dialConfirm":
       // The rep left the record while the row was open: the island goes back to rest, not blank.
-      return state.onScreen ? <DialConfirmMenu onScreen={state.onScreen} act={act} /> : <IdleMenu ready={state.recorderReady} onScreen={null} act={act} />;
+      return state.onScreen ? <DialConfirmMenu onScreen={state.onScreen} ready={state.recorderReady} act={act} /> : <IdleMenu ready={state.recorderReady} onScreen={null} act={act} />;
     case "dialing":
       return state.dial ? <DialingMenu dial={state.dial} act={act} /> : null;
     default:
-      return <IdleMenu ready={state.recorderReady} onScreen={state.onScreen} act={act} />;
+      return <IdleMenu ready={state.recorderReady} onScreen={state.onScreen} meeting={state.meeting} act={act} />;
   }
 }
 
 /* ---------- menus ---------- */
 
-/** At rest, open. With a CRM contact on screen it leads with who that is and Call, the way the
- * confirm row does, and recording a meeting becomes the quiet icon beside it. */
-function IdleMenu({ ready, onScreen, act }: { ready: boolean; onScreen: OnScreenCall | null; act: Act }) {
+/** An offer's row (a call, or a meeting about to start) and, under a hairline, what happened with them lately. */
+function Offer({ brief, children }: { brief: OnScreenBrief | null | undefined; children: ReactNode }) {
+  if (!brief) return <div className="menu">{children}</div>;
   return (
-    <div className="menu">
+    <div className="offer">
+      <div className="menu offer-row">{children}</div>
+      <div className="offer-brief">
+        {brief.state === "loading" ? (
+          <>
+            <div className="recent-label">Recent activity</div>
+            <RecentLoading />
+          </>
+        ) : (
+          <BriefBody lines={brief.lines} company={brief.company ?? null} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Two quiet bars while the summary is read (the words are for screen readers). */
+function RecentLoading() {
+  return (
+    <div className="recent-loading" aria-live="polite">
+      <span className="sr-only">Reading recent activity</span>
+      <span className="recent-bar" />
+      <span className="recent-bar" style={{ width: "62%" }} />
+    </div>
+  );
+}
+
+/** The contact's recent activity, then what others at its company said; either can be missing. */
+function BriefBody({ lines, company, labelled = true }: { lines: BriefLine[]; company: CompanyBrief | null; labelled?: boolean }) {
+  return (
+    <>
+      {lines.length > 0 && (
+        <>
+          {labelled && <div className="recent-label">Recent activity</div>}
+          <RecentLines lines={lines} />
+        </>
+      )}
+      {company && <CompanySection company={company} />}
+    </>
+  );
+}
+
+/** Every line in full: what it is about, the line (after who it was with, for the company's), and when; a line
+ * without a kind or date shows the text alone. */
+function RecentLines({ lines }: { lines: BriefLine[] }) {
+  return (
+    <div className="recent-lines" aria-live="polite">
+      {lines.map((line) => (
+        <RecentRow key={`${line.who ?? ""}${line.text}`} type={line.type} at={line.at} who={line.who ?? null} text={line.text} />
+      ))}
+    </div>
+  );
+}
+
+function RecentRow({ type, at, who, text, className }: { type: BriefKind | null; at: string | null; who: string | null; text: string | null; className?: string }) {
+  const now = new Date(useNow(60_000, true));
+  const when = briefWhen({ type, at }, now);
+  return (
+    <div className={className ? `recent-line ${className}` : "recent-line"}>
+      <span className="recent-icon" title={type ? BRIEF_KIND_LABEL[type] : undefined}>
+        {type && <BriefKindIcon kind={type} />}
+      </span>
+      <span className="recent-text">
+        {who && <span className="recent-who">{who}</span>}
+        {who && text && <span className="recent-sep"> · </span>}
+        {text}
+      </span>
+      {when && <span className="recent-when">{when}</span>}
+    </div>
+  );
+}
+
+/**
+ * What was already said with other people at the contact's company, so the rep does not pitch from scratch. At rest
+ * one row says who was last in touch and when (always visible: that is the warning); the summary's lines on what
+ * they discussed open on request.
+ */
+function CompanySection({ company }: { company: CompanyBrief }) {
+  const [open, setOpen] = useState(false);
+  const key = `${company.name}|${company.latest?.who}|${company.latest?.at}|${company.lines.map((line) => line.text).join("|")}`;
+  // Another contact's company starts folded.
+  useEffect(() => setOpen(false), [key]);
+  const canOpen = company.lines.length > 0;
+  const others = company.people - (company.latest?.who ? 1 : 0);
+  const latestWho = company.latest?.who ?? "Filed on the company";
+  const label = company.name ? `Others at ${company.name}` : "Others at the company";
+  return (
+    <div className="company-brief">
+      {canOpen ? (
+        <button
+          type="button"
+          className="recent-label company-toggle"
+          aria-expanded={open}
+          title={open ? "Show less" : "What they discussed"}
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen((was) => !was);
+          }}
+        >
+          <span>{label}</span>
+          <ChevronDown size={8} style={{ transform: open ? "none" : "rotate(-90deg)", transition: "transform 150ms" }} />
+        </button>
+      ) : (
+        <div className="recent-label">{label}</div>
+      )}
+      {open ? (
+        <RecentLines lines={company.lines} />
+      ) : (
+        <RecentRow
+          className="company-latest"
+          type={company.latest?.type ?? null}
+          at={company.latest?.at ?? null}
+          who={null}
+          text={others > 0 ? `${latestWho} and ${others} ${others === 1 ? "other" : "others"}` : latestWho}
+        />
+      )}
+    </div>
+  );
+}
+
+const BRIEF_KIND_LABEL: Record<BriefKind, string> = {
+  call: "Call",
+  email: "Email",
+  note: "Note",
+  meeting: "Meeting",
+  task: "Task",
+  vocify_conversation: "Vocify conversation",
+  company: "Company",
+};
+
+function BriefKindIcon({ kind }: { kind: BriefKind }) {
+  switch (kind) {
+    case "call":
+      return <PhoneOutline size={11} />;
+    case "email":
+      return <Mail size={11} />;
+    case "note":
+      return <FileText size={11} />;
+    case "meeting":
+      return <Calendar size={11} />;
+    case "task":
+      return <CheckCircle size={11} />;
+    case "vocify_conversation":
+      return <Waveform size={11} />;
+    case "company":
+      return <Building size={11} />;
+  }
+}
+
+const BRIEF_HIDDEN_KEY = "vocify.island.briefHidden";
+
+/** During the call: the contact's recent activity above live help, which the rep can fold to its heading (remembered). */
+function CallBriefSection({ lines, company }: { lines: BriefLine[]; company: CompanyBrief | null }) {
+  const [hidden, setHidden] = useState(() => {
+    try {
+      return localStorage.getItem(BRIEF_HIDDEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggle = () => {
+    setHidden((was) => {
+      try {
+        localStorage.setItem(BRIEF_HIDDEN_KEY, was ? "0" : "1");
+      } catch {
+        // the choice just isn't remembered
+      }
+      return !was;
+    });
+  };
+  return (
+    <div className="help call-brief">
+      <button
+        type="button"
+        className="recent-label call-brief-toggle"
+        aria-expanded={!hidden}
+        title={hidden ? "Show recent activity" : "Hide recent activity"}
+        onClick={(event) => {
+          event.stopPropagation();
+          toggle();
+        }}
+      >
+        <span>Recent activity</span>
+        <ChevronDown size={8} style={{ transform: hidden ? "rotate(-90deg)" : "none", transition: "transform 150ms" }} />
+      </button>
+      {/* Its heading already says "Recent activity". */}
+      {!hidden && <BriefBody lines={lines} company={company} labelled={false} />}
+    </div>
+  );
+}
+
+function IdleMenu({ ready, onScreen, meeting, act }: { ready: boolean; onScreen: OnScreenCall | null; meeting?: IslandMeeting | null; act: Act }) {
+  if (meeting) return <MeetingSoonMenu meeting={meeting} ready={ready} act={act} />;
+  return (
+    <Offer brief={onScreen?.brief}>
       {onScreen ? (
         <>
           <OnScreenOffer onScreen={onScreen} act={act} />
-          <IconButton help="Record meeting" onClick={() => act({ name: "record" })}>
-            <RecordCircle size={12} />
-          </IconButton>
+          <QuietRecordButton title="Record" ready={ready} besideCall onClick={() => act({ name: "record" })} />
         </>
       ) : (
         <>
@@ -293,7 +488,31 @@ function IdleMenu({ ready, onScreen, act }: { ready: boolean; onScreen: OnScreen
       <IconButton help="Open Vocify" onClick={() => act({ name: "openApp" })}>
         <ArrowUpRight size={12} />
       </IconButton>
-    </div>
+    </Offer>
+  );
+}
+
+/** A meeting about to start (from the calendar): who it is with, its title, when and where, and what
+ * happened with them lately; Join opens the call, Record starts the recording. Same as MeetingSoonMenu in MeetingPill.swift. */
+function MeetingSoonMenu({ meeting, ready, act }: { meeting: IslandMeeting; ready: boolean; act: Act }) {
+  const now = useNow(15_000, true);
+  return (
+    <Offer brief={meeting.brief}>
+      <div className="menu-stack">
+        <span className="menu-title">{meeting.who}</span>
+        <span className="menu-line">{MeetingWording.line(meeting, now)}</span>
+      </div>
+      <div className="grow" />
+      {meeting.url && (
+        <PrimaryActionButton title="Join" help="Open the meeting" onClick={() => act({ name: "joinMeeting" })}>
+          <Video size={10} />
+        </PrimaryActionButton>
+      )}
+      <QuietRecordButton title="Record" ready={ready} besideCall onClick={() => act({ name: "record" })} />
+      <IconButton help="Dismiss" onClick={() => act({ name: "dismissMeeting" })}>
+        <Close size={11} />
+      </IconButton>
+    </Offer>
   );
 }
 
@@ -394,14 +613,13 @@ function OnScreenOffer({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) 
 }
 
 /** Who would be called and from which number; one click calls. */
-function DialConfirmMenu({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) {
+function DialConfirmMenu({ onScreen, ready, act }: { onScreen: OnScreenCall; ready: boolean; act: Act }) {
+  // Closing is the bar's chevron, as everywhere else on the island.
   return (
-    <div className="menu">
+    <Offer brief={onScreen.brief}>
       <OnScreenOffer onScreen={onScreen} act={act} />
-      <IconButton help="Close" onClick={() => act({ name: "toggle" })}>
-        <Close size={11} />
-      </IconButton>
-    </div>
+      <QuietRecordButton title="Record" ready={ready} besideCall onClick={() => act({ name: "record" })} />
+    </Offer>
   );
 }
 
@@ -415,11 +633,21 @@ function DialingMenu({ dial, act }: { dial: DialIslandState; act: Act }) {
     );
   }
   const ended = dial.phase === "ended";
-  return (
-    <div className="menu">
+  const row = (
+    <>
       <span className="menu-title" data-dim={ended}>{ended ? CallWording.ended(dial) : CallWording.dialing(dial)}</span>
       <div className="grow" />
       {!ended && <HangUpButton title="Cancel" onClick={() => act({ name: "hangup" })} />}
+    </>
+  );
+  // While it connects or rings, what happened with the contact lately stays under "Calling…".
+  if (ended || (!dial.brief && !dial.companyBrief)) return <div className="menu">{row}</div>;
+  return (
+    <div className="offer">
+      <div className="menu offer-row">{row}</div>
+      <div className="offer-brief">
+        <BriefBody lines={dial.brief ?? []} company={dial.companyBrief} />
+      </div>
     </div>
   );
 }
@@ -576,6 +804,7 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
       )}
       {state.keypadOpen && state.dial && <KeypadGrid onDigit={(digit) => act({ name: "digit", digit })} />}
       {state.callAudioLost && !state.paused && <CallAudioLostLine />}
+      {(state.dial?.brief || state.dial?.companyBrief) && <CallBriefSection lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} />}
       {state.liveHelp !== false && <HelpSection current={state.assist} earlier={state.lastHelp} />}
       <div className="hairline" />
       <TranscriptScroll turns={state.turns} />
@@ -839,11 +1068,13 @@ function TypingDots() {
   );
 }
 
-function QuietRecordButton({ title, ready, onClick }: { title: string; ready: boolean; onClick: () => void }) {
+/** `besideCall`: next to Call, as tall as it and quieter, so Call stays the main action. */
+function QuietRecordButton({ title, ready, besideCall = false, onClick }: { title: string; ready: boolean; besideCall?: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
       className="quiet-record"
+      data-beside-call={besideCall}
       title={ready ? "Records your mic as You and the call as Them" : "Opens Vocify to sign in"}
       onClick={(event) => {
         event.stopPropagation();
@@ -873,9 +1104,9 @@ function RecordDot({ ready, title, onClick }: { ready: boolean; title: string; o
   );
 }
 
-function IconButton({ help, onClick, children }: { help: string; onClick: () => void; children: ReactNode }) {
+function IconButton({ help, onClick, children, className }: { help: string; onClick: () => void; children: ReactNode; className?: string }) {
   return (
-    <button type="button" className="icon-button" title={help} aria-label={help} onClick={(event) => { event.stopPropagation(); onClick(); }}>
+    <button type="button" className={className ? `icon-button ${className}` : "icon-button"} title={help} aria-label={help} onClick={(event) => { event.stopPropagation(); onClick(); }}>
       {children}
     </button>
   );

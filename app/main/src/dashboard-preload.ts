@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
     onCallEnded: on("call:ended"),
     onCallSource: on("call:source"),
   },
+  // Who the meeting app shows speaking while a call is recorded: { names } (Mac: Zoom, and Meet through the extension).
+  speakers: { onSpeaking: on("meeting:speakers") },
   shortcut: {
     get: () => call("shortcut:get"),
     set: (combo: Record<string, unknown>) => call("shortcut:set", combo),

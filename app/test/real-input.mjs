@@ -138,14 +138,10 @@ app.whenReady().then(async () => {
     const ours = new Set(app.getAppMetrics().map((p) => p.pid).concat(process.pid));
     const callPid = foregroundPid();
     check(!ours.has(callPid), "a call window other than the island is in front");
-    // Windows: the island window never activates (WS_EX_NOACTIVATE). A Mac run cannot promise it: macOS gives the keyboard to
-    // the app whose window is clicked unless that window is a non-activating panel, which Electron 33 does not make (the
-    // Mac ships the native app). So it is checked on Windows and only reported on a Mac.
-    const callKeepsFocus = (step) => {
-      const kept = foregroundPid() === callPid;
-      if (mac) console.log(`${elapsed()} info ${step}: the call window ${kept ? "keeps" : "loses"} the keyboard (not checked on a Mac)`);
-      else check(kept, `${step}: the call window keeps the keyboard`);
-    };
+    // The island window never activates the app: Windows creates it WS_EX_NOACTIVATE; on a Mac, Electron 33's panel is an
+    // NSWindow (macOS ignores its non-activating flag), so native/mac-panel asks the window not to activate Vocify. Checked on
+    // both: a click on the island that hands the keyboard to Vocify also brings its dashboard forward.
+    const callKeepsFocus = (step) => check(foregroundPid() === callPid, `${step}: the call window keeps the keyboard`);
 
     /* ---------- idle ---------- */
     await click(".topbar");

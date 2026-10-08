@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { cornerRadius, earWidth, islandSize, offerBriefLines, showsMeeting } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
-import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Video, Waveform } from "./icons.tsx";
+import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, ExclamationCircle, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Video, Waveform } from "./icons.tsx";
 import { briefWhen, CallWording, PhoneFormat, type BriefKind, type BriefLine, type CompanyBrief, type DialIslandState, type OnScreenBrief, type OnScreenCall } from "../../core/callIsland.ts";
 import { MeetingWording, type IslandMeeting } from "../../core/meetingHeadsUp.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
@@ -236,6 +236,8 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
     case "idle":
       return state.onScreen && !open ? (
         <CallGlyph onScreen={state.onScreen} onClick={() => act({ name: "openDialConfirm" })} />
+      ) : state.crmBlocked && !open ? (
+        <BlockedGlyph browser={state.crmBlocked.browser} onClick={() => act({ name: "toggle" })} />
       ) : (
         <OpenArrow open={open} style={{ opacity: lifted || open ? 1 : 0.8 }} />
       );
@@ -269,7 +271,7 @@ function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onP
     case "dialing":
       return state.dial ? <DialingMenu dial={state.dial} act={act} /> : null;
     default:
-      return <IdleMenu ready={state.recorderReady} onScreen={state.onScreen} meeting={state.meeting} act={act} />;
+      return <IdleMenu ready={state.recorderReady} onScreen={state.onScreen} meeting={state.meeting} crmBlocked={state.crmBlocked} act={act} />;
   }
 }
 
@@ -470,8 +472,21 @@ function CallBriefSection({ lines, company }: { lines: BriefLine[]; company: Com
   );
 }
 
-function IdleMenu({ ready, onScreen, meeting, act }: { ready: boolean; onScreen: OnScreenCall | null; meeting?: IslandMeeting | null; act: Act }) {
+function IdleMenu({
+  ready,
+  onScreen,
+  meeting,
+  crmBlocked,
+  act,
+}: {
+  ready: boolean;
+  onScreen: OnScreenCall | null;
+  meeting?: IslandMeeting | null;
+  crmBlocked?: IslandState["crmBlocked"];
+  act: Act;
+}) {
   if (meeting) return <MeetingSoonMenu meeting={meeting} ready={ready} act={act} />;
+  if (!onScreen && crmBlocked) return <CrmBlockedMenu browser={crmBlocked.browser} act={act} />;
   return (
     <Offer brief={onScreen?.brief}>
       {onScreen ? (
@@ -588,6 +603,41 @@ function dialLine(dial: DialIslandState | null): string | undefined {
 }
 
 /** The phone beside the mark: the CRM contact on screen can be called. Dimmed when it can't; the confirm row says why. */
+/** Where the call icon would be: macOS won't let Vocify read the browser in front, so it can't offer a call. */
+function BlockedGlyph({ browser, onClick }: { browser: string; onClick: () => void }) {
+  const help = `Vocify can't see your ${browser} tabs`;
+  return (
+    <button
+      type="button"
+      className="call-glyph blocked-glyph"
+      title={help}
+      aria-label={help}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+    >
+      <ExclamationCircle size={11} />
+    </button>
+  );
+}
+
+/** Why there is no call offer, and Fix: the dashboard shows how to allow it (one click to the right Settings page). */
+function CrmBlockedMenu({ browser, act }: { browser: string; act: Act }) {
+  return (
+    <div className="menu">
+      <div className="menu-stack">
+        <span className="menu-title">Vocify can't see your {browser} tabs</span>
+        <span className="menu-line">Allow it to call the contact you have open</span>
+      </div>
+      <div className="grow" />
+      <PrimaryActionButton title="Fix" help="Open Vocify to allow it" onClick={() => act({ name: "fixCrmAccess" })}>
+        <ArrowUpRight size={9} />
+      </PrimaryActionButton>
+    </div>
+  );
+}
+
 function CallGlyph({ onScreen, onClick }: { onScreen: OnScreenCall; onClick: () => void }) {
   const help = CallWording.glyphHelp(onScreen);
   return (

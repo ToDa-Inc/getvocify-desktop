@@ -137,6 +137,8 @@ export type IslandState = {
   dial: DialIslandState | null;
   /** A meeting (with clients or internal) about to start (`shell:state` meeting, from the calendar). */
   meeting: IslandMeeting | null;
+  /** The browser in front that macOS won't let Vocify read (so no call offer): the island says so, with Fix. */
+  crmBlocked: { browser: string } | null;
   keypadOpen: boolean;
   /** "vibrancy": the window blurs what is behind it (macOS). "opaque": no blur available, so the glass is denser. */
   material: "vibrancy" | "opaque";
@@ -167,6 +169,7 @@ export type IslandAction =
   | { name: "openCalling" }
   | { name: "joinMeeting" }
   | { name: "dismissMeeting" }
+  | { name: "fixCrmAccess" }
   /** A choice in the after-call card; `type` and `details` go to the dashboard unchanged (approve, undo, review, setType, dismiss...). */
   | { name: "postCall"; type: string; details?: Record<string, unknown> };
 

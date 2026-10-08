@@ -152,3 +152,27 @@ test("a reader that dies answers nothing and is restarted at most once a minute"
   assert.equal(await reader.front(), "chrome");
   assert.equal(children.length, 2);
 });
+
+test("a browser macOS refuses says so (once), and a browser read again clears it", async () => {
+  const clock = fakeClock();
+  const state = { refused: true };
+  const blocked: (string | null)[] = [];
+  const watcher = createCrmScreenWatcher({
+    front: async () => "com.google.Chrome",
+    isBrowser: () => true,
+    read: async () => (state.refused ? null : [HUBSPOT_CONTACT]),
+    refused: () => state.refused,
+    onBlocked: (app) => blocked.push(app),
+    emit: () => {},
+    every: (ms, fn) => clock.every(ms, fn),
+  });
+  watcher.start();
+  await clock.tick(1500);
+  await clock.tick(1500);
+  assert.deepEqual(blocked, ["com.google.Chrome"], "said once, not every tick");
+  // Allowed in System Settings: the next read works and the warning goes.
+  state.refused = false;
+  await clock.tick(1500);
+  assert.deepEqual(blocked, ["com.google.Chrome", null]);
+  watcher.stop();
+});

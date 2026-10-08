@@ -13,6 +13,10 @@ export type CrmScreenDeps = {
   read(app: string): Promise<string[] | null>;
   isBrowser(app: string): boolean;
   emit(urls: string[]): void;
+  /** The OS refused Vocify this browser (the Mac's Automation); absent where it never does. */
+  refused?(app: string): boolean;
+  /** The browser in front Vocify may not read (its id), or null once a browser is read: the island says so, with Fix. */
+  onBlocked?(app: string | null): void;
   /** Runs `fn` every `ms`; returns a function that stops it. */
   every(ms: number, fn: () => void): () => void;
 };
@@ -22,6 +26,12 @@ export const CRM_SCREEN_EVERY_MS = 1500;
 export function createCrmScreenWatcher(deps: CrmScreenDeps): { start(): void; stop(): void } {
   const change = new CrmScreenChange();
   let busy = false;
+  let blocked: string | null = null;
+  const block = (app: string | null) => {
+    if (app === blocked) return;
+    blocked = app;
+    deps.onBlocked?.(app);
+  };
   let stopTimer: (() => void) | null = null;
 
   const tick = async () => {
@@ -31,7 +41,9 @@ export function createCrmScreenWatcher(deps: CrmScreenDeps): { start(): void; st
       const app = await deps.front();
       if (!app || !deps.isBrowser(app)) return;
       const urls = await deps.read(app);
+      if (deps.refused?.(app)) return block(app);
       if (!Array.isArray(urls)) return;
+      block(null);
       const next = change.next(urls);
       if (next) deps.emit(next);
     } catch {

@@ -317,6 +317,8 @@ button.type-tag:hover { color: var(--text); }
 .call-glyph { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.43); transition: background 120ms; }
 .call-glyph[data-callable="true"] { color: var(--beige); }
 .call-glyph:hover { background: rgba(255, 255, 255, 0.18); }
+/* the call icon's place when macOS won't let Vocify read the browser in front */
+.blocked-glyph { color: var(--warning); }
 .menu-stack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .menu-line { font-size: 11.5px; color: var(--secondary); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* the meeting heads-up: a long title or name gives way ("…", in full on hover); when, where and "+2" never do */

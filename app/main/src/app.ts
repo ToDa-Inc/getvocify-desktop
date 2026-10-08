@@ -17,6 +17,7 @@ import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { trayItems } from "./tray-menu.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
 import { createCrmScreenWatcher } from "./crm-screen-watcher.ts";
+import { CrmPages } from "../../core/crmPages.ts";
 import { runQuiet } from "./platform/exec.ts";
 import { createPlatform } from "./platform/index.ts";
 import { spawnMacHelper } from "./platform/mac/helper.ts";
@@ -293,6 +294,12 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     isBrowser: (app) => os.crmScreenReader.isBrowser(app),
     read: (app) => os.crmScreenReader.read(app),
     emit: (urls) => dashboard.emit("crm:screen", { urls }),
+    refused: (app) => os.crmScreenReader.refused?.(app) ?? false,
+    onBlocked: (app) => {
+      controller.setCrmBlocked(app ? CrmPages.browser(app)?.name ?? "your browser" : null);
+      // The dashboard's permission card follows (it shows the CRM tab step while it is refused).
+      dashboard.emit("permissions:changed", {});
+    },
     every: (ms, fn) => {
       const timer = setInterval(fn, ms);
       return () => clearInterval(timer);

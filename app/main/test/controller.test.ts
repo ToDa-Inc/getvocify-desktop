@@ -832,3 +832,16 @@ test("a meeting moved to another time is announced again, and closing it only hi
   t.controller.applyShellState({ meeting: at(70) });
   assert.equal(t.controller.state.meeting, null);
 });
+
+test("a refused browser shows on the island, and Fix opens Vocify on how to allow it", () => {
+  const t = setup();
+  t.controller.setCrmBlocked("Google Chrome");
+  assert.deepEqual(t.controller.state.crmBlocked, { browser: "Google Chrome" });
+  t.controller.act({ name: "toggle" });
+  t.controller.act({ name: "fixCrmAccess" });
+  assert.equal(t.log.mainWindow, 1);
+  assert.deepEqual(t.commands(), ["open-crm-access"]);
+  assert.equal(t.controller.state.expanded, false);
+  t.controller.setCrmBlocked(null);
+  assert.equal(t.controller.state.crmBlocked, null);
+});

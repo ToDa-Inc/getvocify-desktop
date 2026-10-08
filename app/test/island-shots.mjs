@@ -43,7 +43,7 @@ async function open(fixture) {
   return { win, errors };
 }
 
-const measure = (win) => win.webContents.executeJavaScript(`(() => {
+const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
   const el = document.querySelector('.island');
   if (!el) return { missing: true };
   const r = el.getBoundingClientRect();
@@ -94,6 +94,8 @@ const measure = (win) => win.webContents.executeJavaScript(`(() => {
         reported: (window.__islandSizes || []).at(-1)?.height ?? null,
       };
     })(),
+    // Text that must show in full: which of the fixture's selectors are cut (an ellipsis keeps scrollWidth > clientWidth).
+    cutText: (${JSON.stringify(fixture.expect?.noCut ?? [])}).filter((sel) => [...document.querySelectorAll(sel)].some((e) => e.scrollWidth > e.clientWidth + 1)),
     // The meeting heads-up's row: what is cut, measured in the real layout (an ellipsis keeps scrollWidth > clientWidth).
     meeting: (() => {
       const line = document.querySelector('.meeting-line');
@@ -140,7 +142,7 @@ for (const fixture of fixtures) {
     if (!clicked) problems.push(`step target missing: ${selector}`);
     await (fixture.fit || fixture.natural ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
   }
-  const m = await measure(win);
+  const m = await measure(win, fixture);
   if (m.missing) problems.push("island did not render");
   else {
     if (m.width !== fixture.expect.width || (!fixture.fit && !fixture.natural && m.height !== fixture.expect.height)) {
@@ -180,6 +182,7 @@ for (const fixture of fixtures) {
     if (m.overflow.length) problems.push(`content wider than its box: ${m.overflow.join("; ")}`);
     if (m.atBottom === false) problems.push("transcript not scrolled to the latest line");
     if (m.repeatedLabels.length) problems.push(`label shown twice: ${m.repeatedLabels.join(", ")}`);
+    if (m.cutText?.length) problems.push(`text cut: ${m.cutText.join(", ")}`);
     if (fixture.expect.meeting) {
       const e = fixture.expect.meeting;
       if (!m.meeting) problems.push("no meeting row rendered");

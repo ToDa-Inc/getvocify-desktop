@@ -33,6 +33,8 @@ export interface CrmScreenReader {
   isBrowser(app: string): boolean;
   /** The CRM record URLs the browser's front tab shows ([] for none), or null when it could not be read. */
   read(app: string): Promise<string[] | null>;
+  /** The OS refused Vocify this browser (Mac: Automation), until it is read again. Absent where the OS never refuses. */
+  refused?(app: string): boolean;
 }
 
 export type PermissionKind = "microphone" | "systemAudio" | "crmTabs";

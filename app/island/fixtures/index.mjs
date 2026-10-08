@@ -26,6 +26,7 @@ const base = {
   onScreen: null,
   dial: null,
   meeting: null,
+  crmBlocked: null,
   keypadOpen: false,
   material: "vibrancy",
   reduceMotion: true,
@@ -258,6 +259,9 @@ export const fixtures = [
   { name: "idle-callable", state: { onScreen: ana }, expect: { width: 257, height: 32 } },
   { name: "idle-open-callable", state: { mode: { kind: "idle" }, expanded: true, onScreen: ana }, expect: { width: 380, height: 88 } },
   { name: "idle-open-needs-contact", state: { mode: { kind: "idle" }, expanded: true, onScreen: { ...ana, name: null, phone: null, state: "needs_contact" } }, expect: { width: 380, height: 88 } },
+  // macOS refused Vocify the browser in front: the call icon's place says so, and the open island offers Fix.
+  { name: "idle-crm-blocked", state: { crmBlocked: { browser: "Google Chrome" } }, expect: { width: 257, height: 32 } },
+  { name: "idle-open-crm-blocked", state: { mode: { kind: "idle" }, expanded: true, crmBlocked: { browser: "Google Chrome" } }, expect: { width: 380, height: 88, noCut: [".menu-title", ".menu-line"] } },
   // the contact's recent activity under the offer: every line in full, with what it is about and when (from the
   // interaction it cites); a line without them (an older dashboard, the company) is text alone
   { name: "idle-open-brief", state: { mode: { kind: "idle" }, expanded: true, onScreen: { ...ana, brief: { state: "ready", lines: BRIEF } } }, expect: { width: 380, lines: 3, whens: 3, icons: 3 }, natural: true },
@@ -307,6 +311,8 @@ export const interactions = [
   { name: "save-leaves-out-unticked", fixture: "postcall-open-ready", before: [".change-row .change-toggle"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: ["contact:title", "contact:needs_review"], edits: {} } }] },
   { name: "save-sends-a-picked-value", fixture: "postcall-open-ready", before: [".change-row .change-value", ".option-row:nth-child(2)"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: ["contact:needs_review"], edits: { "contact:title": "manager" } } }] },
   { name: "call-glyph-opens-confirm", fixture: "idle-callable", click: ".call-glyph", expect: [{ name: "openDialConfirm" }] },
+  { name: "blocked-glyph-opens-the-island", fixture: "idle-crm-blocked", click: ".blocked-glyph", expect: [{ name: "toggle" }] },
+  { name: "blocked-fix-opens-vocify", fixture: "idle-open-crm-blocked", click: ".primary-action", expect: [{ name: "fixCrmAccess" }] },
   { name: "open-island-calls", fixture: "idle-open-callable", click: ".primary-action", expect: [{ name: "dial" }] },
   { name: "open-island-records", fixture: "idle-open-callable", click: ".menu .quiet-record", expect: [{ name: "record" }] },
   { name: "open-island-opens-vocify", fixture: "idle-open-callable", click: ".menu .icon-button", expect: [{ name: "openApp" }] },

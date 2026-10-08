@@ -120,6 +120,7 @@ export class IslandController {
       onScreen: null,
       dial: null,
       meeting: null,
+      crmBlocked: null,
       keypadOpen: false,
       material: options.material,
       reduceMotion: options.reduceMotion,
@@ -133,6 +134,12 @@ export class IslandController {
   /** The app the call being recorded happens in (what Record was pressed on, else what holds the mic). */
   get recordingAppId(): string | null {
     return this.recordingCaller?.appId ?? this.currentCaller?.appId ?? null;
+  }
+
+  /** The browser in front macOS won't let Vocify read (its name), or null once one is read again. */
+  setCrmBlocked(browser: string | null): void {
+    if ((this.current.crmBlocked?.browser ?? null) === browser) return;
+    this.set({ crmBlocked: browser ? { browser } : null });
   }
 
   /** The dashboard says it is recording (`shell:state` listening). */
@@ -357,6 +364,11 @@ export class IslandController {
         this.dismissedMeeting = this.current.meeting ? IslandController.occasion(this.current.meeting) : null;
         this.set({ meeting: null });
         return this.collapse();
+      case "fixCrmAccess":
+        // The dashboard shows how to allow it (its permission card opens the exact System Settings page).
+        this.collapse();
+        this.effects.showMainWindow();
+        return this.effects.emit("shell:command", "open-crm-access");
     }
   }
 

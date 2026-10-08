@@ -3,7 +3,10 @@
 > **Vocify desktop is the Electron app in [`app/`](app/)**, on Mac and Windows. All new desktop and island work goes there.
 > The Swift app in [`apps/macos/`](apps/macos/) is **legacy**: no new features, only kept until the Electron Mac app takes over
 > its release ([`.github/workflows/release-mac.yml`](.github/workflows/release-mac.yml) still builds it). The Electron Mac app
-> (native helper `app/native/mac-helper`, `cd app && npm run dist:mac`) is on `main`.
+> (native helper `app/native/mac-helper`) is on `main`. Build it on your Mac with
+> `cd app && npm ci && npm run build:mac-native && npm run dist:mac:local` → `app/release/mac-universal/Vocify.app`.
+> (`dist:mac` signs with the hardened runtime, which needs an Apple Developer ID: with a local certificate the app is
+> killed at launch, "different Team IDs".)
 
 Native macOS app with the Vocify dashboard embedded — records Zoom, Meet, and Teams without a bot. Your mic is **You**, system audio is **Them**. Talks to **https://getvocify-staging.up.railway.app/api/v1** (staging).
 

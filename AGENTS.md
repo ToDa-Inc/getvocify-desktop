@@ -7,7 +7,7 @@
 - Native Mac code: the helper `app/native/mac-helper` (one command per job, documented in its `PROTOCOL.md`).
 - In Electron the dashboard page records and transcribes, so per-line meeting logic lives in the dashboard repo
   (`getvocify`, `src/features/desktop/DesktopMeetingProvider.tsx`, the non-native path).
-- The Electron Mac app is on branch `feat/mac-electron` until it is merged into `main`: base Mac work on it.
+- The Electron Mac app is on `main` (`cd app && npm run build:mac-native && npm run dist:mac`).
 - Checks: `cd app && npm run typecheck && npm run test:logic && npm run test:island`.
 
 **`apps/macos/` (Swift) is legacy.** Do not build features there; see `apps/macos/LEGACY.md`. Also legacy: the old

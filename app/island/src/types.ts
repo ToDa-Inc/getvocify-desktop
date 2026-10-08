@@ -132,7 +132,7 @@ export type IslandState = {
   onScreen: OnScreenCall | null;
   /** The Vocify call in progress, if any (`shell:state` dial). */
   dial: DialIslandState | null;
-  /** A meeting with someone from outside about to start (`shell:state` meeting, from the calendar). */
+  /** A meeting (with clients or internal) about to start (`shell:state` meeting, from the calendar). */
   meeting: IslandMeeting | null;
   keypadOpen: boolean;
   /** "vibrancy": the window blurs what is behind it (macOS). "opaque": no blur available, so the glass is denser. */

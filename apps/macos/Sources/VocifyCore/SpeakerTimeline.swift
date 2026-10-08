@@ -13,6 +13,11 @@ public struct SpeakerTimeline: Equatable {
     /// A sample stands for this long when the next one is late.
     private static let sampleSpan = 1.0
     private static let slack = 0.3
+    /// A name needs this much time shown; a closer race than both limits names nobody
+    /// (same rule as lucassynnott/meeting-notes, src/zoom-accessibility.js).
+    private static let minShown = 0.25
+    private static let closeGap = 0.2
+    private static let clearLead = 1.5
 
     public init() {}
 
@@ -34,7 +39,13 @@ public struct SpeakerTimeline: Equatable {
             guard to > from else { continue }
             for name in sample.names { time[name, default: 0] += to - from }
         }
-        return time.max { $0.value < $1.value }?.key
+        let ranked = time.sorted { $0.value > $1.value }
+        guard let top = ranked.first, top.value >= Self.minShown else { return nil }
+        // Two people shown about as long (crosstalk, a quick hand-over): "Them" beats a wrong name.
+        if ranked.count > 1, top.value - ranked[1].value < Self.closeGap, top.value < ranked[1].value * Self.clearLead {
+            return nil
+        }
+        return top.key
     }
 }
 

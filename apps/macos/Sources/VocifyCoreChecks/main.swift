@@ -203,6 +203,43 @@ check(ZoomTile.speakingName("Marta García, Computer audio, Active speaker") == 
 check(ZoomTile.speakingName("Juan, Computer audio") == nil, "not speaking, no name")
 check(ZoomTile.speakingName("Ana Pérez, Active speaker") == "Ana Pérez", "no audio marker")
 
+// Two people shown about as long: nobody is named rather than the wrong one.
+var crosstalk = SpeakerTimeline()
+crosstalk.record(at: 10, speaking: ["Marta"])
+crosstalk.record(at: 10.5, speaking: ["Juan"])
+crosstalk.record(at: 11, speaking: [])
+check(crosstalk.name(from: 10.3, to: 10.7) == nil, "a close race names nobody")
+check(crosstalk.name(from: 9.6, to: 10.4) == "Marta", "a clear lead still names")
+var glimpse = SpeakerTimeline()
+glimpse.record(at: 20, speaking: ["Marta"])
+glimpse.record(at: 20.1, speaking: [])
+check(glimpse.name(from: 20, to: 21) == nil, "a glimpse is not enough")
+
+// Google Meet, read by the Chrome extension and passed on by the native host.
+let meet = MeetSpeaking.parse(Data(#"{"type":"meet-speakers","speaking":[" Marta García ","Juan","Juan"]}"#.utf8))
+check(meet?.speaking == ["Juan", "Marta García"], "meet names trimmed, deduped, sorted")
+check(MeetSpeaking.parse(Data(#"{"type":"meet-speakers","speaking":[]}"#.utf8))?.speaking == [], "nobody speaking")
+check(MeetSpeaking.parse(Data(#"{"type":"other","speaking":["Marta"]}"#.utf8)) == nil, "other messages ignored")
+check(MeetSpeaking.parse(Data(#"{"type":"meet-speakers","speaking":[3]}"#.utf8)) == nil, "names must be text")
+check(MeetSpeaking.parse(Data(#"{"type":"meet-speakers","speaking":[""]}"#.utf8)) == nil, "no empty names")
+check(MeetSpeaking.parse(Data(meet!.json().utf8)) == meet, "round trip")
+
+var reader = NativeMessageReader()
+let one = NativeMessageReader.frame(Data(#"{"a":1}"#.utf8))
+let two = NativeMessageReader.frame(Data(#"{"b":2}"#.utf8))
+let both = one + two
+check(reader.append(both.prefix(6)) == [], "partial frame waits")
+check(reader.append(both.dropFirst(6)) == [Data(#"{"a":1}"#.utf8), Data(#"{"b":2}"#.utf8)], "frames split and joined")
+var oversized = NativeMessageReader()
+check(oversized.append(Data([0xFF, 0xFF, 0xFF, 0x7F])) == nil, "oversized frame refused")
+
+let hostManifest = try! JSONSerialization.jsonObject(
+    with: NativeHost.manifest(path: "/Applications/Vocify.app/Contents/Helpers/VocifyMeetHost", extensionIDs: ["abcdefghijklmnopabcdefghijklmnop", "not-an-id"])
+) as! [String: Any]
+check(hostManifest["name"] as? String == "com.vocify.speakers", "host name")
+check(hostManifest["type"] as? String == "stdio", "host type")
+check(hostManifest["allowed_origins"] as? [String] == ["chrome-extension://abcdefghijklmnopabcdefghijklmnop/"], "only real extension ids")
+
 // A long call: paragraphs set aside after a minute read exactly as if rebuilt every time.
 var hour = LiveTranscript()
 var expected: [String] = []

@@ -401,6 +401,7 @@ final class MeetingPillState: ObservableObject {
     @Published var callContact: String?
     /// The CRM contact in the frontmost browser the island can offer to call (`shell:state` onScreen).
     @Published var onScreen: OnScreenCall?
+    var onOnScreenChange: (() -> Void)?
     /// The Vocify call in progress, if any (`shell:state` dial).
     @Published var dial: DialIslandState?
     @Published var keypadOpen = false
@@ -429,7 +430,9 @@ final class MeetingPillState: ObservableObject {
     let levels = LevelStore()
 
     func size(for mode: Mode, open: Bool) -> CGSize {
-        geometry.size(mode, open: open, postCallBody: postCallBodyHeight)
+        // The call offer's brief lines (open idle island and the confirm row only).
+        let briefLines = mode == .idle || mode == .dialConfirm ? (onScreen?.briefLines ?? 0) : 0
+        return geometry.size(mode, open: open, postCallBody: postCallBodyHeight, briefLines: briefLines)
     }
 
     /// The tabs the card has for this call; one tab draws no tab bar.
@@ -582,7 +585,10 @@ final class MeetingPillState: ObservableObject {
         }
         if state.keys.contains("onScreen") {
             let next = OnScreenCall.decode(state["onScreen"])
-            if next != onScreen { onScreen = next }
+            if next != onScreen {
+                onScreen = next
+                onOnScreenChange?()
+            }
         }
         if state.keys.contains("dial") {
             let next = DialIslandState.decode(state["dial"])
@@ -707,11 +713,16 @@ struct IslandGeometry: Equatable {
         }
     }
 
-    func size(_ mode: MeetingPillState.Mode, open: Bool, postCallBody: CGFloat = 44) -> CGSize {
+    /// One line of the call offer's brief (11.5 pt), and the room under the lines (Electron: geometry.ts BRIEF_LINE / BRIEF_BOTTOM).
+    static let briefLine: CGFloat = 16
+    static let briefBottom: CGFloat = 8
+
+    func size(_ mode: MeetingPillState.Mode, open: Bool, postCallBody: CGFloat = 44, briefLines: Int = 0) -> CGSize {
         let closed = CGSize(width: gap + earWidth(mode, open: false) * 2, height: barHeight)
+        let brief = briefLines > 0 ? CGFloat(briefLines) * Self.briefLine + Self.briefBottom : 0
         switch mode {
         case .idle:
-            return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
+            return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56 + brief) : closed
         case .recording:
             return open ? CGSize(width: max(gap + Self.ear * 2, 460), height: min(400, (screenHeight * 0.5).rounded())) : closed
         case .call:
@@ -722,7 +733,9 @@ struct IslandGeometry: Equatable {
             return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
         case .finishing:
             return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
-        case .dialConfirm, .dialing:
+        case .dialConfirm:
+            return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56 + brief) : closed
+        case .dialing:
             return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
         case .starting:
             return closed
@@ -819,6 +832,7 @@ final class MeetingPillController {
         state.onFinishChange = { [weak self] in self?.finishChanged() }
         state.onCallAudioChange = { [weak self] was, now in self?.callAudioChanged(was: was, now: now) }
         state.onDialChange = { [weak self] in self?.dialChanged() }
+        state.onOnScreenChange = { [weak self] in self?.fitOffer() }
         RecordShortcut.shared.onPress = { [weak self] in self?.shortcutPressed() }
         RecordShortcut.shared.activate()
         transition(to: .idle, expanded: false)
@@ -879,6 +893,13 @@ final class MeetingPillController {
         } else {
             transition(to: .idle, expanded: false)
         }
+    }
+
+    /// The offer's brief came, went or changed length while the island is open: the window follows.
+    private func fitOffer() {
+        guard let panel, state.expanded, state.mode == .idle || state.mode == .dialConfirm else { return }
+        panel.setFrame(frame(for: state.size(for: state.mode, open: true)), display: true, animate: true)
+        panel.invalidateShadow()
     }
 
     /// Rows came or went in the open card: the window follows at once, the countdown keeps running.
@@ -1923,8 +1944,7 @@ private struct IdleMenu: View {
             }
             IconButton(symbol: "arrow.up.right", help: "Open Vocify", action: controller.openApp)
         }
-        .padding(.horizontal, 14)
-        .frame(maxHeight: .infinity)
+        .offer(brief: onScreen?.brief)
     }
 }
 
@@ -1973,6 +1993,53 @@ private struct CallGlyph: View {
     }
 }
 
+/// The call offer's row, and under it what happened with the contact lately: two lines at most (full text on hover),
+/// one quiet line while it loads (Electron: Island.tsx `Offer`). Without a brief, the row fills the island as before.
+private struct OfferLayout: ViewModifier {
+    let brief: OnScreenCall.Brief?
+
+    func body(content: Content) -> some View {
+        if let brief {
+            VStack(alignment: .leading, spacing: 0) {
+                content
+                    .padding(.horizontal, 14)
+                    .frame(height: 56)
+                VStack(alignment: .leading, spacing: 0) {
+                    switch brief {
+                    case .loading:
+                        line("Reading recent activity…").opacity(0.7)
+                    case .ready(let lines):
+                        ForEach(Array(lines.enumerated()), id: \.offset) { _, text in line(text).help(text) }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, -10)
+                .transition(.opacity)
+                Spacer(minLength: 0)
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            .animation(.easeOut(duration: 0.2), value: brief)
+        } else {
+            content
+                .padding(.horizontal, 14)
+                .frame(maxHeight: .infinity)
+        }
+    }
+
+    private func line(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11.5))
+            .foregroundStyle(IslandStyle.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, minHeight: IslandGeometry.briefLine, maxHeight: IslandGeometry.briefLine, alignment: .leading)
+    }
+}
+
+private extension View {
+    func offer(brief: OnScreenCall.Brief?) -> some View { modifier(OfferLayout(brief: brief)) }
+}
+
 /// Who would be called and from which number; one click calls.
 private struct DialConfirmMenu: View {
     let onScreen: OnScreenCall
@@ -2001,8 +2068,7 @@ private struct DialConfirmMenu: View {
             }
             IconButton(symbol: "xmark", help: "Close", action: controller.collapse)
         }
-        .padding(.horizontal, 14)
-        .frame(maxHeight: .infinity)
+        .offer(brief: onScreen.brief)
     }
 }
 

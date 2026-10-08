@@ -18,6 +18,33 @@ public struct OnScreenCall: Equatable, Sendable {
     /// The verified number the call goes out from.
     public let callerId: String?
     public let state: State
+    /// What happened with the contact lately (the dashboard's recent-activity summary): loading, or its lines.
+    public var brief: Brief? = nil
+
+    public enum Brief: Equatable, Sendable {
+        case loading
+        case ready([String])
+    }
+
+    /// The island is a glance: two lines at most.
+    static let briefLineLimit = 2
+
+    /// How many brief lines the offer shows (a loading brief takes one).
+    public var briefLines: Int {
+        switch brief {
+        case .loading: return 1
+        case .ready(let lines): return lines.count
+        case nil: return 0
+        }
+    }
+
+    static func decodeBrief(_ raw: Any?) -> Brief? {
+        guard let dict = raw as? [String: Any] else { return nil }
+        if dict["state"] as? String == "loading" { return .loading }
+        guard dict["state"] as? String == "ready", let raw = dict["lines"] as? [Any] else { return nil }
+        let lines = raw.compactMap { nonEmpty($0) }.prefix(briefLineLimit)
+        return lines.isEmpty ? nil : .ready(Array(lines))
+    }
 
     public static func decode(_ raw: Any?) -> OnScreenCall? {
         guard let dict = raw as? [String: Any],
@@ -31,7 +58,8 @@ public struct OnScreenCall: Equatable, Sendable {
             name: nonEmpty(dict["name"]),
             phone: nonEmpty(dict["phone"]),
             callerId: nonEmpty(dict["callerId"]),
-            state: state
+            state: state,
+            brief: decodeBrief(dict["brief"])
         )
     }
 }

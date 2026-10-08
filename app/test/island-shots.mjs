@@ -70,7 +70,11 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
     overflow,
     atBottom: t ? t.scrollHeight - t.scrollTop - t.clientHeight < 2 : null,
     clipped,
-    briefRows: document.querySelectorAll('.call-brief .recent-line').length,
+    briefRows: document.querySelectorAll('.before-call .recent-line').length,
+    briefInTranscript: !!document.querySelector('.transcript .before-call'),
+    listening: !!document.querySelector('.listening'),
+    keypad: !!document.querySelector('.float-menu .dial-pad'),
+    bubbleText: document.querySelector('.bubble')?.textContent.replace(/•+$/, '').trim() ?? null,
     repeatedLabels: (() => {
       const labels = [...document.querySelectorAll('.recent-label')].map((label) => label.textContent.trim().toLowerCase());
       return labels.filter((label, i) => labels.indexOf(label) !== i);
@@ -195,6 +199,9 @@ for (const fixture of fixtures) {
       }
     }
     if (fixture.expect.briefRows !== undefined && m.briefRows !== fixture.expect.briefRows) problems.push(`${m.briefRows} row(s) in the call's brief, expected ${fixture.expect.briefRows}`);
+    for (const key of ["briefInTranscript", "listening", "keypad", "bubbleText"]) {
+      if (fixture.expect[key] !== undefined && m[key] !== fixture.expect[key]) problems.push(`${key} is ${JSON.stringify(m[key])}, expected ${JSON.stringify(fixture.expect[key])}`);
+    }
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);
   }
   if (errors.length) problems.push(`console errors: ${errors.join(" | ")}`);

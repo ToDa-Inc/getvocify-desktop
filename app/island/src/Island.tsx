@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { cornerRadius, earWidth, islandSize, offerBriefLines, showsMeeting } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
@@ -430,44 +430,13 @@ function BriefKindIcon({ kind }: { kind: BriefKind }) {
   }
 }
 
-const BRIEF_HIDDEN_KEY = "vocify.island.briefHidden";
-
-/** During the call: the contact's recent activity above live help, which the rep can fold to its heading (remembered). */
-function CallBriefSection({ lines, company }: { lines: BriefLine[]; company: CompanyBrief | null }) {
-  const [hidden, setHidden] = useState(() => {
-    try {
-      return localStorage.getItem(BRIEF_HIDDEN_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const toggle = () => {
-    setHidden((was) => {
-      try {
-        localStorage.setItem(BRIEF_HIDDEN_KEY, was ? "0" : "1");
-      } catch {
-        // the choice just isn't remembered
-      }
-      return !was;
-    });
-  };
+/** During the call: what happened with the contact before, as the first thing in the conversation. It scrolls away as
+ * the call fills the space, so nothing needs folding and nothing stays pinned over the transcript. */
+function BeforeThisCall({ lines, company }: { lines: BriefLine[]; company: CompanyBrief | null }) {
   return (
-    <div className="help call-brief">
-      <button
-        type="button"
-        className="recent-label call-brief-toggle"
-        aria-expanded={!hidden}
-        title={hidden ? "Show recent activity" : "Hide recent activity"}
-        onClick={(event) => {
-          event.stopPropagation();
-          toggle();
-        }}
-      >
-        <span>Recent activity</span>
-        <ChevronDown size={8} style={{ transform: hidden ? "rotate(-90deg)" : "none", transition: "transform 150ms" }} />
-      </button>
-      {/* Its heading already says "Recent activity". */}
-      {!hidden && <BriefBody lines={lines} company={company} labelled={false} />}
+    <div className="before-call">
+      <div className="recent-label">Before this call</div>
+      <BriefBody lines={lines} company={company} labelled={false} />
     </div>
   );
 }
@@ -692,15 +661,8 @@ function DialConfirmMenu({ onScreen, ready, act }: { onScreen: OnScreenCall; rea
   );
 }
 
-/** Connecting or ringing: who, and Cancel. Missed: why it ended. Answered without a live transcript, the call bar alone. */
+/** Connecting or ringing: who, and Cancel. Missed: why it ended. Answered, the island is the recording's (see `OpenIsland`). */
 function DialingMenu({ dial, act }: { dial: DialIslandState; act: Act }) {
-  if (dial.phase === "active") {
-    return (
-      <div className="menu">
-        <CallBar dial={dial} keypadOpen={false} act={act} />
-      </div>
-    );
-  }
   const ended = dial.phase === "ended";
   const row = (
     <>
@@ -722,19 +684,24 @@ function DialingMenu({ dial, act }: { dial: DialIslandState; act: Act }) {
 }
 
 /** An answered Vocify call: mute, keypad, hang up (in place of Pause and Stop). */
-function CallBar({ dial, keypadOpen, showsName = true, act }: { dial: DialIslandState; keypadOpen: boolean; showsName?: boolean; act: Act }) {
+function CallBar({ dial, keypadOpen, keypadButton, act }: { dial: DialIslandState; keypadOpen: boolean; keypadButton: RefObject<HTMLButtonElement | null>; act: Act }) {
   return (
     <>
       <CircleButton help={dial.muted ? "Unmute" : "Mute"} onClick={() => act({ name: "toggleMute" })}>
         {dial.muted ? <MicSlash size={11} /> : <Mic size={11} />}
       </CircleButton>
-      <CircleButton help={keypadOpen ? "Hide keypad" : "Keypad"} onClick={() => act({ name: "keypad", open: !keypadOpen })}>
+      <CircleButton
+        help={keypadOpen ? "Hide keypad" : "Keypad"}
+        active={keypadOpen}
+        buttonRef={keypadButton}
+        onClick={(event) => {
+          event.stopPropagation();
+          act({ name: "keypad", open: !keypadOpen });
+        }}
+      >
         <Keypad size={10} />
       </CircleButton>
       <HangUpButton title="Hang up" onClick={() => act({ name: "hangup" })} />
-      {/* Who the call is with, whatever tab the rep has moved to since. The open call names them in the
-          conversation instead: this row also carries the call type and live help. */}
-      {showsName && <span className="menu-title call-name" title={PhoneFormat.grouped(dial.phone)}>{dial.name ?? PhoneFormat.grouped(dial.phone)}</span>}
     </>
   );
 }
@@ -776,17 +743,33 @@ function HangUpDot({ onClick }: { onClick: () => void }) {
 }
 
 const KEYPAD_ROWS = [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]];
+/** How many tapped keys the display keeps (the newest). */
+const KEYPAD_SHOWN = 12;
 
-/** Digits for phone menus (press 1 for sales…), sent as the call's tones. */
-function KeypadGrid({ onDigit }: { onDigit: (digit: string) => void }) {
+/** Digits for phone menus (press 1 for sales…), sent as the call's tones. It floats over the call under its button,
+ * so the conversation keeps its place; the display shows what was tapped, since the tones themselves are silent here. */
+function KeypadPopover({ anchor, onDigit, onClose }: { anchor: Anchor; onDigit: (digit: string) => void; onClose: () => void }) {
+  const [tapped, setTapped] = useState("");
   return (
-    <div className="keypad">
-      {KEYPAD_ROWS.flat().map((digit) => (
-        <button key={digit} type="button" className="small-action keypad-key" onClick={() => onDigit(digit)}>
-          {digit}
-        </button>
-      ))}
-    </div>
+    <FloatMenu anchor={anchor} width={160} maxHeight={240} role="group" onClose={onClose} label="Keypad">
+      <div className="dial-display" aria-live="polite">{tapped}</div>
+      <div className="dial-pad">
+        {KEYPAD_ROWS.flat().map((digit) => (
+          <button
+            key={digit}
+            type="button"
+            className="dial-key"
+            aria-label={digit}
+            onClick={() => {
+              setTapped((so) => (so + digit).slice(-KEYPAD_SHOWN));
+              onDigit(digit);
+            }}
+          >
+            {digit}
+          </button>
+        ))}
+      </div>
+    </FloatMenu>
   );
 }
 
@@ -795,12 +778,20 @@ function KeypadGrid({ onDigit }: { onDigit: (digit: string) => void }) {
 function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
   const [typeAnchor, setTypeAnchor] = useState<Anchor | null>(null);
   const closeType = useCallback(() => setTypeAnchor(null), []);
+  const keypadButton = useRef<HTMLButtonElement>(null);
+  const [keypadAnchor, setKeypadAnchor] = useState<Anchor | null>(null);
+  // The keypad opens under its own button, wherever the open state came from.
+  useLayoutEffect(() => {
+    setKeypadAnchor(state.keypadOpen && keypadButton.current ? anchorOf(keypadButton.current) : null);
+  }, [state.keypadOpen]);
+  const closeKeypad = useCallback(() => act({ name: "keypad", open: false }), [act]);
   const menu = state.typeMenu;
+  const brief = state.dial?.brief || state.dial?.companyBrief ? <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} /> : null;
   return (
     <div className="open-island">
       <div className="controls">
         {state.dial ? (
-          <CallBar dial={state.dial} keypadOpen={state.keypadOpen} showsName={false} act={act} />
+          <CallBar dial={state.dial} keypadOpen={state.keypadOpen} keypadButton={keypadButton} act={act} />
         ) : (
           <>
             <CircleButton
@@ -869,12 +860,13 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
           ))}
         </FloatMenu>
       )}
-      {state.keypadOpen && state.dial && <KeypadGrid onDigit={(digit) => act({ name: "digit", digit })} />}
+      {state.keypadOpen && state.dial?.phase === "active" && keypadAnchor && (
+        <KeypadPopover anchor={keypadAnchor} onDigit={(digit) => act({ name: "digit", digit })} onClose={closeKeypad} />
+      )}
       {state.callAudioLost && !state.paused && <CallAudioLostLine />}
-      {(state.dial?.brief || state.dial?.companyBrief) && <CallBriefSection lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} />}
       {state.liveHelp !== false && <HelpSection current={state.assist} earlier={state.lastHelp} />}
       <div className="hairline" />
-      <TranscriptScroll turns={state.turns} />
+      <TranscriptScroll turns={state.turns} before={brief} />
     </div>
   );
 }
@@ -922,7 +914,7 @@ function HelpSection({ current, earlier }: { current: Assist | null; earlier: As
 
 const FOLLOW_SLACK = 120;
 
-function TranscriptScroll({ turns }: { turns: Turn[] }) {
+function TranscriptScroll({ turns, before }: { turns: Turn[]; before?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const [following, setFollowing] = useState(true);
@@ -964,7 +956,8 @@ function TranscriptScroll({ turns }: { turns: Turn[] }) {
     <div className="transcript-wrap">
       <div className="transcript" ref={ref} onScroll={onScroll}>
         <div>
-          {turns.length === 0 && <div className="listening">Listening…</div>}
+          {before}
+          {turns.length === 0 && <div className="listening" data-after-brief={Boolean(before)}>Listening…</div>}
           <div className="bubbles">
             {turns.map((turn) => (
               <TurnBubble key={turn.id} turn={turn} />
@@ -1179,9 +1172,9 @@ function IconButton({ help, onClick, children, className }: { help: string; onCl
   );
 }
 
-function CircleButton({ help, onClick, children }: { help: string; onClick: () => void; children: ReactNode }) {
+function CircleButton({ help, active, buttonRef, onClick, children }: { help: string; active?: boolean; buttonRef?: RefObject<HTMLButtonElement | null>; onClick: (event: MouseEvent<HTMLButtonElement>) => void; children: ReactNode }) {
   return (
-    <button type="button" className="circle-button" title={help} aria-label={help} onClick={onClick}>
+    <button type="button" ref={buttonRef} className="circle-button" data-active={active} title={help} aria-label={help} aria-pressed={active} onClick={onClick}>
       {children}
     </button>
   );

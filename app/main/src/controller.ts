@@ -420,8 +420,11 @@ export class IslandController {
       case "call":
       case "postCall":
         if (dial && dial.phase !== "ended") this.transition({ kind: "dialing" }, true);
+        // Answered: from here on the island is the call's live view, not a bar waiting for the dashboard.
+        if (dial?.phase === "active") this.show();
         return;
       case "dialing":
+        if (dial?.phase === "active") return this.show();
         if (!dial) {
           const answered = this.dialAnswered;
           this.dialAnswered = false;
@@ -591,7 +594,8 @@ export class IslandController {
     });
   }
 
-  /** The dashboard started recording (`overlay:show`), from the island or from its own button. */
+  /** The dashboard started recording (`overlay:show`), from the island or from its own button; an answered Vocify call
+   * counts from the answer itself, so the transcript view is there before the live session has started. */
   show(): void {
     this.callHandled = true;
     this.stopTimer("startTimeout");
@@ -599,7 +603,9 @@ export class IslandController {
     if (this.vocifyCallUp) this.recordingCaller = null;
     else if (this.current.mode.kind === "call") this.recordingCaller = this.shownCaller;
     else if (this.mode !== "recording") this.recordingCaller = this.currentCaller;
-    this.transition({ kind: "recording" }, this.mode === "recording" && this.current.expanded);
+    // The call the rep placed from the island stays as open (or closed) as they had it when it is answered.
+    const keepsShape = this.mode === "recording" || (this.mode === "dialing" && this.vocifyCallUp);
+    this.transition({ kind: "recording" }, keepsShape && this.current.expanded);
   }
 
   /** Ends the stop grace now, without waiting for its line to run out. */

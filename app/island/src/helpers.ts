@@ -26,10 +26,13 @@ export function fadedLevel(levels: Levels, side: "you" | "them", now: number): n
 
 const CLOSING_MARKS = ",.;:!?…)";
 
-/** The settled words, the words still arriving (dimmed), and whether the dots show. Same rules as `TurnBubble`. */
+/**
+ * The settled words, the words still arriving (dimmed), and whether the dots show. Same rules as `TurnBubble`.
+ * Words show as soon as they arrive, even one: on a call the first thing said is "¿Hola?", and holding it back for
+ * more words left a lone "•••" where the rep expected to read it.
+ */
 export function turnParts(turn: Turn): { text: string; tail: string; joined: boolean; dots: boolean } {
-  const words = turn.pending.split(" ").filter(Boolean).length;
-  const tail = words > 2 || turn.text !== "" ? turn.pending : "";
+  const tail = turn.pending;
   const joined = turn.text === "" || (tail !== "" && CLOSING_MARKS.includes(tail[0]));
   return { text: turn.text, tail, joined, dots: turn.pending !== "" };
 }

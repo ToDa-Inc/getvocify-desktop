@@ -744,11 +744,42 @@ test("recording a Vocify call ignores other apps letting go of the mic", () => {
   assert.equal(t.mode(), "recording");
 });
 
-test("an answered call that ends while the island shows the call holds it on 'processing' until the memo", () => {
+test("answering moves the island to the call's live view at once, as open as the rep had it", () => {
+  const t = setup();
+  t.controller.applyShellState({ dial: dialState("ringing") });
+  assert.equal(t.mode(), "dialing");
+  assert.equal(t.controller.state.expanded, true);
+  t.controller.applyShellState({ dial: dialState("active", { answeredAt: 1 }) });
+  assert.equal(t.mode(), "recording");
+  assert.equal(t.controller.state.expanded, true);
+  // The dashboard's own start a moment later changes nothing the rep sees.
+  t.controller.show();
+  assert.equal(t.mode(), "recording");
+  assert.equal(t.controller.state.expanded, true);
+});
+
+test("a call answered while the island was closed stays closed", () => {
+  const t = setup();
+  t.controller.applyShellState({ dial: dialState("ringing") });
+  t.controller.act({ name: "toggle" });
+  assert.equal(t.controller.state.expanded, false);
+  t.controller.applyShellState({ dial: dialState("active", { answeredAt: 1 }) });
+  assert.equal(t.mode(), "recording");
+  assert.equal(t.controller.state.expanded, false);
+});
+
+test("a call that starts answered (the dashboard's own dialer) opens in the live view", () => {
+  const t = setup();
+  t.controller.applyShellState({ dial: dialState("active", { answeredAt: 1 }) });
+  assert.equal(t.mode(), "recording");
+  assert.equal(t.controller.state.expanded, true);
+});
+
+test("an answered call that ends before the live session started holds the island on 'processing' until the memo", () => {
   const t = setup();
   t.controller.applyShellState({ dial: dialState("ringing") });
   t.controller.applyShellState({ dial: dialState("active", { answeredAt: 1 }) });
-  assert.equal(t.mode(), "dialing");
+  assert.equal(t.mode(), "recording");
   t.controller.applyShellState({ dial: null });
   assert.equal(t.mode(), "finishing");
   t.controller.applyShellState({ postCall: postCall("ready") });

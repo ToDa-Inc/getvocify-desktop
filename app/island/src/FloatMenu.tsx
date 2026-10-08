@@ -19,9 +19,13 @@ export const anchorOf = (element: Element): Anchor => {
   return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
 };
 
-export function FloatMenu({ anchor, width, onClose, onExtent, label, children }: {
+export function FloatMenu({ anchor, width, maxHeight, role = "listbox", onClose, onExtent, label, children }: {
   anchor: Anchor;
   width: number;
+  /** Taller than the default list (a keypad is not rows). */
+  maxHeight?: number;
+  /** `listbox` for rows to pick from; `group` for any other content. */
+  role?: "listbox" | "group";
   onClose: () => void;
   /** Where the dropdown ends (px from the window's top), so the window can grow to include it; null once it closes. */
   onExtent?: (bottom: number | null) => void;
@@ -69,9 +73,9 @@ export function FloatMenu({ anchor, width, onClose, onExtent, label, children }:
     <div
       ref={ref}
       className="float-menu"
-      role="listbox"
+      role={role}
       aria-label={label}
-      style={{ top: anchor.y + anchor.height + 4, left, width, maxHeight: VISIBLE * ROW + PADDING * 2 }}
+      style={{ top: anchor.y + anchor.height + 4, left, width, maxHeight: maxHeight ?? VISIBLE * ROW + PADDING * 2 }}
       onClick={(event) => event.stopPropagation()}
     >
       {children}

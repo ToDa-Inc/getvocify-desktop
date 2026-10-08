@@ -284,12 +284,14 @@ export const fixtures = [
   { name: "confirm-no-caller-id", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, callerId: null, state: "no_caller_id" } }, expect: { width: 380, height: 88 } },
   { name: "confirm-needs-contact", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, name: null, phone: null, state: "needs_contact" } }, expect: { width: 380, height: 88 } },
   { name: "dialing-ringing", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ringing") }, expect: { width: 380, height: 88 } },
-  // the brief stays with the call: under "Calling…", and above live help once answered (collapsible)
+  // the brief stays with the call: under "Calling…", and once answered the first thing in the conversation
   { name: "dialing-ringing-brief", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ringing", { brief: BRIEF, companyBrief: ACME }) }, expect: { width: 380, lines: 4, whens: 4, icons: 4 }, natural: true },
-  { name: "in-call-brief", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, brief: BRIEF, companyBrief: ACME }) }, expect: { width: 460, height: 400, briefRows: 4 } },
-  { name: "in-call-brief-hidden", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, brief: BRIEF }) }, expect: { width: 460, height: 400, briefRows: 0 }, steps: [".call-brief-toggle"] },
+  { name: "in-call-brief", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, brief: BRIEF, companyBrief: ACME }) }, expect: { width: 460, height: 400, briefRows: 4, briefInTranscript: true } },
+  // just answered: the live view is there before a word is said, with the brief where the conversation will be
+  { name: "in-call-just-answered", state: { ...inCall, turns: [], dial: dial("active", { answeredAt: NOW - 2_000, brief: BRIEF, companyBrief: ACME }) }, expect: { width: 460, height: 400, briefRows: 4, briefInTranscript: true, listening: true } },
+  { name: "in-call-first-word", state: { ...inCall, turns: [{ id: "k1", you: true, label: null, text: "", pending: "Hola" }], dial: dial("active", { answeredAt: NOW - 4_000 }) }, expect: { width: 460, height: 400, bubbleText: "Hola" } },
   { name: "in-call", state: inCall, expect: { width: 460, height: 400 } },
-  { name: "in-call-muted-keypad", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, muted: true }), keypadOpen: true }, expect: { width: 460, height: 400 } },
+  { name: "in-call-muted-keypad", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, muted: true }), keypadOpen: true }, expect: { width: 460, height: 400, keypad: true } },
   { name: "dial-ended-no-answer", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ended", { message: "No answer" }) }, expect: { width: 380, height: 88 } },
 ].map((fixture) => ({ ...fixture, state: { ...base, ...fixture.state } }));
 
@@ -326,6 +328,6 @@ export const interactions = [
   { name: "ringing-with-brief-cancels", fixture: "dialing-ringing-brief", click: ".stop-button", expect: [{ name: "hangup" }] },
   { name: "in-call-mutes", fixture: "in-call", click: ".controls .circle-button", expect: [{ name: "toggleMute" }] },
   { name: "in-call-hangs-up", fixture: "in-call", click: ".controls .stop-button", expect: [{ name: "hangup" }] },
-  { name: "keypad-sends-digit", fixture: "in-call-muted-keypad", click: ".keypad-key", expect: [{ name: "digit", digit: "1" }] },
+  { name: "keypad-sends-digit", fixture: "in-call-muted-keypad", click: ".dial-key", expect: [{ name: "digit", digit: "1" }] },
   { name: "pick-type", fixture: "recording-open-type-list", click: ".option-row:nth-child(2)", expect: [{ name: "pickCallType", key: "demo" }], after: true },
 ];

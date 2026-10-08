@@ -113,6 +113,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 
 .circle-button { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.11); color: var(--text); transition: background 120ms; }
 .circle-button:hover { background: rgba(255, 255, 255, 0.18); }
+.circle-button[data-active="true"] { background: rgba(219, 192, 154, 0.2); color: var(--beige); }
 
 .stop-button { display: inline-flex; flex: none; white-space: nowrap; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: 14px; background: var(--danger); color: #fff; font-size: 12px; font-weight: 600; transition: background 120ms; }
 .stop-button:hover { background: rgba(219, 75, 75, 0.85); }
@@ -187,10 +188,8 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .help-drafting { display: flex; align-items: center; gap: 6px; height: 17px; }
 .help-say { font-size: 12.5px; font-weight: 500; color: var(--text); }
 .help-empty { font-size: 11.5px; color: rgba(255, 255, 255, 0.58); }
-/* the contact's brief during a call, above live help; folds to its heading */
-.call-brief { padding-bottom: 4px; }
-.call-brief-toggle { align-self: flex-start; padding: 0; margin-bottom: 1px; }
-.call-brief-toggle:hover { color: var(--secondary); }
+/* the contact's brief during a call: the first thing in the conversation, scrolled away by it */
+.before-call { display: flex; flex-direction: column; gap: 5px; margin: 0 16px; padding: 10px 0 9px; border-bottom: 0.5px solid rgba(255, 255, 255, 0.07); user-select: text; }
 .dim { color: var(--secondary); font-size: 12px; }
 .dots { display: inline-flex; gap: 4px; }
 .dots span { width: 5px; height: 5px; border-radius: 50%; background: rgba(255, 255, 255, 0.5); animation: typing 1.57s ease-in-out infinite; }
@@ -203,6 +202,7 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .transcript::-webkit-scrollbar { width: 8px; }
 .transcript::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
 .listening { text-align: center; color: var(--secondary); padding-top: 28px; }
+.listening[data-after-brief="true"] { padding-top: 14px; }
 .bubbles { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px 0; }
 .turn { display: flex; flex-direction: column; gap: 3px; max-width: 340px; align-self: flex-start; align-items: flex-start; }
 .turn[data-you="true"] { align-self: flex-end; align-items: flex-end; }
@@ -331,6 +331,8 @@ button.type-tag:hover { color: var(--text); }
 .meeting-who-more { flex: none; white-space: pre; }
 .hangup-dot { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--danger); color: #fff; transition: background 120ms; }
 .hangup-dot:hover { background: rgba(219, 75, 75, 0.85); }
-.keypad { flex: none; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; width: 180px; padding: 0 14px 8px; box-sizing: content-box; }
-.keypad-key { justify-self: center; justify-content: center; width: 26px; padding: 0; }
-.call-name { min-width: 0; max-width: 130px; }
+/* the keypad, floating under its button: what was tapped, then the standard 3 x 4 */
+.dial-display { height: 26px; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 500; letter-spacing: 1.5px; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.dial-pad { display: grid; grid-template-columns: repeat(3, 40px); gap: 8px; justify-content: center; padding: 4px 8px 8px; }
+.dial-key { width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.09); font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text); transition: background 120ms; }
+.dial-key:hover { background: rgba(255, 255, 255, 0.17); }

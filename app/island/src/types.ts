@@ -190,5 +190,7 @@ export type IslandHost = {
    * "available" while a card with fields is shown, "over" while the pointer is over a field (so the click in it focuses
    * the window), "release" when the typing is done or the pointer leaves (the keyboard goes back), "off" when the card is gone.
    */
+  /** Puts text on the clipboard: the island never takes the keyboard, so its text cannot be copied with the shortcut. */
+  copy?(text: string): Promise<boolean>;
   keyboard?(mode: "available" | "over" | "now" | "release" | "off"): Promise<unknown>;
 };

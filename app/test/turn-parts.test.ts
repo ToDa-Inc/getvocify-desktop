@@ -18,3 +18,23 @@ test("pending words follow the settled ones, joined to closing punctuation", () 
 test("a settled turn has no tail and no dots", () => {
   assert.deepEqual(turnParts(turn("Hola, qué tal", "")), { text: "Hola, qué tal", tail: "", joined: false, dots: false });
 });
+
+import { transcriptText, turnPlainText } from "../island/src/helpers.ts";
+
+test("a turn copies as the words said, settled then arriving", () => {
+  assert.equal(turnPlainText(turn("Hola, qué tal", "")), "Hola, qué tal");
+  assert.equal(turnPlainText(turn("Hola", "qué tal")), "Hola qué tal");
+  assert.equal(turnPlainText(turn("Hola", "?")), "Hola?");
+  assert.equal(turnPlainText(turn("", "")), "");
+});
+
+test("the transcript copies one line per turn, named by who said it, without empty turns", () => {
+  const turns = [
+    { id: "1", you: true, label: null, text: "Hola, es Dani.", pending: "" },
+    { id: "2", you: false, label: "Ana Ruiz", text: "Hola.", pending: "¿Qué tal" },
+    { id: "3", you: false, label: null, text: "", pending: "" },
+    { id: "4", you: false, label: null, text: "Sí.", pending: "" },
+  ];
+  assert.equal(transcriptText(turns), "You: Hola, es Dani.\nAna Ruiz: Hola. ¿Qué tal\nThem: Sí.");
+  assert.equal(transcriptText([]), "");
+});

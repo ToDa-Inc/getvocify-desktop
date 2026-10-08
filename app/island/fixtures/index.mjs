@@ -290,7 +290,7 @@ export const fixtures = [
   // just answered: the live view is there before a word is said, with the brief where the conversation will be
   { name: "in-call-just-answered", state: { ...inCall, turns: [], dial: dial("active", { answeredAt: NOW - 2_000, brief: BRIEF, companyBrief: ACME }) }, expect: { width: 460, height: 400, briefRows: 4, briefInTranscript: true, listening: true } },
   { name: "in-call-first-word", state: { ...inCall, turns: [{ id: "k1", you: true, label: null, text: "", pending: "Hola" }], dial: dial("active", { answeredAt: NOW - 4_000 }) }, expect: { width: 460, height: 400, bubbleText: "Hola" } },
-  { name: "in-call", state: inCall, expect: { width: 460, height: 400 } },
+  { name: "in-call", state: inCall, expect: { width: 460, height: 400, copyButtons: 3 } },
   { name: "in-call-muted-keypad", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, muted: true }), keypadOpen: true }, expect: { width: 460, height: 400, keypad: true } },
   { name: "dial-ended-no-answer", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ended", { message: "No answer" }) }, expect: { width: 380, height: 88 } },
 ].map((fixture) => ({ ...fixture, state: { ...base, ...fixture.state } }));
@@ -300,7 +300,7 @@ export const interactions = [
   { name: "stop-button-stops", fixture: "recording-open-conversation", click: ".stop-button", expect: [{ name: "stop" }] },
   { name: "pause-button-pauses", fixture: "recording-open-conversation", click: ".circle-button", expect: [{ name: "togglePause" }] },
   { name: "live-help-toggle", fixture: "recording-open-conversation", click: ".live-help-toggle", expect: [{ name: "toggleLiveHelp" }] },
-  { name: "open-vocify", fixture: "recording-open-conversation", click: ".controls .icon-button", expect: [{ name: "openApp" }] },
+  { name: "open-vocify", fixture: "recording-open-conversation", click: ".controls [aria-label=\"Open Vocify\"]", expect: [{ name: "openApp" }] },
   { name: "topbar-toggles", fixture: "recording-closed", click: ".topbar", expect: [{ name: "toggle" }] },
   { name: "record-dot-records-only", fixture: "call-closed", click: ".record-dot", expect: [{ name: "record" }] },
   { name: "record-button-records-only", fixture: "call-open-contact", click: ".quiet-record", expect: [{ name: "record" }] },

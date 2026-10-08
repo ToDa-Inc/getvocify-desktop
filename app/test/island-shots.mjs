@@ -74,6 +74,7 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
     briefInTranscript: !!document.querySelector('.transcript .before-call'),
     listening: !!document.querySelector('.listening'),
     keypad: !!document.querySelector('.float-menu .dial-pad'),
+    copyButtons: document.querySelectorAll('.copy-button').length,
     bubbleText: document.querySelector('.bubble')?.textContent.replace(/•+$/, '').trim() ?? null,
     repeatedLabels: (() => {
       const labels = [...document.querySelectorAll('.recent-label')].map((label) => label.textContent.trim().toLowerCase());
@@ -199,7 +200,7 @@ for (const fixture of fixtures) {
       }
     }
     if (fixture.expect.briefRows !== undefined && m.briefRows !== fixture.expect.briefRows) problems.push(`${m.briefRows} row(s) in the call's brief, expected ${fixture.expect.briefRows}`);
-    for (const key of ["briefInTranscript", "listening", "keypad", "bubbleText"]) {
+    for (const key of ["briefInTranscript", "listening", "keypad", "bubbleText", "copyButtons"]) {
       if (fixture.expect[key] !== undefined && m[key] !== fixture.expect[key]) problems.push(`${key} is ${JSON.stringify(m[key])}, expected ${JSON.stringify(fixture.expect[key])}`);
     }
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);

@@ -209,6 +209,11 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .turn-label { font-size: 10.5px; font-weight: 500; color: var(--beige); padding: 0 4px; }
 .bubble { padding: 7px 11px; border-radius: 14px; background: var(--them-bubble); line-height: 1.32; font-size: 12.5px; user-select: text; word-wrap: break-word; overflow-wrap: anywhere; }
 .bubble[data-you="true"] { background: var(--you-bubble); }
+/* a turn's copy button sits beside its bubble, shown on hover (the island has no keyboard for Ctrl+C) */
+.bubble-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.bubble-row[data-you="true"] { flex-direction: row-reverse; }
+.turn-copy { flex: none; width: 22px; height: 22px; opacity: 0; transition: opacity 120ms, background 120ms, color 120ms; }
+.bubble-row:hover .turn-copy, .turn-copy:focus-visible { opacity: 1; }
 .bubble .words { color: var(--text); }
 .bubble .dim { font-size: inherit; }
 

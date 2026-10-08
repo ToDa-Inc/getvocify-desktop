@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, screen, shell, systemPreferences, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, screen, shell, systemPreferences, Tray } from "electron";
 import { existsSync } from "node:fs";
 import { CallSource } from "../../core/callSource.ts";
 import { dirname, join } from "node:path";
@@ -523,6 +523,12 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     } else {
       giveBack();
     }
+    return true;
+  });
+  // The island never takes the keyboard, so Ctrl+C / Cmd+C cannot copy from it: its Copy buttons ask for the clipboard here.
+  ipcMain.handle("island:copy", (event, text: unknown) => {
+    if (!fromIsland(event.sender) || typeof text !== "string" || text.length === 0 || text.length > 1_000_000) return false;
+    clipboard.writeText(text);
     return true;
   });
   ipcMain.on("island:resize", (event, size: { width: number; height: number }) => {

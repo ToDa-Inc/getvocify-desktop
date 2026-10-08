@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { cornerRadius, earWidth, islandSize, offerBriefLines, showsMeeting } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
-import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
-import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, ExclamationCircle, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Video, Waveform } from "./icons.tsx";
+import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, transcriptText, turnParts, turnPlainText } from "./helpers.ts";
+import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, Copy, ExclamationCircle, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Video, Waveform } from "./icons.tsx";
 import { briefWhen, CallWording, PhoneFormat, type BriefKind, type BriefLine, type CompanyBrief, type DialIslandState, type OnScreenBrief, type OnScreenCall } from "../../core/callIsland.ts";
 import { MeetingWording, type IslandMeeting } from "../../core/meetingHeadsUp.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
@@ -824,6 +824,7 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
           </button>
         )}
         <div className="grow" />
+        {state.turns.length > 0 && <CopyButton text={transcriptText(state.turns)} help="Copy the transcript" />}
         {state.liveHelp !== null && <LiveHelpToggle on={state.liveHelp} onClick={() => act({ name: "toggleLiveHelp" })} />}
         <IconButton help="Open Vocify" onClick={() => act({ name: "openApp" })}>
           <ArrowUpRight size={12} />
@@ -985,6 +986,36 @@ function TranscriptScroll({ turns, before }: { turns: Turn[]; before?: ReactNode
   );
 }
 
+/** The island never takes the keyboard, so the shortcut cannot copy from it: text goes to the clipboard on request. */
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (window.vocifyIsland?.copy) return await window.vocifyIsland.copy(text);
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A button that copies `text` and says so for a moment (a check, and its help text). */
+function CopyButton({ text, help, className }: { text: string; help: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1300);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  return (
+    <IconButton
+      help={copied ? "Copied" : help}
+      className={className ? `copy-button ${className}` : "copy-button"}
+      onClick={() => void copyText(text).then((ok) => ok && setCopied(true))}
+    >
+      {copied ? <Check size={11} stroke={2.6} /> : <Copy size={11} />}
+    </IconButton>
+  );
+}
+
 function TurnBubble({ turn }: { turn: Turn }) {
   const parts = turnParts(turn);
   const phase = Math.floor(useNow(350, parts.dots) / 350) % 3;
@@ -992,17 +1023,20 @@ function TurnBubble({ turn }: { turn: Turn }) {
   return (
     <div className="turn" data-you={turn.you}>
       {!turn.you && turn.label && <div className="turn-label">{turn.label}</div>}
-      <div className="bubble" data-you={turn.you}>
-        <span className="words">{parts.text}</span>
-        {parts.tail !== "" && <span className="dim">{(parts.joined ? "" : " ") + parts.tail}</span>}
-        {parts.dots && (
-          <>
-            {lead}
-            {[0, 1, 2].map((dot) => (
-              <span key={dot} className="dim" style={{ opacity: dot === phase ? 1 : 0.35 }}>•</span>
-            ))}
-          </>
-        )}
+      <div className="bubble-row" data-you={turn.you}>
+        <div className="bubble" data-you={turn.you}>
+          <span className="words">{parts.text}</span>
+          {parts.tail !== "" && <span className="dim">{(parts.joined ? "" : " ") + parts.tail}</span>}
+          {parts.dots && (
+            <>
+              {lead}
+              {[0, 1, 2].map((dot) => (
+                <span key={dot} className="dim" style={{ opacity: dot === phase ? 1 : 0.35 }}>•</span>
+              ))}
+            </>
+          )}
+        </div>
+        {turnPlainText(turn) !== "" && <CopyButton text={turnPlainText(turn)} help="Copy" className="turn-copy" />}
       </div>
     </div>
   );

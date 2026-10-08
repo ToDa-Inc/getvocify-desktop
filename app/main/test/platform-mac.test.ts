@@ -210,3 +210,49 @@ test("Mac CRM reader: before the rep was asked once, no browser is read (reading
   const reader = createMacCrmScreenReader({ exec: async () => "", access: () => "never_requested" });
   assert.equal(reader.isBrowser("com.google.Chrome"), false);
 });
+
+test("Mac call detector: Chrome's helper holding the microphone is reported as Chrome, not as 'Google Chrome Helper'", async () => {
+  const chromePath = "/Applications/Google Chrome.app";
+  const helperPath = `${chromePath}/Contents/Frameworks/Google Chrome Framework.framework/Versions/1/Helpers/Google Chrome Helper.app/Contents/MacOS/Google Chrome Helper`;
+  let helper: ReturnType<typeof fakeHelper> | null = null;
+  let apps: { bundleId: string; name: string; pid: number; path: string }[] = [];
+  const report = () => helper && !helper.killed && line(helper.stdout, { event: "mic", apps });
+  const detector = createMacCallDetector({
+    spawn: () => {
+      helper = fakeHelper();
+      setImmediate(report);
+      return helper as unknown as HelperChild;
+    },
+    ownBundleId: "com.vocify.app",
+  });
+  const seen: (import("../src/platform/types.ts").DetectedCaller | null)[] = [];
+  detector.start((caller) => seen.push(caller));
+  await tick();
+
+  apps = [{ bundleId: "com.google.Chrome.helper", name: "Google Chrome Helper", pid: 700, path: helperPath }];
+  report();
+  await tick();
+  assert.deepEqual(seen.at(-1), { name: "Google Chrome", appId: "com.google.Chrome", path: chromePath, browser: true });
+
+  // A renderer helper is the same app, so the same call: nothing new is reported.
+  apps = [{ bundleId: "com.google.Chrome.helper.Renderer", name: "Google Chrome Helper (Renderer)", pid: 701, path: helperPath }];
+  report();
+  await tick();
+  assert.equal(seen.filter((caller) => caller !== null).length, 1);
+  assert.equal(seen.at(-1)?.name, "Google Chrome");
+
+  // A named call app still wins over a browser, and a helper name never reaches the rep.
+  apps = [
+    { bundleId: "com.google.Chrome.helper", name: "Google Chrome Helper", pid: 700, path: helperPath },
+    { bundleId: "us.zoom.xos", name: "zoom.us", pid: 501, path: "/Applications/zoom.us.app" },
+  ];
+  report();
+  await tick();
+  assert.equal(seen.at(-1)?.name, "Zoom");
+
+  // Safari's web content process is Safari.
+  apps = [{ bundleId: "com.apple.WebKit.WebContent", name: "Safari Web Content", pid: 800, path: "/System/Cryptexes/App/System/Applications/Safari.app/Contents/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent" }];
+  report();
+  await tick();
+  assert.deepEqual([seen.at(-1)?.name, seen.at(-1)?.appId, seen.at(-1)?.browser], ["Safari", "com.apple.Safari", true]);
+});

@@ -82,65 +82,76 @@ export function createMacCallDetector(deps: {
   };
 }
 
+/** Apps people take calls in (a browser counts for Meet and web dialers). */
+const CALL_APPS = [
+  "us.zoom.xos",
+  "com.microsoft.teams2",
+  "com.microsoft.teams",
+  "com.tinyspeck.slackmacgap",
+  "com.apple.FaceTime",
+  "net.whatsapp.WhatsApp",
+  "ru.keepcoder.Telegram",
+  "com.hnc.Discord",
+  "Cisco-Systems.Spark",
+  "com.google.Chrome",
+  "com.apple.Safari",
+  "com.apple.WebKit",
+  "company.thebrowser.Browser",
+  "com.microsoft.edgemac",
+  "org.mozilla.firefox",
+  "com.brave.Browser",
+];
+
+/** Safari's pages are web content processes of WebKit: they belong to Safari. */
+const OWNER_OF_WEBKIT = "com.apple.Safari";
+
+/**
+ * The call app a microphone-holding process belongs to. Chrome, Edge and the others hold the microphone from a helper
+ * process ("com.google.Chrome.helper.Renderer", named "Google Chrome Helper"), never from the app itself.
+ */
+function owningCallApp(bundleId: string): string | null {
+  const known = CALL_APPS.find((app) => bundleId === app || bundleId.startsWith(app + "."));
+  if (!known) return null;
+  return known === "com.apple.WebKit" ? OWNER_OF_WEBKIT : known;
+}
+
 /** Select a call app from the list of apps using the mic. */
 function selectCallApp(
   apps: Array<{ bundleId: string; name: string; pid: number; path: string }>,
   ownBundleId: string
 ): DetectedCaller | null {
-  const callApps = [
-    "us.zoom.xos",
-    "com.microsoft.teams2",
-    "com.microsoft.teams",
-    "com.tinyspeck.slackmacgap",
-    "com.apple.FaceTime",
-    "net.whatsapp.WhatsApp",
-    "ru.keepcoder.Telegram",
-    "com.hnc.Discord",
-    "Cisco-Systems.Spark",
-    "com.google.Chrome",
-    "com.apple.Safari",
-    "com.apple.WebKit",
-    "company.thebrowser.Browser",
-    "com.microsoft.edgemac",
-    "org.mozilla.firefox",
-    "com.brave.Browser",
-  ];
+  const callApps = apps
+    .filter((app) => !(app.bundleId === ownBundleId || app.bundleId.startsWith(ownBundleId + ".")))
+    .flatMap((app) => {
+      const owner = owningCallApp(app.bundleId);
+      return owner ? [{ ...app, owner }] : [];
+    });
 
-  const isCallApp = (bundleId: string) =>
-    callApps.some((app) => bundleId === app || bundleId.startsWith(app + "."));
-
-  // Filter: remove Vocify's own bundles, filter to call apps only
-  const callAppsList = apps.filter(
-    (app) =>
-      !(app.bundleId === ownBundleId || app.bundleId.startsWith(ownBundleId + ".")) &&
-      isCallApp(app.bundleId)
-  );
-
-  if (callAppsList.length === 0) return null;
+  if (callApps.length === 0) return null;
 
   // Prefer named apps to browsers
-  const namedApp = callAppsList.find((app) => !CrmPages.browser(app.bundleId));
-  if (namedApp) {
-    return convertToDetectedCaller(namedApp);
-  }
-
-  // Fall back to a browser
-  return convertToDetectedCaller(callAppsList[0]);
+  const namedApp = callApps.find((app) => !CrmPages.browser(app.owner));
+  return convertToDetectedCaller(namedApp ?? callApps[0]);
 }
 
-/** Convert a helper app object to a DetectedCaller. */
-function convertToDetectedCaller(app: { bundleId: string; name: string; pid: number; path: string }): DetectedCaller {
-  // Get the display name from CallSource
-  const callSource = CallSource.app(app.bundleId);
-  const name = callSource?.name || app.name;
+/** A helper's own name says "Helper" ("Google Chrome Helper (Renderer)"): the app's name is what the rep knows. */
+const HELPER_SUFFIX = / Helper( \([^)]*\))?$/;
 
-  // Check if it's a browser
-  const isBrowser = !!CrmPages.browser(app.bundleId);
+/** The outermost app bundle an executable is inside ("…/Google Chrome.app" for its helper deep within), for the app's own icon. */
+function appBundlePath(executable: string): string | null {
+  const bundle = /^(.*?\.app)(?:\/|$)/.exec(executable);
+  return bundle ? bundle[1] : executable || null;
+}
 
+/** Convert a mic-holding process to a DetectedCaller, named and identified as its app. */
+function convertToDetectedCaller(app: { bundleId: string; name: string; pid: number; path: string; owner: string }): DetectedCaller {
+  const browser = CrmPages.browser(app.owner);
+  const name = CallSource.app(app.owner)?.name ?? browser?.name ?? app.name.replace(HELPER_SUFFIX, "");
   return {
     name,
-    appId: app.bundleId,
-    path: app.path || null,
-    browser: isBrowser,
+    // The app, not whichever helper holds the microphone: a call is one call whichever process the audio is in.
+    appId: app.owner,
+    path: appBundlePath(app.path),
+    browser: browser !== undefined,
   };
 }

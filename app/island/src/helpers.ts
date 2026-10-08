@@ -37,6 +37,21 @@ export function turnParts(turn: Turn): { text: string; tail: string; joined: boo
   return { text: turn.text, tail, joined, dots: turn.pending !== "" };
 }
 
+/** A turn's words as said: the settled ones, then those still arriving. */
+export function turnPlainText(turn: Turn): string {
+  const parts = turnParts(turn);
+  return (parts.text + (parts.tail !== "" ? (parts.joined ? "" : " ") + parts.tail : "")).trim();
+}
+
+/** The whole conversation as plain text, one line per turn, each named by who said it. */
+export function transcriptText(turns: Turn[], names: { you: string; them: string } = { you: "You", them: "Them" }): string {
+  return turns
+    .map((turn) => ({ who: turn.you ? names.you : turn.label || names.them, text: turnPlainText(turn) }))
+    .filter((line) => line.text !== "")
+    .map((line) => `${line.who}: ${line.text}`)
+    .join("\n");
+}
+
 /** What the dashboard is doing with the recording that just ended, in words. */
 export function finishLine(finish: Finish | null): string {
   switch (finish?.step) {

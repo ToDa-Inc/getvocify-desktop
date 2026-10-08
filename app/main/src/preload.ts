@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld("vocifyIsland", {
   act(action: IslandAction) {
     ipcRenderer.send("island:act", action);
   },
+  copy(text: string): Promise<boolean> {
+    return ipcRenderer.invoke("island:copy", text);
+  },
   /** See `IslandHost.keyboard`. Resolves once the window can take the keys. */
   keyboard(mode: "available" | "over" | "now" | "release" | "off") {
     return ipcRenderer.invoke("island:keyboard", mode);

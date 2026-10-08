@@ -28,6 +28,9 @@ export const ArrowDown = ({ size = 10, stroke = 2.4, style, className }: IconPro
 export const Close = ({ size = 11, stroke = 2.2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><path d="M6 6l12 12M18 6 6 18" /></svg>
 );
+export const Copy = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><rect x="9" y="9" width="11" height="11" rx="2.5" /><path d="M5 15V6.5A2.5 2.5 0 0 1 7.5 4H15" /></svg>
+);
 export const Check = ({ size = 10, stroke = 3.2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
 );

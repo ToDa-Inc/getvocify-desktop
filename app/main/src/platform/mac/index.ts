@@ -33,6 +33,10 @@ export function createMacPlatform(env: PlatformEnv): Platform {
       exec: runStrict,
       access: () => env.crmTabsAnswer.get() ?? "never_requested",
       onDenied: () => env.crmTabsAnswer.set("denied"),
+      // A browser read again (allowed in System Settings after a refusal): the dashboard stops showing "denied".
+      onAllowed: () => {
+        if (env.crmTabsAnswer.get() !== "authorized") env.crmTabsAnswer.set("authorized");
+      },
     }),
     permissions: createMacPermissions({
       microphoneAccess: () => env.systemPreferences.getMediaAccessStatus("microphone"),

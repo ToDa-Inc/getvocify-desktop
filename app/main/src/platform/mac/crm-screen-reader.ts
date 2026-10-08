@@ -1,18 +1,38 @@
 import { createMacPageReader, type Exec, type MacAccess } from "../../mac/browser-pages.ts";
 import type { CrmScreenReader } from "../types.ts";
 
+/** A browser macOS refused is tried again after this long: once the rep answered, macOS never asks again, so retrying is
+ * silent, and it is how allowing Vocify in System Settings later brings the call offer back without a relaunch. */
+export const REFUSED_RETRY_MS = 60_000;
+
 /**
- * The browsers through osascript (see mac/browser-pages.ts). Reading a browser is what makes macOS ask, so a browser is
- * only read once the rep allowed it; a refusal is reported so nothing is read again until it is allowed in Settings.
+ * The browsers through osascript (see mac/browser-pages.ts). Reading a browser is what makes macOS ask, so nothing is
+ * read before the rep was asked once (first-run "Allow"). A refusal only stops that browser, and only until it is tried
+ * again: one refused browser never turns off the others, and a refusal is never final.
  */
-export function createMacCrmScreenReader(deps: { exec: Exec; access(): MacAccess; onDenied?(): void }): CrmScreenReader {
+export function createMacCrmScreenReader(deps: {
+  exec: Exec;
+  access(): MacAccess;
+  onDenied?(): void;
+  onAllowed?(): void;
+  now?(): number;
+}): CrmScreenReader {
   const reader = createMacPageReader(deps.exec);
+  const now = deps.now ?? (() => Date.now());
+  const refusedUntil = new Map<string, number>();
   return {
     front: () => reader.front(),
-    isBrowser: (app) => reader.isBrowser(app) && deps.access() === "authorized",
+    isBrowser: (app) => reader.isBrowser(app) && deps.access() !== "never_requested",
     async read(app) {
+      if ((refusedUntil.get(app) ?? 0) > now()) return null;
       const { urls, access } = await reader.read(app);
-      if (access === "denied") deps.onDenied?.();
+      if (access === "denied") {
+        refusedUntil.set(app, now() + REFUSED_RETRY_MS);
+        deps.onDenied?.();
+      } else if (urls !== null) {
+        refusedUntil.delete(app);
+        deps.onAllowed?.();
+      }
       return urls;
     },
   };

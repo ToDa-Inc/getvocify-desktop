@@ -1,7 +1,9 @@
 // The Mac implementations against the shared contracts, with macOS faked at its edge: `osascript` (the app in front and
 // the browser's tabs), Electron's microphone status and prompt, the settings pages, and the rep's answer to "Vocify wants
 // to control Google Chrome", and the native helper (native/mac-helper/PROTOCOL.md) as a fake child process.
+import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { test } from "node:test";
 import { createMacCallDetector } from "../src/platform/mac/call-detector.ts";
 import { createMacCrmScreenReader } from "../src/platform/mac/crm-screen-reader.ts";
 import type { HelperChild } from "../src/platform/mac/helper.ts";
@@ -165,4 +167,46 @@ callDetectorContract("Mac", () => {
       await tick();
     },
   };
+});
+
+test("Mac CRM reader: a refused browser stops only itself, is retried silently, and comes back once allowed", async () => {
+  let clock = 0;
+  const consent: Record<string, "granted" | "denied"> = { "com.google.Chrome": "denied", "company.thebrowser.Browser": "granted" };
+  let front = "com.google.Chrome";
+  const answers: string[] = [];
+  const exec = async (_file: string, args: string[]): Promise<string> => {
+    const script = args[1] ?? "";
+    if (script === FRONT_APP) return `${front}\n`;
+    if (/ is running$/.test(script)) return "true\n";
+    if (consent[front] === "denied") throw new Error("Not authorized to send Apple events. (-1743)");
+    return "https://app-eu1.hubspot.com/contacts/147506535/record/0-1/879829962968\n";
+  };
+  let stored: Status = "denied";
+  const reader = createMacCrmScreenReader({
+    exec,
+    access: () => stored,
+    onDenied: () => void (stored = "denied", answers.push("denied")),
+    onAllowed: () => void (stored = "authorized", answers.push("authorized")),
+    now: () => clock,
+  });
+  // A stored refusal no longer switches every browser off.
+  assert.equal(reader.isBrowser("com.google.Chrome"), true);
+  assert.equal(await reader.read("com.google.Chrome"), null);
+  // Another browser the rep allowed keeps working meanwhile.
+  front = "company.thebrowser.Browser";
+  assert.equal((await reader.read("company.thebrowser.Browser"))?.length, 1);
+  // The refused one is not asked again before a minute (macOS would not ask anyway; it just saves the call).
+  front = "com.google.Chrome";
+  consent["com.google.Chrome"] = "granted";
+  assert.equal(await reader.read("com.google.Chrome"), null);
+  clock += 60_000;
+  // Allowed in System Settings since: read again, and "allowed" is remembered.
+  assert.equal((await reader.read("com.google.Chrome"))?.length, 1);
+  assert.equal(stored, "authorized");
+  assert.deepEqual(answers, ["denied", "authorized", "authorized"]);
+});
+
+test("Mac CRM reader: before the rep was asked once, no browser is read (reading is what makes macOS ask)", () => {
+  const reader = createMacCrmScreenReader({ exec: async () => "", access: () => "never_requested" });
+  assert.equal(reader.isBrowser("com.google.Chrome"), false);
 });

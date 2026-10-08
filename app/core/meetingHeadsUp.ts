@@ -1,4 +1,4 @@
-// A meeting with someone from outside, announced a minute before it starts (`shell:state` `meeting`,
+// A meeting (with clients or internal), announced a minute before it starts (`shell:state` `meeting`,
 // from the rep's calendar). A port of VocifyCore/MeetingHeadsUp.swift (same copy).
 
 import { briefLinesOf, decodeBrief, type OnScreenBrief } from "./callIsland.ts";

@@ -174,19 +174,26 @@ final class NativeRecorder: @unchecked Sendable {
         endActivity()
         speakerTimer?.cancel()
         speakerTimer = nil
+        MeetSpeakerListener.shared.onSpeaking = nil
         return transcript.json()
     }
 
-    /// Reads who the call app shows speaking a few times a second, when it's an app we can read.
+    /// Reads who the call app shows speaking a few times a second, when it's an app we can read;
+    /// any other call takes what the Chrome extension reports from Google Meet.
     @MainActor
     private func watchSpeakers() {
-        guard ActiveSpeakers.supports(callApp) else { return }
+        let begun = queue.sync { startedAt }
+        guard ActiveSpeakers.supports(callApp) else {
+            MeetSpeakerListener.shared.onSpeaking = { [weak self] meet in
+                self?.speakers.record(at: Date().timeIntervalSince(begun), speaking: meet.speaking)
+            }
+            return
+        }
         let asked = "vocify.askedAccessibility"
         let trusted = ActiveSpeakers.ensureTrusted(prompt: !UserDefaults.standard.bool(forKey: asked))
         UserDefaults.standard.set(true, forKey: asked)
         guard trusted else { return }
         let app = callApp
-        let begun = queue.sync { startedAt }
         let timer = DispatchSource.makeTimerSource(queue: speakerQueue)
         timer.schedule(deadline: .now(), repeating: Self.speakerEvery)
         timer.setEventHandler { [weak self] in

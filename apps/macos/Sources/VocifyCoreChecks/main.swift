@@ -203,6 +203,43 @@ check(ZoomTile.speakingName("Marta García, Computer audio, Active speaker") == 
 check(ZoomTile.speakingName("Juan, Computer audio") == nil, "not speaking, no name")
 check(ZoomTile.speakingName("Ana Pérez, Active speaker") == "Ana Pérez", "no audio marker")
 
+// Two people shown about as long: nobody is named rather than the wrong one.
+var crosstalk = SpeakerTimeline()
+crosstalk.record(at: 10, speaking: ["Marta"])
+crosstalk.record(at: 10.5, speaking: ["Juan"])
+crosstalk.record(at: 11, speaking: [])
+check(crosstalk.name(from: 10.3, to: 10.7) == nil, "a close race names nobody")
+check(crosstalk.name(from: 9.6, to: 10.4) == "Marta", "a clear lead still names")
+var glimpse = SpeakerTimeline()
+glimpse.record(at: 20, speaking: ["Marta"])
+glimpse.record(at: 20.1, speaking: [])
+check(glimpse.name(from: 20, to: 21) == nil, "a glimpse is not enough")
+
+// Google Meet, read by the Chrome extension and passed on by the native host.
+let meet = MeetSpeaking.parse(Data(#"{"type":"meet-speakers","speaking":[" Marta García ","Juan","Juan"]}"#.utf8))
+check(meet?.speaking == ["Juan", "Marta García"], "meet names trimmed, deduped, sorted")
+check(MeetSpeaking.parse(Data(#"{"type":"meet-speakers","speaking":[]}"#.utf8))?.speaking == [], "nobody speaking")
+check(MeetSpeaking.parse(Data(#"{"type":"other","speaking":["Marta"]}"#.utf8)) == nil, "other messages ignored")
+check(MeetSpeaking.parse(Data(#"{"type":"meet-speakers","speaking":[3]}"#.utf8)) == nil, "names must be text")
+check(MeetSpeaking.parse(Data(#"{"type":"meet-speakers","speaking":[""]}"#.utf8)) == nil, "no empty names")
+check(MeetSpeaking.parse(Data(meet!.json().utf8)) == meet, "round trip")
+
+var reader = NativeMessageReader()
+let one = NativeMessageReader.frame(Data(#"{"a":1}"#.utf8))
+let two = NativeMessageReader.frame(Data(#"{"b":2}"#.utf8))
+let both = one + two
+check(reader.append(both.prefix(6)) == [], "partial frame waits")
+check(reader.append(both.dropFirst(6)) == [Data(#"{"a":1}"#.utf8), Data(#"{"b":2}"#.utf8)], "frames split and joined")
+var oversized = NativeMessageReader()
+check(oversized.append(Data([0xFF, 0xFF, 0xFF, 0x7F])) == nil, "oversized frame refused")
+
+let hostManifest = try! JSONSerialization.jsonObject(
+    with: NativeHost.manifest(path: "/Applications/Vocify.app/Contents/Helpers/VocifyMeetHost", extensionIDs: ["abcdefghijklmnopabcdefghijklmnop", "not-an-id"])
+) as! [String: Any]
+check(hostManifest["name"] as? String == "com.vocify.speakers", "host name")
+check(hostManifest["type"] as? String == "stdio", "host type")
+check(hostManifest["allowed_origins"] as? [String] == ["chrome-extension://abcdefghijklmnopabcdefghijklmnop/"], "only real extension ids")
+
 // A long call: paragraphs set aside after a minute read exactly as if rebuilt every time.
 var hour = LiveTranscript()
 var expected: [String] = []
@@ -281,6 +318,15 @@ check(PhoneFormat.grouped("+447700900123") == "+447700900123", "other countries 
 let ana = OnScreenCall.decode(["provider": "hubspot", "crmLabel": "HubSpot", "name": "Ana Ruiz", "phone": "+34600111222", "callerId": "+34910000000", "state": "callable"])
 check(ana?.state == .callable && ana?.name == "Ana Ruiz", "decodes the callable contact")
 check(OnScreenCall.decode(nil) == nil && OnScreenCall.decode(["state": "weird"]) == nil, "rejects anything else")
+
+// What happened with the contact lately, under the offer: two lines at most, loading as one, anything else as none.
+let briefBase: [String: Any] = ["provider": "hubspot", "crmLabel": "HubSpot", "name": "Ana Ruiz", "phone": "+34600111222", "callerId": "+34910000000", "state": "callable"]
+let briefReady = OnScreenCall.decode(briefBase.merging(["brief": ["state": "ready", "lines": ["One.", " ", "Two.", "Three."]]]) { $1 })!
+check(briefReady.brief == .ready(["One.", "Two."]) && briefReady.briefLines == 2, "the brief keeps two lines")
+let briefLoading = OnScreenCall.decode(briefBase.merging(["brief": ["state": "loading"]]) { $1 })!
+check(briefLoading.brief == .loading && briefLoading.briefLines == 1, "a loading brief takes one line")
+check(OnScreenCall.decode(briefBase.merging(["brief": ["state": "ready", "lines": [String]()]]) { $1 })!.brief == nil, "an empty brief is none")
+check(OnScreenCall.decode(briefBase.merging(["brief": "junk"]) { $1 })!.brief == nil && OnScreenCall.decode(briefBase)!.briefLines == 0, "no brief, no lines")
 let anaConfirm = CallWording.confirm(ana!)
 check(anaConfirm.title == "Ana Ruiz" && anaConfirm.line == "+34 600 11 12 22" && anaConfirm.button == "Call", "confirm row: who and their number")
 check(CallWording.glyphHelp(ana!) == "Call Ana Ruiz", "glyph help")
@@ -309,5 +355,20 @@ check(CrmPages.frontRecordURLs(fromScriptOutput: "\(hubspotA)\n\(hubspotB)\n") =
 check(CrmPages.frontRecordURLs(fromScriptOutput: "https://mail.google.com/mail/u/0/\n\(hubspotB)\n").isEmpty, "a non-CRM front tab offers nobody, even with a CRM tab behind it")
 check(CrmPages.frontRecordURLs(fromScriptOutput: "\n\(hubspotA)\n") == [hubspotA], "blank lines are skipped")
 check(CrmPages.frontRecordURLs(fromScriptOutput: "").isEmpty, "no window")
+
+// A meeting announced a minute before it starts (shell:state meeting, from the calendar).
+let soon = IslandMeeting.decode([
+    "id": "ev-1", "who": "Marta García", "title": "Demo Vocify", "startsAt": "2026-10-08T09:30:00+00:00",
+    "url": "https://meet.google.com/abc-defg-hij", "platform": "meet",
+    "brief": ["state": "ready", "lines": ["Asked for pricing for 12 seats."]],
+])!
+let startsAt = soon.startsAt
+check(soon.who == "Marta García" && soon.url?.host == "meet.google.com" && soon.briefLines == 1, "meeting decodes")
+check(MeetingWording.line(soon, now: startsAt.addingTimeInterval(-60)) == "Demo Vocify · in 1 min · Google Meet", "a minute before")
+check(MeetingWording.when(startsAt, now: startsAt.addingTimeInterval(10)) == "now", "starting now")
+check(MeetingWording.when(startsAt, now: startsAt.addingTimeInterval(190)) == "started 3 min ago", "already started")
+check(IslandMeeting.decode(["id": "ev-2", "who": "Ana", "startsAt": "2026-10-08T09:30:00.123+00:00", "url": "javascript:alert(1)"])?.url == nil, "only web links open")
+check(IslandMeeting.decode(["id": "ev-3", "who": " ", "startsAt": "2026-10-08T09:30:00Z"]) == nil, "needs who")
+check(IslandMeeting.decode(["id": "ev-4", "who": "Ana", "startsAt": "tomorrow"]) == nil, "needs a start")
 
 print("ok")

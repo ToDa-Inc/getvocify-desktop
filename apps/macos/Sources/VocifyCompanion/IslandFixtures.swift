@@ -41,6 +41,20 @@ enum IslandFixtures {
         "idle-callable": Fixture(mode: .idle, expanded: false, state: ["onScreen": ana]),
         "idle-open-callable": Fixture(mode: .idle, expanded: true, state: ["onScreen": ana]),
         "idle-open-needs-contact": Fixture(mode: .idle, expanded: true, state: ["onScreen": onScreen(["name": NSNull(), "phone": NSNull(), "state": "needs_contact"])]),
+        "idle-open-brief": Fixture(mode: .idle, expanded: true, state: ["onScreen": onScreen(["brief": ["state": "ready", "lines": [
+            "Demo with the ops team yesterday; proposal still to send.",
+            "Asked for pricing for 12 seats on the 1st, and whether onboarding can start before the end of the quarter.",
+        ]]])]),
+        "confirm-brief-loading": Fixture(mode: .dialConfirm, expanded: true, state: ["onScreen": onScreen(["brief": ["state": "loading"]])]),
+        "idle-open-meeting": Fixture(mode: .idle, expanded: true, state: ["meeting": [
+            "id": "ev-1", "who": "Marta García", "title": "Demo Vocify",
+            "startsAt": ISO8601DateFormatter().string(from: Date().addingTimeInterval(60)),
+            "url": "https://meet.google.com/abc-defg-hij", "platform": "meet",
+            "brief": ["state": "ready", "lines": [
+                "Demo with the ops team yesterday; proposal still to send.",
+                "Asked for pricing for 12 seats on the 1st.",
+            ]],
+        ]]),
         "idle-no-phone": Fixture(mode: .idle, expanded: false, state: ["onScreen": onScreen(["phone": NSNull(), "state": "no_phone"])]),
         "confirm-callable": Fixture(mode: .dialConfirm, expanded: true, state: ["onScreen": ana]),
         "confirm-no-caller-id": Fixture(mode: .dialConfirm, expanded: true, state: ["onScreen": onScreen(["callerId": NSNull(), "state": "no_caller_id"])]),

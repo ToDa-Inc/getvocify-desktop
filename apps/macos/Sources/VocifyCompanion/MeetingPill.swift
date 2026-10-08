@@ -401,6 +401,12 @@ final class MeetingPillState: ObservableObject {
     @Published var callContact: String?
     /// The CRM contact in the frontmost browser the island can offer to call (`shell:state` onScreen).
     @Published var onScreen: OnScreenCall?
+    var onOnScreenChange: (() -> Void)?
+    /// A meeting with someone from outside about to start (`shell:state` meeting, from the calendar).
+    @Published var meeting: IslandMeeting?
+    var onMeetingChange: (() -> Void)?
+    /// The meeting the rep closed: not shown again.
+    var dismissedMeetingID: String?
     /// The Vocify call in progress, if any (`shell:state` dial).
     @Published var dial: DialIslandState?
     @Published var keypadOpen = false
@@ -429,7 +435,14 @@ final class MeetingPillState: ObservableObject {
     let levels = LevelStore()
 
     func size(for mode: Mode, open: Bool) -> CGSize {
-        geometry.size(mode, open: open, postCallBody: postCallBodyHeight)
+        // The call offer's brief lines (open idle island and the confirm row only).
+        let briefLines: Int
+        switch mode {
+        case .idle: briefLines = meeting?.briefLines ?? onScreen?.briefLines ?? 0
+        case .dialConfirm: briefLines = onScreen?.briefLines ?? 0
+        default: briefLines = 0
+        }
+        return geometry.size(mode, open: open, postCallBody: postCallBodyHeight, briefLines: briefLines)
     }
 
     /// The tabs the card has for this call; one tab draws no tab bar.
@@ -580,9 +593,19 @@ final class MeetingPillState: ObservableObject {
             let next = (state["liveType"] as? [String: Any]).flatMap(LiveType.init)
             if next != liveType { liveType = next }
         }
+        if state.keys.contains("meeting") {
+            let next = IslandMeeting.decode(state["meeting"]).flatMap { $0.id == dismissedMeetingID ? nil : $0 }
+            if next != meeting {
+                meeting = next
+                onMeetingChange?()
+            }
+        }
         if state.keys.contains("onScreen") {
             let next = OnScreenCall.decode(state["onScreen"])
-            if next != onScreen { onScreen = next }
+            if next != onScreen {
+                onScreen = next
+                onOnScreenChange?()
+            }
         }
         if state.keys.contains("dial") {
             let next = DialIslandState.decode(state["dial"])
@@ -707,11 +730,16 @@ struct IslandGeometry: Equatable {
         }
     }
 
-    func size(_ mode: MeetingPillState.Mode, open: Bool, postCallBody: CGFloat = 44) -> CGSize {
+    /// One line of the call offer's brief (11.5 pt), and the room under the lines (Electron: geometry.ts BRIEF_LINE / BRIEF_BOTTOM).
+    static let briefLine: CGFloat = 16
+    static let briefBottom: CGFloat = 8
+
+    func size(_ mode: MeetingPillState.Mode, open: Bool, postCallBody: CGFloat = 44, briefLines: Int = 0) -> CGSize {
         let closed = CGSize(width: gap + earWidth(mode, open: false) * 2, height: barHeight)
+        let brief = briefLines > 0 ? CGFloat(briefLines) * Self.briefLine + Self.briefBottom : 0
         switch mode {
         case .idle:
-            return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
+            return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56 + brief) : closed
         case .recording:
             return open ? CGSize(width: max(gap + Self.ear * 2, 460), height: min(400, (screenHeight * 0.5).rounded())) : closed
         case .call:
@@ -722,7 +750,9 @@ struct IslandGeometry: Equatable {
             return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
         case .finishing:
             return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
-        case .dialConfirm, .dialing:
+        case .dialConfirm:
+            return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56 + brief) : closed
+        case .dialing:
             return open ? CGSize(width: max(gap + Self.ear * 2, 380), height: barHeight + 56) : closed
         case .starting:
             return closed
@@ -791,6 +821,10 @@ final class MeetingPillController {
     private var quiet: (bundleID: String, until: Date)?
     private static let afterCallQuiet: TimeInterval = 120
     private static let idleLinger: TimeInterval = 5
+    /// A meeting's heads-up stays open this long (the pointer on it holds it).
+    private static let meetingLinger: TimeInterval = 60
+    /// Meetings already announced: each opens the island once.
+    private var announcedMeetings = Set<String>()
     private static let callLinger: TimeInterval = 8
     private static let postCallLinger: TimeInterval = 14
     private static let doneLinger: TimeInterval = 3
@@ -819,6 +853,8 @@ final class MeetingPillController {
         state.onFinishChange = { [weak self] in self?.finishChanged() }
         state.onCallAudioChange = { [weak self] was, now in self?.callAudioChanged(was: was, now: now) }
         state.onDialChange = { [weak self] in self?.dialChanged() }
+        state.onOnScreenChange = { [weak self] in self?.fitOffer() }
+        state.onMeetingChange = { [weak self] in self?.meetingChanged() }
         RecordShortcut.shared.onPress = { [weak self] in self?.shortcutPressed() }
         RecordShortcut.shared.activate()
         transition(to: .idle, expanded: false)
@@ -879,6 +915,37 @@ final class MeetingPillController {
         } else {
             transition(to: .idle, expanded: false)
         }
+    }
+
+    /// A meeting is about to start: the resting island opens once to say who it is with.
+    /// Busy (a call, a recording), it is not interrupted; the meeting waits in the open idle island.
+    private func meetingChanged() {
+        if let meeting = state.meeting, state.mode == .idle, !announcedMeetings.contains(meeting.id) {
+            announcedMeetings.insert(meeting.id)
+            transition(to: .idle, expanded: true)
+            startCountdown(Self.meetingLinger)
+        } else {
+            fitOffer()
+        }
+    }
+
+    func joinMeeting() {
+        guard let url = state.meeting?.url else { return }
+        NSWorkspace.shared.open(url)
+        collapse()
+    }
+
+    func dismissMeeting() {
+        state.dismissedMeetingID = state.meeting?.id
+        state.meeting = nil
+        collapse()
+    }
+
+    /// The offer's brief came, went or changed length while the island is open: the window follows.
+    private func fitOffer() {
+        guard let panel, state.expanded, state.mode == .idle || state.mode == .dialConfirm else { return }
+        panel.setFrame(frame(for: state.size(for: state.mode, open: true)), display: true, animate: true)
+        panel.invalidateShadow()
     }
 
     /// Rows came or went in the open card: the window follows at once, the countdown keeps running.
@@ -1710,7 +1777,7 @@ struct IslandView: View {
                             .transition(.opacity)
                     }
                 default:
-                    IdleMenu(ready: state.recorderReady, onScreen: state.onScreen, controller: controller)
+                    IdleMenu(ready: state.recorderReady, onScreen: state.onScreen, meeting: state.meeting, controller: controller)
                         .transition(.opacity)
                 }
             }
@@ -1892,9 +1959,18 @@ struct IslandView: View {
 private struct IdleMenu: View {
     let ready: Bool
     let onScreen: OnScreenCall?
+    var meeting: IslandMeeting? = nil
     let controller: MeetingPillController
 
     var body: some View {
+        if let meeting {
+            MeetingSoonMenu(meeting: meeting, controller: controller)
+        } else {
+            offerRow
+        }
+    }
+
+    private var offerRow: some View {
         HStack(spacing: 8) {
             if let onScreen {
                 let copy = CallWording.confirm(onScreen)
@@ -1923,8 +1999,38 @@ private struct IdleMenu: View {
             }
             IconButton(symbol: "arrow.up.right", help: "Open Vocify", action: controller.openApp)
         }
-        .padding(.horizontal, 14)
-        .frame(maxHeight: .infinity)
+        .offer(brief: onScreen?.brief)
+    }
+}
+
+/// A meeting about to start (from the calendar): who it is with, its title, when and where, and
+/// what happened with them lately; Join opens the call, Record starts the recording.
+private struct MeetingSoonMenu: View {
+    let meeting: IslandMeeting
+    let controller: MeetingPillController
+
+    var body: some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(meeting.who)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(IslandStyle.text)
+                    .lineLimit(1)
+                TimelineView(.periodic(from: .now, by: 15)) { context in
+                    Text(MeetingWording.line(meeting, now: context.date))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(IslandStyle.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+            if meeting.url != nil {
+                PrimaryActionButton(title: "Join", symbol: "video.fill", help: "Open the meeting", action: controller.joinMeeting)
+            }
+            IconButton(symbol: "record.circle", help: "Record meeting", action: controller.record)
+            IconButton(symbol: "xmark", help: "Dismiss", action: controller.dismissMeeting)
+        }
+        .offer(brief: meeting.brief)
     }
 }
 
@@ -1973,6 +2079,53 @@ private struct CallGlyph: View {
     }
 }
 
+/// The call offer's row, and under it what happened with the contact lately: two lines at most (full text on hover),
+/// one quiet line while it loads (Electron: Island.tsx `Offer`). Without a brief, the row fills the island as before.
+private struct OfferLayout: ViewModifier {
+    let brief: OnScreenCall.Brief?
+
+    func body(content: Content) -> some View {
+        if let brief {
+            VStack(alignment: .leading, spacing: 0) {
+                content
+                    .padding(.horizontal, 14)
+                    .frame(height: 56)
+                VStack(alignment: .leading, spacing: 0) {
+                    switch brief {
+                    case .loading:
+                        line("Reading recent activity…").opacity(0.7)
+                    case .ready(let lines):
+                        ForEach(Array(lines.enumerated()), id: \.offset) { _, text in line(text).help(text) }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, -10)
+                .transition(.opacity)
+                Spacer(minLength: 0)
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            .animation(.easeOut(duration: 0.2), value: brief)
+        } else {
+            content
+                .padding(.horizontal, 14)
+                .frame(maxHeight: .infinity)
+        }
+    }
+
+    private func line(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11.5))
+            .foregroundStyle(IslandStyle.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, minHeight: IslandGeometry.briefLine, maxHeight: IslandGeometry.briefLine, alignment: .leading)
+    }
+}
+
+private extension View {
+    func offer(brief: OnScreenCall.Brief?) -> some View { modifier(OfferLayout(brief: brief)) }
+}
+
 /// Who would be called and from which number; one click calls.
 private struct DialConfirmMenu: View {
     let onScreen: OnScreenCall
@@ -2001,8 +2154,7 @@ private struct DialConfirmMenu: View {
             }
             IconButton(symbol: "xmark", help: "Close", action: controller.collapse)
         }
-        .padding(.horizontal, 14)
-        .frame(maxHeight: .infinity)
+        .offer(brief: onScreen.brief)
     }
 }
 

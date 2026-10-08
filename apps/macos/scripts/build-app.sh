@@ -94,8 +94,10 @@ echo "Building dashboard ${dashboard_ref:-working tree} @ $dashboard_commit agai
 
 app="$root/Vocify.app"
 rm -rf "$app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Helpers" "$app/Contents/Resources"
 cp "$root/.build/release/VocifyCompanion" "$app/Contents/MacOS/Vocify"
+# Chrome starts this when the extension reports Google Meet speakers (native messaging).
+cp "$root/.build/release/VocifyMeetHost" "$app/Contents/Helpers/VocifyMeetHost"
 cp "$root/Info.plist" "$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Delete :VocifyDashboardCommit" "$app/Contents/Info.plist" 2>/dev/null || true
 /usr/libexec/PlistBuddy -c "Add :VocifyDashboardCommit string $dashboard_commit" "$app/Contents/Info.plist"
@@ -133,8 +135,10 @@ fi
 if [[ -n "$sign_ref" ]]; then
   label="${requested:-$(list_signing_id_names | head -1)}"
   echo "Signing with: ${label:-$sign_ref} ($sign_ref)" >&2
+  codesign --force --options runtime --sign "$sign_ref" "$app/Contents/Helpers/VocifyMeetHost"
   codesign --force --deep --options runtime --entitlements "$entitlements" --sign "$sign_ref" "$app"
 else
+  codesign --force --sign - "$app/Contents/Helpers/VocifyMeetHost"
   codesign --force --sign - "$app"
   echo "" >&2
   echo "⚠️  UNSIGNED (ad-hoc) build." >&2

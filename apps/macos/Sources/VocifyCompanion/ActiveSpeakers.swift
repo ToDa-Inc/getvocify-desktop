@@ -40,12 +40,40 @@ enum ActiveSpeakers {
         while !queue.isEmpty, visited < 1500 {
             let (element, depth) = queue.removeFirst()
             visited += 1
-            if let description = string(element, kAXDescriptionAttribute), let name = ZoomTile.speakingName(description) {
-                speaking.insert(name)
+            if let description = string(element, kAXDescriptionAttribute) {
+                if let name = ZoomTile.speakingName(description) { speaking.insert(name) }
+                SpeakerProbe.note(description)
             }
             if depth < 5 { queue.append(contentsOf: children(element).map { ($0, depth + 1) }) }
         }
         return speaking.sorted()
+    }
+
+    /// Off unless `defaults write com.vocify.app vocify.speakerProbe -bool YES`: logs each distinct
+    /// description in the Zoom meeting window to ~/Library/Logs/Vocify/speakers.log, so a real call
+    /// shows what Zoom exposes (e.g. whether tiles ever say "active speaker").
+    private enum SpeakerProbe {
+        private static let on = UserDefaults.standard.bool(forKey: "vocify.speakerProbe")
+        private static var seen = Set<String>()
+        private static let lock = NSLock()
+        private static let file = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/Vocify/speakers.log")
+
+        static func note(_ description: String) {
+            guard on else { return }
+            lock.lock()
+            defer { lock.unlock() }
+            guard seen.insert(description).inserted else { return }
+            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let line = Data("\(ISO8601DateFormatter().string(from: Date())) \(description)\n".utf8)
+            if let handle = try? FileHandle(forWritingTo: file) {
+                handle.seekToEndOfFile()
+                handle.write(line)
+                try? handle.close()
+            } else {
+                try? line.write(to: file)
+            }
+        }
     }
 
     // MARK: AX helpers

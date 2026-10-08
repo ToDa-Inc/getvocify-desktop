@@ -45,6 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var bridge: DesktopBridge?
 
     @MainActor
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        MeetSpeakerListener.shared.start()
+    }
+
+    @MainActor
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard bridge?.isListening == true else { return .terminateNow }
         let alert = NSAlert()

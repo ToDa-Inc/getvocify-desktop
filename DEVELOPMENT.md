@@ -1,5 +1,10 @@
 # Vocify desktop dev
 
+> **Vocify desktop is the Electron app in [`app/`](app/)**, on Mac and Windows. All new desktop and island work goes there.
+> The Swift app in [`apps/macos/`](apps/macos/) is **legacy**: no new features, only kept until the Electron Mac app takes over
+> its release ([`.github/workflows/release-mac.yml`](.github/workflows/release-mac.yml) still builds it). The Electron Mac app
+> (native helper `app/native/mac-helper`, `npm run dist:mac`) lives on branch **`feat/mac-electron`** until it is merged here.
+
 Native Mac shell: `apps/macos/` · Dashboard (React): `~/getvocify`
 
 ## Daily loop

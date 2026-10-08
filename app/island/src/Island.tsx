@@ -722,7 +722,13 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
           <button
             type="button"
             className="type-tag-button"
-            title={menu.sparkle ? "Vocify's proposal for this call. Change it if it's another kind." : "The call type: live help uses its playbook"}
+            title={
+              menu.channel
+                ? "The call or meeting, and its type: live help uses its playbook"
+                : menu.sparkle
+                  ? "Vocify's proposal for this call. Change it if it's another kind."
+                  : "The call type: live help uses its playbook"
+            }
             onClick={(event) => {
               event.stopPropagation();
               const target = event.currentTarget;
@@ -740,6 +746,22 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
       </div>
       {typeAnchor && menu && (
         <FloatMenu anchor={typeAnchor} width={190} onClose={closeType} label="Call type">
+          {menu.channel && (
+            <>
+              {menu.channel.rows.map((row) => (
+                <MenuRow
+                  key={row.key}
+                  label={row.label}
+                  selected={row.checked}
+                  onPick={() => {
+                    // The menu stays open: switching the channel changes the types listed under it.
+                    if (!row.checked) act({ name: "pickChannel", kind: row.key });
+                  }}
+                />
+              ))}
+              <div className="hairline menu-divider" />
+            </>
+          )}
           {menu.rows.map((row) => (
             <MenuRow
               key={row.label}
@@ -1112,6 +1134,12 @@ function LiveHelpToggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 function TypeTag({ menu }: { menu: TypeMenuView }) {
   return (
     <span className="type-tag" data-placeholder={menu.placeholder}>
+      {menu.channel && (
+        <>
+          <span className="type-tag-channel">{menu.channel.title}</span>
+          <span aria-hidden>·</span>
+        </>
+      )}
       {menu.sparkle && <Sparkle size={8.5} style={{ color: "var(--beige)" }} />}
       <span className="type-tag-label">{menu.title}</span>
       <ChevronDown size={7} stroke={3.6} />

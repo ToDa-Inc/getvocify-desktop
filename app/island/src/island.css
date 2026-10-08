@@ -162,6 +162,10 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .type-tag[data-placeholder="true"] { opacity: 0.8; }
 .type-tag-button:hover .type-tag { color: var(--text); opacity: 1; }
 .type-tag-label { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Types by channel: "Llamada · Cold call", the channel in the tag's own colour, never truncated (one short word). */
+.type-tag-channel { white-space: nowrap; }
+/* The island's hairline between the channel rows and the type rows of the same menu. */
+.float-menu .menu-divider { margin: 4px 6px; }
 
 .live-help-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--secondary); }
 .live-help-toggle[data-on="true"] { color: var(--beige); }

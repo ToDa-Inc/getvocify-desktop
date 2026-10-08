@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
     /** Dashboard events for the app's log (a call's steps); fire and forget. */
     log: (name: string, details?: Record<string, unknown>) => void call("log:event", { name, details: details ?? {} }),
     onCallType: on("call:type"),
+    // Types by channel: the channel the rep switched to in the island ({ kind: "call" | "meeting" }).
+    onCallChannel: on("call:channel"),
     onPostCallAction: on("postcall:action"),
   },
   saas: { request: (payload: Record<string, unknown>) => call("saas:request", { payload }) },

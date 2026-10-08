@@ -809,3 +809,20 @@ test("Join opens the meeting's link; closing it hides that meeting for good", ()
   t.controller.applyShellState({ meeting: soonMeeting("ev-2") });
   assert.equal(t.controller.state.meeting?.id, "ev-2");
 });
+
+test("a meeting moved to another time is announced again, and closing it only hides that time", () => {
+  const t = setup();
+  const at = (minutes: number) => ({ ...soonMeeting(), startsAt: new Date(1_700_000_060_000 + minutes * 60_000).toISOString() });
+  t.controller.applyShellState({ meeting: at(0) });
+  assert.equal(t.controller.state.expanded, true);
+  t.controller.act({ name: "dismissMeeting" });
+  assert.equal(t.controller.state.expanded, false);
+  // The same calendar event, moved to later: a new occasion.
+  t.controller.applyShellState({ meeting: at(70) });
+  assert.equal(t.controller.state.meeting?.id, "ev-1");
+  assert.equal(t.controller.state.expanded, true);
+  // The closed time stays closed.
+  t.controller.act({ name: "dismissMeeting" });
+  t.controller.applyShellState({ meeting: at(70) });
+  assert.equal(t.controller.state.meeting, null);
+});

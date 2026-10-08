@@ -88,6 +88,10 @@ export class IslandController {
   private dialAnswered = false;
   /** Meetings already announced: each opens the island once. */
   private announcedMeetings = new Set<string>();
+  /** One meeting at one time: a meeting moved to another time is announced (and can be closed) again. */
+  private static occasion(meeting: { id: string; startsAt: number }): string {
+    return `${meeting.id}@${meeting.startsAt}`;
+  }
   /** The meeting the rep closed: not shown again. */
   private dismissedMeeting: string | null = null;
   /** True when a native recorder draws the transcript itself; the dashboard's overlay then must not overwrite it. */
@@ -208,7 +212,7 @@ export class IslandController {
     let meetingChanged = false;
     if (has("meeting")) {
       const decoded = decodeMeeting(update.meeting);
-      const next = decoded && decoded.id === this.dismissedMeeting ? null : decoded;
+      const next = decoded && IslandController.occasion(decoded) === this.dismissedMeeting ? null : decoded;
       if (JSON.stringify(next) !== JSON.stringify(this.current.meeting)) {
         patch.meeting = next;
         meetingChanged = true;
@@ -262,8 +266,8 @@ export class IslandController {
    * Busy (a call, a recording), it is not interrupted; the meeting waits in the open idle island. */
   private meetingChanged(): void {
     const meeting = this.current.meeting;
-    if (!meeting || this.mode !== "idle" || this.announcedMeetings.has(meeting.id)) return;
-    this.announcedMeetings.add(meeting.id);
+    if (!meeting || this.mode !== "idle" || this.announcedMeetings.has(IslandController.occasion(meeting))) return;
+    this.announcedMeetings.add(IslandController.occasion(meeting));
     this.transition({ kind: "idle" }, true);
     this.startCountdown(MEETING_LINGER);
   }
@@ -350,7 +354,7 @@ export class IslandController {
         if (this.current.meeting?.url) this.effects.openExternal?.(this.current.meeting.url);
         return this.collapse();
       case "dismissMeeting":
-        this.dismissedMeeting = this.current.meeting?.id ?? null;
+        this.dismissedMeeting = this.current.meeting ? IslandController.occasion(this.current.meeting) : null;
         this.set({ meeting: null });
         return this.collapse();
     }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { cornerRadius, earWidth, islandSize, offerBriefLines } from "./geometry.ts";
+import { cornerRadius, earWidth, islandSize, offerBriefLines, showsMeeting } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
 import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Video, Waveform } from "./icons.tsx";
@@ -33,7 +33,7 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
   const column = useRef<HTMLDivElement>(null);
   // As tall as its content: the after-call card, and a call offer or call carrying the contact's brief (it wraps).
   const natural = open && (kind === "postCall" || offerBriefLines(state) > 0);
-  const shape = islandSize(state.geometry, kind, open, undefined, offerBriefLines(state));
+  const shape = islandSize(state.geometry, kind, open, undefined, offerBriefLines(state), showsMeeting(state));
   const size = natural && cardHeight !== null ? { width: shape.width, height: cardHeight } : shape;
   const radius = cornerRadius(kind, open);
   const [hovered, setHovered] = useState(false);
@@ -499,8 +499,16 @@ function MeetingSoonMenu({ meeting, ready, act }: { meeting: IslandMeeting; read
   return (
     <Offer brief={meeting.brief}>
       <div className="menu-stack">
-        <span className="menu-title">{meeting.who}</span>
-        <span className="menu-line">{MeetingWording.line(meeting, now)}</span>
+        <MeetingWho who={meeting.who} />
+        {/* A long title gives way ("…", in full on hover); when and where always show in full. */}
+        <span className="menu-line meeting-line">
+          {meeting.title && (
+            <span className="meeting-title" title={meeting.title}>
+              {meeting.title}
+            </span>
+          )}
+          <span className="meeting-place">{MeetingWording.place(meeting, now)}</span>
+        </span>
       </div>
       <div className="grow" />
       {meeting.url && (
@@ -513,6 +521,17 @@ function MeetingSoonMenu({ meeting, ready, act }: { meeting: IslandMeeting; read
         <Close size={11} />
       </IconButton>
     </Offer>
+  );
+}
+
+/** "Marta García +2": a long name gives way ("…", in full on hover), the "+2" always shows. */
+function MeetingWho({ who }: { who: string }) {
+  const [, name, more] = /^(.*?)(\s\+\d+)?$/.exec(who) ?? [who, who, undefined];
+  return (
+    <span className="menu-title meeting-who" title={who}>
+      <span className="meeting-who-name">{name}</span>
+      {more && <span className="meeting-who-more">{more}</span>}
+    </span>
   );
 }
 

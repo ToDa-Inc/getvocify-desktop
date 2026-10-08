@@ -45,7 +45,8 @@ export function meetingBriefLines(meeting: IslandMeeting | null | undefined): nu
   return briefLinesOf(meeting?.brief);
 }
 
-const APPS: Record<string, string> = { zoom: "Zoom", meet: "Google Meet", teams: "Teams" };
+/** Short app names: the island is a glance, and the row must keep when and where in full. */
+const APPS: Record<string, string> = { zoom: "Zoom", meet: "Meet", teams: "Teams" };
 
 export const MeetingWording = {
   /** "in 1 min", "now", "started 3 min ago" (the island is a glance: whole minutes). */
@@ -54,6 +55,12 @@ export const MeetingWording = {
     if (Math.abs(seconds) < 30) return "now";
     const minutes = Math.max(Math.round(Math.abs(seconds) / 60), 1);
     return seconds > 0 ? `in ${minutes} min` : `started ${minutes} min ago`;
+  },
+
+  /** When and where ("in 1 min · Zoom"): the part of the line that must always show in full. */
+  place(meeting: IslandMeeting, now: number): string {
+    const app = meeting.platform ? APPS[meeting.platform] ?? null : null;
+    return [MeetingWording.when(meeting.startsAt, now), app].filter((part): part is string => Boolean(part)).join(" · ");
   },
 
   /** Under who it is with: the meeting's title, when, and where ("Demo · in 1 min · Zoom"). */

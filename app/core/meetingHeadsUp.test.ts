@@ -19,7 +19,7 @@ test("a meeting announced a minute before it starts", () => {
   assert.equal(soon.who, "Marta García");
   assert.equal(new URL(soon.url ?? "").host, "meet.google.com");
   assert.equal(meetingBriefLines(soon), 1);
-  assert.equal(MeetingWording.line(soon, soon.startsAt - 60_000), "Demo Vocify · in 1 min · Google Meet");
+  assert.equal(MeetingWording.line(soon, soon.startsAt - 60_000), "Demo Vocify · in 1 min · Meet");
   assert.equal(MeetingWording.when(soon.startsAt, soon.startsAt + 10_000), "now");
   assert.equal(MeetingWording.when(soon.startsAt, soon.startsAt + 190_000), "started 3 min ago");
 });

@@ -94,6 +94,24 @@ const measure = (win) => win.webContents.executeJavaScript(`(() => {
         reported: (window.__islandSizes || []).at(-1)?.height ?? null,
       };
     })(),
+    // The meeting heads-up's row: what is cut, measured in the real layout (an ellipsis keeps scrollWidth > clientWidth).
+    meeting: (() => {
+      const line = document.querySelector('.meeting-line');
+      if (!line) return null;
+      const cut = (e) => !!e && e.scrollWidth > e.clientWidth + 1;
+      const place = document.querySelector('.meeting-place');
+      const who = document.querySelector('.meeting-who');
+      const more = document.querySelector('.meeting-who-more');
+      return {
+        // The line overflowing past what the title's own ellipsis absorbs means when/where is cut.
+        placeCut: cut(line) || (place && place.getBoundingClientRect().right > line.getBoundingClientRect().right + 1),
+        moreCut: !!more && (cut(who) || more.getBoundingClientRect().right > who.getBoundingClientRect().right + 1),
+        nameCut: cut(document.querySelector('.meeting-who-name')),
+        titleCut: cut(document.querySelector('.meeting-title')),
+        place: place?.textContent ?? '',
+        pastIsland: [...document.querySelectorAll('.offer-row > *')].some((e) => e.getBoundingClientRect().right > r.right - 1),
+      };
+    })(),
   };
 })()`);
 
@@ -162,6 +180,17 @@ for (const fixture of fixtures) {
     if (m.overflow.length) problems.push(`content wider than its box: ${m.overflow.join("; ")}`);
     if (m.atBottom === false) problems.push("transcript not scrolled to the latest line");
     if (m.repeatedLabels.length) problems.push(`label shown twice: ${m.repeatedLabels.join(", ")}`);
+    if (fixture.expect.meeting) {
+      const e = fixture.expect.meeting;
+      if (!m.meeting) problems.push("no meeting row rendered");
+      else {
+        if (m.meeting.placeCut) problems.push(`when and where cut ("${m.meeting.place}")`);
+        if (m.meeting.moreCut) problems.push('the "+N" after the name is cut');
+        if (m.meeting.pastIsland) problems.push("the meeting row runs past the island");
+        if (m.meeting.nameCut !== e.nameCut) problems.push(m.meeting.nameCut ? "the name is cut" : "the name was expected to give way");
+        if (m.meeting.titleCut !== e.titleCut) problems.push(m.meeting.titleCut ? "the title is cut" : "the title was expected to give way");
+      }
+    }
     if (fixture.expect.briefRows !== undefined && m.briefRows !== fixture.expect.briefRows) problems.push(`${m.briefRows} row(s) in the call's brief, expected ${fixture.expect.briefRows}`);
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);
   }

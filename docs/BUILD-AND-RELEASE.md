@@ -64,50 +64,42 @@ npm run test:island        # every island screen rendered in a real window, size
   (`app/electron-builder.yml`, `publish`: GitHub, `releaseType: prerelease`).
 - Downloads a newer version in the background and installs it when nothing is recorded or reviewed; otherwise it
   waits, or installs on the next quit.
-- "Newer" means a higher version number. CI sets each build's version to `0.4.<workflow run number>`; a local build
+- "Newer" means a higher version number. CI sets each build's version to `0.4.<commit count of main>`; a local build
   keeps `0.4.0` from `package.json`.
 - Windows reads `latest.yml` from the release; Mac reads `latest-mac.yml`. A release without the platform's file
-  gives that platform nothing (the Mac app logs "Cannot find latest-mac.yml" on every check today).
+  gives that platform nothing.
 
-## The CI workflows today
+## The CI workflow: `desktop-app.yml` ("Desktop app")
 
-| Workflow | Builds | Runs on | Publishes a release? |
-|---|---|---|---|
-| `windows-app.yml` ("Windows app") | Electron Windows installer, after logic, island, real-input and install tests | push to **`feat/electron`** (paths `app/**`), or manual | **Only on push**, so only from `feat/electron`. A manual run (e.g. on `main`) builds and keeps the installer as a run artifact (`Vocify-Windows`) but publishes nothing. |
-| `mac-app.yml` ("macOS app") | Electron Mac app, signed with the Developer ID from secrets (`APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`), notarized when `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` are set | manual only | **Never.** The build is a run artifact (`Vocify-macOS`); no `latest-mac.yml` is published. |
-| `release-mac.yml` ("Release Mac") | legacy Swift app DMG, against the staging API | push to `main` touching `apps/macos/**`, daily, `v*` tags | Only for `v*` tags. |
-| `release-windows.yml` | legacy WPF shell (`apps/windows`) | push to `main` touching `apps/windows/**` | No. |
+One workflow builds Windows and Mac from the same commit with the same version, then publishes both in **one** GitHub
+pre-release. It runs on every push to `main` that changes `app/**`, or by hand (Actions → Desktop app → Run workflow;
+the `publish` box decides whether the result is released, off by default).
 
-### What that means right now
+| Job | Does | Output |
+|---|---|---|
+| `windows` | logic, Windows-registry, island, focus, real-input, call-audio and whole-call tests; builds the installer; installs it and starts it once | artifact `Vocify-Windows`: installer, blockmap, `latest.yml` |
+| `mac` | logic tests; builds the native helper; builds, signs and notarizes the universal app | artifact `Vocify-macOS`: dmg, zip, blockmaps, `latest-mac.yml` |
+| `publish` | only when both jobs passed, and only on a push (or a manual run with `publish` on): creates release `v<version>` with both systems' files | the release installed apps read |
 
-- **Windows users** stay on the last published release, **0.4.26 (2026-10-07)**. Everything merged into `main`
-  since then (island fixes, meeting heads-up, browser warning, speaker names) is not offered to them, because
-  `main` never publishes.
-- **Mac users of the Electron app** never auto-update; they get a new version only when someone gives them a new
-  build (a local `dist:mac:local` build, or the `Vocify-macOS` artifact of a manual `mac-app.yml` run).
-- **Users of the Swift app** have no updater at all; they should move to the Electron app.
-- In every case, dashboard and backend changes reach them without an update.
+- **Version:** `0.4.<commit count of main>`. It only grows on `main`, and both systems get the same number. (A
+  per-workflow run number would restart at 1 in a new workflow and installed apps would never see it as newer.)
+- **Mac needs the Apple secrets** (`APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`,
+  `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`). Without all five, the Mac build is for hand-testing only: the
+  release then holds Windows files only, because macOS refuses to update to an app that is not signed with the same
+  Developer ID and notarized. A warning in the run says so.
+- The legacy Swift app has its own workflows (`release-mac.yml`, `release-windows.yml`); they do not touch the
+  Electron app.
 
-## How to ship an app change today (with what exists)
+### What that means
 
-1. Merge to `main` with `typecheck`, `test:logic` and `test:island` green.
-2. **Windows:** run "Windows app" manually on `main` (Actions → Windows app → Run workflow) and hand out the
-   `Vocify-Windows` artifact; or push `main`'s commit to `feat/electron` so the push publishes a pre-release that
-   installed apps pick up within 30 minutes.
-3. **Mac:** run "macOS app" manually on `main` and hand out the `Vocify-macOS` artifact, or build locally with
-   `dist:mac:local` for your own machine.
+- A merge to `main` that changes `app/` reaches every installed Windows app within 30 minutes of the workflow
+  finishing, and every installed Mac app too once the Apple secrets are set.
+- Dashboard and backend changes need no release at all.
+- To hand someone a build without releasing: run the workflow by hand with `publish` off and send the
+  `Vocify-Windows` or `Vocify-macOS` artifact. A local Mac build (`dist:mac:local`) runs only on the machine that made it.
+- To stop a bad release reaching people: delete the release on GitHub; apps look at the newest release.
 
-## What is missing (not done)
+## What is missing
 
-These are the changes that would make "merge to `main`" reach installed apps on its own. None is in place yet.
-
-1. **Windows: publish from `main`.** In `windows-app.yml`, change the push trigger from `feat/electron` to `main`
-   (paths `app/**`). The publish step already runs only after the installer was installed and started in CI, so a
-   broken build is never offered. Held back on purpose until an installer from `main` was tested by hand
-   (decision 2026-10-07): every push would then go to all installed Windows apps.
-2. **Mac: publish the signed build.** In `mac-app.yml`, add the same publish step (`electron-builder … --publish
-   always` with `GH_TOKEN`) so `latest-mac.yml` and the zip are in the release. Mac auto-update only accepts a
-   build signed with the same Developer ID and notarized, so the Apple secrets above must be set in the repo
-   (not verified here: listing the repo's secrets needs admin access).
-3. **One version for both.** Both workflows version builds from their own run number (`0.4.<run>`); publishing both
-   into the same releases needs one shared number (e.g. the commit count, or one workflow building both).
+- Apple Developer ID secrets in the repo (not verified: listing secrets needs admin access).
+- Windows installers are unsigned ("unknown publisher" on first install). Auto-update works without a signature.

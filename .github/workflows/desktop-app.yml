@@ -1,0 +1,245 @@
+name: Desktop app
+
+# One workflow for the Electron app on Windows and Mac. Both are built from the same commit with the same version,
+# tested, and then published together as ONE GitHub pre-release. Installed apps read `latest.yml` (Windows) or
+# `latest-mac.yml` (Mac) from the newest release, so both files must be in the same release.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/desktop-app.yml"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the result as a release that installed apps update to"
+        type: boolean
+        default: false
+
+# Publishing a release needs write access to this repository's contents.
+permissions:
+  contents: write
+
+# One release at a time, so two pushes cannot race to publish.
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      # Every build gets a higher version than the last, which is how installed apps know there is something newer.
+      # The commit count only grows on main, and Windows and Mac get the same number.
+      - name: Version this build
+        shell: bash
+        run: npm version "0.4.$(git rev-list --count HEAD)" --no-git-tag-version
+
+      - run: npm run build
+      - run: npm run typecheck
+
+      # What can be checked without a screen: the ported logic, the shell's modules, call detection, the controller.
+      - name: Logic tests
+        run: npm run test:logic
+
+      # What only Windows can answer: the real microphone-use record and a real browser's address bar.
+      - name: Windows mechanisms (registry, address bar)
+        run: npm run test:windows
+
+      # Real windows on the Windows runner: the island's layout, the call-audio pipeline, a whole call through the shell.
+      - name: Island checks in real windows
+        run: npm run test:island
+      # What a rep notices first: a real mouse click on the island must act at once and must not take focus from the call.
+      - name: Real click on the island does not take focus
+        run: npm run test:focus
+      # The whole flow with Windows' own mouse and keyboard: every island interaction, typing in the card, and the call
+      # window keeping focus throughout.
+      - name: Whole flow with real input
+        run: npm run test:real
+      - name: Keep the island screenshots from the Windows run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: island-screenshots-windows
+          path: |
+            app/test/out/*.png
+            app/test/out-real/*.png
+          if-no-files-found: ignore
+      - name: Call-audio pipeline
+        run: npm run test:loopback
+      - name: A whole call through the shell
+        run: npm run test:shell
+
+      - name: Build the installer
+        run: npm run dist:win
+
+      - name: Install it and start it once
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem release\Vocify-Setup-*.exe | Select-Object -First 1
+          "installer: $($setup.Name), $([math]::Round($setup.Length / 1MB, 1)) MB"
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          Start-Sleep -Seconds 3
+          Get-Process -Name Vocify -ErrorAction SilentlyContinue | Stop-Process -Force   # the installer starts the app; start it ourselves below
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\Vocify\Vocify.exe'
+          if (-not (Test-Path $exe)) { throw "not installed at $exe" }
+          $installed = (Get-ChildItem (Split-Path $exe) -Recurse | Measure-Object Length -Sum).Sum
+          "installed size: $([math]::Round($installed / 1MB, 1)) MB"
+          $p = Start-Process -FilePath $exe -ArgumentList '--demo', '--smoke-test' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "smoke test exit code $($p.ExitCode)" }
+          "the installed app started, showed its island and quit cleanly"
+
+      # The installer plus the file installed apps read to learn there is a newer version.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vocify-Windows
+          path: |
+            app/release/Vocify-Setup-*.exe
+            app/release/Vocify-Setup-*.exe.blockmap
+            app/release/latest.yml
+          if-no-files-found: error
+
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 60
+    outputs:
+      signed: ${{ steps.signing.outputs.signed }}
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Version this build
+        run: npm version "0.4.$(git rev-list --count HEAD)" --no-git-tag-version
+
+      - run: npm run build
+      - run: npm run typecheck
+
+      - name: Logic tests
+        run: npm run test:logic
+
+      # The native macOS helper (call audio, call detection, notch).
+      - name: Build native helper
+        run: |
+          # Without the helper the Mac app has no call audio and no call detection: never ship that.
+          bash native/mac-helper/build.sh
+          test -x native/mac-helper/dist/vocify-mac-helper
+          # The island's non-activating window (a click must never bring the dashboard forward).
+          bash native/mac-panel/build.sh
+          test -f native/mac-panel/dist/mac_panel.node
+
+      # A Mac app is offered to installed apps only when it is signed with the Developer ID AND notarized: macOS
+      # refuses to update to anything else. Without all five secrets the build below is for hand-testing only.
+      - name: Is this build signed?
+        id: signing
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$CERT" ] && [ -n "$CERT_PASSWORD" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM" ]; then
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Apple signing secrets are missing: this Mac build is for hand-testing and will not be published."
+          fi
+
+      - name: Import Developer ID certificate
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: bash ../scripts/import-apple-cert.sh
+
+      # Signed with the identity from the imported keychain (CSC_* are set by import-apple-cert.sh) and notarized when
+      # APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID are set.
+      - name: Build the app
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run dist:mac
+
+      - name: Verify code signature
+        if: steps.signing.outputs.signed == 'true'
+        run: codesign --verify --deep --strict release/mac-universal/Vocify.app
+
+      - name: Helper is inside the app
+        run: |
+          test -x release/mac-universal/Vocify.app/Contents/Resources/mac-helper/vocify-mac-helper
+          test -f release/mac-universal/Vocify.app/Contents/Resources/mac-panel/mac_panel.node
+
+      # The dmg and zip, plus the file installed apps read to learn there is a newer version.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vocify-macOS
+          path: |
+            app/release/Vocify-*.dmg
+            app/release/Vocify-*.dmg.blockmap
+            app/release/Vocify-*.zip
+            app/release/Vocify-*.zip.blockmap
+            app/release/latest-mac.yml
+          if-no-files-found: error
+
+  # Only when both systems built, passed their tests and started: one release holding both systems' files.
+  publish:
+    needs: [windows, mac]
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Vocify-Windows
+          path: release
+
+      - uses: actions/download-artifact@v4
+        if: needs.mac.outputs.signed == 'true'
+        with:
+          name: Vocify-macOS
+          path: release
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version="$(sed -n 's/^version: //p' release/latest.yml)"
+          test -n "$version"
+          if [ "${{ needs.mac.outputs.signed }}" = "true" ]; then
+            test "$(sed -n 's/^version: //p' release/latest-mac.yml)" = "$version"
+          else
+            echo "::warning::No signed Mac build: release v$version has Windows files only; installed Mac apps get no update."
+          fi
+          ls -l release
+          # Pre-release: the app's updater is set to read pre-releases (app/main/src/updater.ts).
+          gh release create "v$version" --prerelease --title "$version" --target "$GITHUB_SHA" \
+            --notes "Built from $GITHUB_SHA" release/*

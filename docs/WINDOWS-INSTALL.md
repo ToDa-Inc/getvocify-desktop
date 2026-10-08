@@ -1,6 +1,6 @@
 # Try Vocify on Windows
 
-A Windows build of the Electron app is produced by GitHub Actions on every push to `feat/electron` (workflow **Windows app**).
+A Windows build of the Electron app is produced by GitHub Actions on every push to `main` that changes `app/` (workflow **Desktop app**, which builds Windows and Mac together).
 
 ## 1. Get the installer
 

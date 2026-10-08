@@ -140,6 +140,12 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .recent-icon { flex: none; width: 12px; height: 16px; display: inline-flex; align-items: center; justify-content: center; color: rgba(255, 255, 255, 0.45); }
 .recent-text { flex: 1; min-width: 0; font-size: 12px; line-height: 16px; color: var(--secondary); overflow-wrap: anywhere; user-select: text; }
 .recent-when { flex: none; font-size: 11px; line-height: 16px; color: rgba(255, 255, 255, 0.45); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.recent-who { color: var(--text); }
+.recent-sep { color: rgba(255, 255, 255, 0.45); }
+.company-brief { display: flex; flex-direction: column; gap: 5px; }
+.recent-lines + .company-brief { margin-top: 6px; }
+.company-toggle { align-self: flex-start; padding: 0; }
+.company-toggle:hover { color: var(--secondary); }
 .recent-loading { display: flex; flex-direction: column; gap: 6px; padding: 3px 0 2px; }
 .recent-bar { display: block; width: 88%; height: 9px; border-radius: 4.5px; background: rgba(255, 255, 255, 0.08); animation: recent-pulse 1.4s ease-in-out infinite; }
 @keyframes offer-brief-in { from { opacity: 0; } to { opacity: 1; } }

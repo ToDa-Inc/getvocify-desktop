@@ -3,7 +3,7 @@ import { cornerRadius, earWidth, islandSize, offerBriefLines } from "./geometry.
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
 import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Waveform } from "./icons.tsx";
-import { briefWhen, CallWording, PhoneFormat, type BriefKind, type BriefLine, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
+import { briefWhen, CallWording, PhoneFormat, type BriefKind, type BriefLine, type CompanyBrief, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
 import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuView } from "./types.ts";
@@ -282,8 +282,14 @@ function Offer({ onScreen, children }: { onScreen: OnScreenCall | null; children
     <div className="offer">
       <div className="menu offer-row">{children}</div>
       <div className="offer-brief">
-        <div className="recent-label">Recent activity</div>
-        {brief.state === "loading" ? <RecentLoading /> : <RecentLines lines={brief.lines} />}
+        {brief.state === "loading" ? (
+          <>
+            <div className="recent-label">Recent activity</div>
+            <RecentLoading />
+          </>
+        ) : (
+          <BriefBody lines={brief.lines} company={brief.company ?? null} />
+        )}
       </div>
     </div>
   );
@@ -300,23 +306,95 @@ function RecentLoading() {
   );
 }
 
-/** Every line in full: what it is about, the line, and when; a line without a kind or date shows the text alone. */
+/** The contact's recent activity, then what others at its company said; either can be missing. */
+function BriefBody({ lines, company, labelled = true }: { lines: BriefLine[]; company: CompanyBrief | null; labelled?: boolean }) {
+  return (
+    <>
+      {lines.length > 0 && (
+        <>
+          {labelled && <div className="recent-label">Recent activity</div>}
+          <RecentLines lines={lines} />
+        </>
+      )}
+      {company && <CompanySection company={company} />}
+    </>
+  );
+}
+
+/** Every line in full: what it is about, the line (after who it was with, for the company's), and when; a line
+ * without a kind or date shows the text alone. */
 function RecentLines({ lines }: { lines: BriefLine[] }) {
-  const now = new Date(useNow(60_000, true));
   return (
     <div className="recent-lines" aria-live="polite">
-      {lines.map((line) => {
-        const when = briefWhen(line, now);
-        return (
-          <div key={line.text} className="recent-line">
-            <span className="recent-icon" title={line.type ? BRIEF_KIND_LABEL[line.type] : undefined}>
-              {line.type && <BriefKindIcon kind={line.type} />}
-            </span>
-            <span className="recent-text">{line.text}</span>
-            {when && <span className="recent-when">{when}</span>}
-          </div>
-        );
-      })}
+      {lines.map((line) => (
+        <RecentRow key={`${line.who ?? ""}${line.text}`} type={line.type} at={line.at} who={line.who ?? null} text={line.text} />
+      ))}
+    </div>
+  );
+}
+
+function RecentRow({ type, at, who, text, className }: { type: BriefKind | null; at: string | null; who: string | null; text: string | null; className?: string }) {
+  const now = new Date(useNow(60_000, true));
+  const when = briefWhen({ type, at }, now);
+  return (
+    <div className={className ? `recent-line ${className}` : "recent-line"}>
+      <span className="recent-icon" title={type ? BRIEF_KIND_LABEL[type] : undefined}>
+        {type && <BriefKindIcon kind={type} />}
+      </span>
+      <span className="recent-text">
+        {who && <span className="recent-who">{who}</span>}
+        {who && text && <span className="recent-sep"> · </span>}
+        {text}
+      </span>
+      {when && <span className="recent-when">{when}</span>}
+    </div>
+  );
+}
+
+/**
+ * What was already said with other people at the contact's company, so the rep does not pitch from scratch. At rest
+ * one row says who was last in touch and when (always visible: that is the warning); the summary's lines on what
+ * they discussed open on request.
+ */
+function CompanySection({ company }: { company: CompanyBrief }) {
+  const [open, setOpen] = useState(false);
+  const key = `${company.name}|${company.latest?.who}|${company.latest?.at}|${company.lines.map((line) => line.text).join("|")}`;
+  // Another contact's company starts folded.
+  useEffect(() => setOpen(false), [key]);
+  const canOpen = company.lines.length > 0;
+  const others = company.people - (company.latest?.who ? 1 : 0);
+  const latestWho = company.latest?.who ?? "Filed on the company";
+  const label = company.name ? `Others at ${company.name}` : "Others at the company";
+  return (
+    <div className="company-brief">
+      {canOpen ? (
+        <button
+          type="button"
+          className="recent-label company-toggle"
+          aria-expanded={open}
+          title={open ? "Show less" : "What they discussed"}
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen((was) => !was);
+          }}
+        >
+          <span>{label}</span>
+          <ChevronDown size={8} style={{ transform: open ? "none" : "rotate(-90deg)", transition: "transform 150ms" }} />
+        </button>
+      ) : (
+        <div className="recent-label">{label}</div>
+      )}
+      {open ? (
+        <RecentLines lines={company.lines} />
+      ) : (
+        <RecentRow
+          className="company-latest"
+          type={company.latest?.type ?? null}
+          at={company.latest?.at ?? null}
+          who={null}
+          text={others > 0 ? `${latestWho} and ${others} ${others === 1 ? "other" : "others"}` : latestWho}
+        />
+      )}
     </div>
   );
 }
@@ -353,7 +431,7 @@ function BriefKindIcon({ kind }: { kind: BriefKind }) {
 const BRIEF_HIDDEN_KEY = "vocify.island.briefHidden";
 
 /** During the call: the contact's recent activity above live help, which the rep can fold to its heading (remembered). */
-function CallBriefSection({ lines }: { lines: BriefLine[] }) {
+function CallBriefSection({ lines, company }: { lines: BriefLine[]; company: CompanyBrief | null }) {
   const [hidden, setHidden] = useState(() => {
     try {
       return localStorage.getItem(BRIEF_HIDDEN_KEY) === "1";
@@ -386,7 +464,8 @@ function CallBriefSection({ lines }: { lines: BriefLine[] }) {
         <span>Recent activity</span>
         <ChevronDown size={8} style={{ transform: hidden ? "rotate(-90deg)" : "none", transition: "transform 150ms" }} />
       </button>
-      {!hidden && <RecentLines lines={lines} />}
+      {/* Its heading already says "Recent activity". */}
+      {!hidden && <BriefBody lines={lines} company={company} labelled={false} />}
     </div>
   );
 }
@@ -537,13 +616,12 @@ function DialingMenu({ dial, act }: { dial: DialIslandState; act: Act }) {
     </>
   );
   // While it connects or rings, what happened with the contact lately stays under "Calling…".
-  if (ended || !dial.brief) return <div className="menu">{row}</div>;
+  if (ended || (!dial.brief && !dial.companyBrief)) return <div className="menu">{row}</div>;
   return (
     <div className="offer">
       <div className="menu offer-row">{row}</div>
       <div className="offer-brief">
-        <div className="recent-label">Recent activity</div>
-        <RecentLines lines={dial.brief} />
+        <BriefBody lines={dial.brief ?? []} company={dial.companyBrief} />
       </div>
     </div>
   );
@@ -679,7 +757,7 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
       )}
       {state.keypadOpen && state.dial && <KeypadGrid onDigit={(digit) => act({ name: "digit", digit })} />}
       {state.callAudioLost && !state.paused && <CallAudioLostLine />}
-      {state.dial?.brief && <CallBriefSection lines={state.dial.brief} />}
+      {(state.dial?.brief || state.dial?.companyBrief) && <CallBriefSection lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} />}
       {state.liveHelp !== false && <HelpSection current={state.assist} earlier={state.lastHelp} />}
       <div className="hairline" />
       <TranscriptScroll turns={state.turns} />

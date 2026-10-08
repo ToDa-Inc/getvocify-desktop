@@ -33,7 +33,8 @@ async function open(fixture) {
   win.webContents.on("render-process-gone", (_e, details) => errors.push(`renderer gone: ${details.reason}`));
   await win.loadFile(dist);
   await win.webContents.insertCSS(`html,body{background:${WALLPAPER} !important}`);
-  await win.webContents.executeJavaScript(`window.__fixedNow=${NOW}; true`);
+  // Each fixture starts from nothing remembered (a folded section from an earlier run must not carry over).
+  await win.webContents.executeJavaScript(`try { localStorage.clear(); } catch {} window.__fixedNow=${NOW}; true`);
   const started = await win.webContents.executeJavaScript(`new Promise(r=>{let n=0;const t=()=>window.__setIslandState?r(true):++n>300?r(false):setTimeout(t,10);t()})`);
   if (!started) errors.push("island script never started (window.__setIslandState missing)");
   if (started) await win.webContents.executeJavaScript(`window.__setIslandState(${JSON.stringify(fixture.state)}); true`);
@@ -69,6 +70,11 @@ const measure = (win) => win.webContents.executeJavaScript(`(() => {
     overflow,
     atBottom: t ? t.scrollHeight - t.scrollTop - t.clientHeight < 2 : null,
     clipped,
+    briefRows: document.querySelectorAll('.call-brief .recent-line').length,
+    repeatedLabels: (() => {
+      const labels = [...document.querySelectorAll('.recent-label')].map((label) => label.textContent.trim().toLowerCase());
+      return labels.filter((label, i) => labels.indexOf(label) !== i);
+    })(),
     title: document.querySelector('.topbar')?.title ?? '',
     offer: (() => {
       const offer = document.querySelector('.offer');
@@ -82,6 +88,8 @@ const measure = (win) => win.webContents.executeJavaScript(`(() => {
         whens: document.querySelectorAll('.recent-when').length,
         icons: lines.filter((line) => line.querySelector('.recent-icon svg')).length,
         loading: !!document.querySelector('.recent-loading'),
+        who: document.querySelectorAll('.recent-who').length,
+        toggles: document.querySelectorAll('.company-toggle').length,
         sideways: document.documentElement.scrollWidth > innerWidth || offer.scrollWidth > offer.clientWidth + 1,
         reported: (window.__islandSizes || []).at(-1)?.height ?? null,
       };
@@ -146,11 +154,15 @@ for (const fixture of fixtures) {
         if (fixture.expect.lines !== undefined && m.offer.lines !== fixture.expect.lines) problems.push(`${m.offer.lines} brief line(s) shown, expected ${fixture.expect.lines}`);
         if (fixture.expect.whens !== undefined && m.offer.whens !== fixture.expect.whens) problems.push(`${m.offer.whens} brief date(s) shown, expected ${fixture.expect.whens}`);
         if (fixture.expect.icons !== undefined && m.offer.icons !== fixture.expect.icons) problems.push(`${m.offer.icons} brief icon(s) shown, expected ${fixture.expect.icons}`);
+        if (fixture.expect.who !== undefined && m.offer.who !== fixture.expect.who) problems.push(`${m.offer.who} line(s) name who it was with, expected ${fixture.expect.who}`);
+        if (fixture.expect.toggles !== undefined && m.offer.toggles !== fixture.expect.toggles) problems.push(`${m.offer.toggles} company toggle(s), expected ${fixture.expect.toggles}`);
         if (fixture.expect.loading !== undefined && m.offer.loading !== fixture.expect.loading) problems.push(fixture.expect.loading ? "no placeholder while the brief loads" : "a loading placeholder with the brief ready");
       }
     }
     if (m.overflow.length) problems.push(`content wider than its box: ${m.overflow.join("; ")}`);
     if (m.atBottom === false) problems.push("transcript not scrolled to the latest line");
+    if (m.repeatedLabels.length) problems.push(`label shown twice: ${m.repeatedLabels.join(", ")}`);
+    if (fixture.expect.briefRows !== undefined && m.briefRows !== fixture.expect.briefRows) problems.push(`${m.briefRows} row(s) in the call's brief, expected ${fixture.expect.briefRows}`);
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);
   }
   if (errors.length) problems.push(`console errors: ${errors.join(" | ")}`);

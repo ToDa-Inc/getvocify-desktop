@@ -76,6 +76,6 @@ export function cornerRadius(kind: Kind, open: boolean): number {
 export function offerBriefLines(state: { mode: { kind: Kind }; onScreen: OnScreenCall | null; dial?: DialIslandState | null }): number {
   if (state.mode.kind === "idle" || state.mode.kind === "dialConfirm") return briefLinesShown(state.onScreen);
   // Calling: the brief stays under "Calling…" (a missed call says why instead).
-  if (state.mode.kind === "dialing" && state.dial && state.dial.phase !== "active" && state.dial.phase !== "ended") return state.dial.brief?.length ?? 0;
+  if (state.mode.kind === "dialing" && state.dial && state.dial.phase !== "active" && state.dial.phase !== "ended") return (state.dial.brief?.length ?? 0) + (state.dial.companyBrief ? 2 : 0);
   return 0;
 }

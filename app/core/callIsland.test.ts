@@ -129,6 +129,34 @@ test("a call keeps the contact's brief: three lines at most, none when missing",
   assert.equal(decodeDial({ phase: "ringing", name: "Ana Ruiz", phone: "+34600111222", brief: "junk" })!.brief, null);
 });
 
+test("what others at the company said: who and when last, how many people, and lines with who; none when nobody", () => {
+  const base = { provider: "hubspot", crmLabel: "HubSpot", name: "Juan Poblet", phone: "+34600111222", callerId: "+34900", state: "callable" };
+  const company = {
+    name: "Acme SL",
+    latest: { type: "call", at: "2026-09-12T04:00:00Z", who: "Toni García (CFO)" },
+    people: 2,
+    lines: [
+      { text: "Asked for a demo", type: "call", at: "2026-09-12T04:00:00Z", who: "Toni García (CFO)" },
+      { text: "Renewal in March", type: "note", at: "2026-08-04T04:00:00Z", who: null },
+      { text: "A third", type: "note", at: null, who: null },
+    ],
+  };
+  const brief = decodeOnScreen({ ...base, brief: { state: "ready", lines: [], company } })!.brief;
+  assert.deepEqual(brief, {
+    state: "ready",
+    lines: [],
+    company: { ...company, lines: company.lines.slice(0, 2) },
+  });
+  // Only the company has history: still a brief, its label and latest row counted as lines (the island sizes for them).
+  assert.equal(briefLinesShown(decodeOnScreen({ ...base, brief: { state: "ready", lines: [], company } })!), 2);
+  assert.equal(briefLinesShown(decodeOnScreen({ ...base, brief: { state: "ready", lines: ["One."], company } })!), 3);
+  assert.equal(decodeOnScreen({ ...base, brief: { state: "ready", lines: [], company: null } })!.brief, null);
+  assert.equal(decodeOnScreen({ ...base, brief: { state: "ready", lines: ["One."], company: "junk" } })!.brief!.state, "ready");
+  const dial = decodeDial({ phase: "ringing", name: "Juan Poblet", phone: "+34600111222", brief: null, companyBrief: company })!;
+  assert.equal(dial.companyBrief!.latest!.who, "Toni García (CFO)");
+  assert.equal(decodeDial({ phase: "ringing", name: "Juan Poblet", phone: "+34600111222" })!.companyBrief, null);
+});
+
 test("when a brief line happened, in the rep's own calendar days; a task's date is when it is due", () => {
   // 8 Oct 2026, 15:00 local time.
   const now = new Date(2026, 9, 8, 15, 0);

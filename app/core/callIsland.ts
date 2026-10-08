@@ -18,26 +18,52 @@ export type OnScreenCall = {
   brief?: OnScreenBrief | null;
 };
 
-export type OnScreenBrief = { state: "loading" } | { state: "ready"; lines: BriefLine[] };
+export type OnScreenBrief = { state: "loading" } | { state: "ready"; lines: BriefLine[]; company?: CompanyBrief | null };
+
+/** What was already said with other people at the contact's company: who and when last (from what was read), how
+ * many people, and the summary's lines about it, each with who it was with. */
+export type CompanyBrief = {
+  name: string | null;
+  latest: { type: BriefKind | null; at: string | null; who: string | null } | null;
+  people: number;
+  lines: BriefLine[];
+};
 
 /** What a brief line is about: the kind of the newest interaction it cites. */
 export type BriefKind = "call" | "email" | "note" | "meeting" | "task" | "vocify_conversation" | "company";
 
 /** A brief line, with the kind and date (ISO) of the newest interaction it cites; null when not given. */
-export type BriefLine = { text: string; type: BriefKind | null; at: string | null };
+export type BriefLine = { text: string; type: BriefKind | null; at: string | null; who?: string | null };
 
 const BRIEF_KINDS = new Set<string>(["call", "email", "note", "meeting", "task", "vocify_conversation", "company"]);
 
-/** The summary's lines the island keeps (two show folded, all when opened). */
+/** The summary's lines the island keeps. */
 const BRIEF_LINES = 3;
+const COMPANY_LINES = 2;
 
 function decodeBrief(raw: unknown): OnScreenBrief | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
   if (r.state === "loading") return { state: "loading" };
   if (r.state !== "ready") return null;
-  const lines = briefLines(r.lines);
-  return lines ? { state: "ready", lines } : null;
+  const lines = briefLines(r.lines) ?? [];
+  const company = decodeCompanyBrief(r.company);
+  if (!lines.length && !company) return null;
+  return company ? { state: "ready", lines, company } : { state: "ready", lines };
+}
+
+export function decodeCompanyBrief(raw: unknown): CompanyBrief | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as Record<string, unknown>;
+  const latest = typeof r.latest === "object" && r.latest !== null ? (r.latest as Record<string, unknown>) : null;
+  const lines = briefLines(r.lines, COMPANY_LINES) ?? [];
+  if (!latest && !lines.length) return null;
+  return {
+    name: text(r.name),
+    latest: latest ? { type: kind(latest.type), at: date(latest.at), who: text(latest.who) } : null,
+    people: typeof r.people === "number" && r.people >= 0 ? Math.floor(r.people) : 0,
+    lines,
+  };
 }
 
 /** A dashboard before kinds and dates sent plain strings: those show as text alone. */
@@ -47,14 +73,21 @@ function briefLine(raw: unknown): BriefLine | null {
   const r = raw as Record<string, unknown>;
   const lineText = text(r.text);
   if (!lineText) return null;
-  const type = typeof r.type === "string" && BRIEF_KINDS.has(r.type) ? (r.type as BriefKind) : null;
-  const at = typeof r.at === "string" && !Number.isNaN(Date.parse(r.at)) ? r.at : null;
-  return { text: lineText, type, at };
+  const line: BriefLine = { text: lineText, type: kind(r.type), at: date(r.at) };
+  return "who" in r ? { ...line, who: text(r.who) } : line;
 }
 
-function briefLines(raw: unknown): BriefLine[] | null {
+function kind(value: unknown): BriefKind | null {
+  return typeof value === "string" && BRIEF_KINDS.has(value) ? (value as BriefKind) : null;
+}
+
+function date(value: unknown): string | null {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value)) ? value : null;
+}
+
+function briefLines(raw: unknown, limit = BRIEF_LINES): BriefLine[] | null {
   if (!Array.isArray(raw)) return null;
-  const lines = raw.map(briefLine).filter((line): line is BriefLine => line !== null).slice(0, BRIEF_LINES);
+  const lines = raw.map(briefLine).filter((line): line is BriefLine => line !== null).slice(0, limit);
   return lines.length ? lines : null;
 }
 
@@ -87,7 +120,9 @@ export function briefWhen(line: Pick<BriefLine, "type" | "at">, now: Date = new 
 export function briefLinesShown(onScreen: OnScreenCall | null | undefined): number {
   const brief = onScreen?.brief;
   if (!brief) return 0;
-  return brief.state === "loading" ? 1 : brief.lines.length;
+  if (brief.state === "loading") return 1;
+  // The company part: its label and its latest row (its lines open on request).
+  return brief.lines.length + (brief.company ? 2 : 0);
 }
 
 /** A Vocify call in progress, or one that ended unanswered. */
@@ -102,6 +137,8 @@ export type DialIslandState = {
   message: string | null;
   /** What happened with the contact lately, kept for the whole call. */
   brief: BriefLine[] | null;
+  /** And with other people at its company. */
+  companyBrief: CompanyBrief | null;
 };
 
 const STATES = new Set<OnScreenState>(["callable", "no_phone", "needs_contact", "no_caller_id"]);
@@ -135,6 +172,7 @@ export function decodeDial(raw: unknown): DialIslandState | null {
     muted: r.muted === true,
     message: text(r.message),
     brief: briefLines(r.brief),
+    companyBrief: decodeCompanyBrief(r.companyBrief),
   };
 }
 

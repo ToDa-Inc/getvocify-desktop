@@ -1,18 +1,16 @@
-// Call type menu: Vocify's proposal vs rep's pick
+// Call type menu: the types only, the call's current one ticked (Vocify's proposal or the rep's pick)
 export interface Option {
   key: string;
   label: string;
 }
 
 export interface MenuRow {
-  key: string | null;
+  key: string;
   label: string;
   checked: boolean;
-  suggested: boolean;
 }
 
 export class TypeMenu {
-  static readonly decideLabel = "Let Vocify decide";
   static readonly placeholderTitle = "Call type";
 
   options: Option[];
@@ -25,10 +23,6 @@ export class TypeMenu {
     this.proposed = proposed;
   }
 
-  private get picked(): string | null {
-    return this.proposed ? null : this.selected;
-  }
-
   private get labelStr(): string | null {
     return this.options.find((o) => o.key === this.selected)?.label ?? null;
   }
@@ -37,32 +31,12 @@ export class TypeMenu {
     return this.labelStr ?? TypeMenu.placeholderTitle;
   }
 
-  get sparkle(): boolean {
-    return this.proposed && this.labelStr !== null;
-  }
-
   get placeholder(): boolean {
     return this.labelStr === null;
   }
 
   get rows(): MenuRow[] {
-    const result: MenuRow[] = [
-      {
-        key: null,
-        label: TypeMenu.decideLabel,
-        checked: this.picked === null,
-        suggested: false,
-      },
-    ];
-    for (const option of this.options) {
-      result.push({
-        key: option.key,
-        label: option.label,
-        checked: option.key === this.picked,
-        suggested: this.proposed && option.key === this.selected,
-      });
-    }
-    return result;
+    return this.options.map((option) => ({ key: option.key, label: option.label, checked: option.key === this.selected }));
   }
 }
 

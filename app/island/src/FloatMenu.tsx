@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
-import { Check, Sparkle } from "./icons.tsx";
+import { Check } from "./icons.tsx";
 
 /**
  * A dropdown that floats over the island under what opened it, in the island's glass (the Swift `OptionPopup`:
@@ -79,12 +79,11 @@ export function FloatMenu({ anchor, width, onClose, onExtent, label, children }:
   );
 }
 
-export function MenuRow({ label, selected, suggested = false, dim = false, onPick }: { label: string; selected: boolean; suggested?: boolean; dim?: boolean; onPick: () => void }) {
+export function MenuRow({ label, selected, dim = false, onPick }: { label: string; selected: boolean; dim?: boolean; onPick: () => void }) {
   return (
     <button type="button" className="option-row" role="option" aria-selected={selected} data-selected={selected} data-dim={dim} onClick={onPick}>
       <Check size={10} stroke={3} />
       <span>{label}</span>
-      {suggested && <Sparkle size={9} style={{ color: "var(--beige)", flex: "none" }} />}
     </button>
   );
 }

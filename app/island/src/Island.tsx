@@ -520,10 +520,10 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
             type="button"
             className="type-tag-button"
             title={
-              menu.channel
-                ? "The call or meeting, and its type: live help uses its playbook"
-                : menu.sparkle
-                  ? "Vocify's proposal for this call. Change it if it's another kind."
+              menu.proposed
+                ? "Vocify chose this from the conversation. Pick another if it's wrong."
+                : menu.channel
+                  ? "The call or meeting, and its type: live help uses its playbook"
                   : "The call type: live help uses its playbook"
             }
             onClick={(event) => {
@@ -561,11 +561,9 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
           )}
           {menu.rows.map((row) => (
             <MenuRow
-              key={row.label}
+              key={row.key}
               label={row.label}
               selected={row.checked}
-              suggested={row.suggested}
-              dim={row.key === null}
               onPick={() => {
                 act({ name: "pickCallType", key: row.key });
                 setTypeAnchor(null);
@@ -934,7 +932,6 @@ function TypeTag({ menu }: { menu: TypeMenuView }) {
           <span aria-hidden>·</span>
         </>
       )}
-      {menu.sparkle && <Sparkle size={8.5} style={{ color: "var(--beige)" }} />}
       <span className="type-tag-label">{menu.title}</span>
       <ChevronDown size={7} stroke={3.6} />
     </span>

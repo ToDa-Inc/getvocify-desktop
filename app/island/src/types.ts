@@ -31,10 +31,11 @@ export type Assist = {
   thenAsk: string;
 };
 
-export type TypeMenuRow = { key: string | null; label: string; checked: boolean; suggested: boolean };
+export type TypeMenuRow = { key: string; label: string; checked: boolean };
 /** Types by channel: the recording's channel and the two it can be; null when it is not offered. */
 export type ChannelMenuView = { title: string; rows: { key: "call" | "meeting"; label: string; checked: boolean }[] };
-export type TypeMenuView = { title: string; placeholder: boolean; sparkle: boolean; rows: TypeMenuRow[]; channel?: ChannelMenuView | null };
+/** `proposed`: the type is Vocify's, from the conversation; only the hover text says so. */
+export type TypeMenuView = { title: string; placeholder: boolean; proposed: boolean; rows: TypeMenuRow[]; channel?: ChannelMenuView | null };
 
 /** Where the recording that just ended is, as the dashboard reports it. */
 export type Finish = { step: "stopping" | "uploading" | "failed"; message: string | null };

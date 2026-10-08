@@ -62,7 +62,7 @@ app.whenReady().then(async () => {
     check((await dashboard.contents.executeJavaScript("window.vocifyDesktop.platform")) === "darwin", "the dashboard page is told the platform it already understands (compatibility mode)");
     check(await until(() => controller.state.turns.length >= 2, 10000, "transcript"), "the transcript streams into the island");
     check(controller.state.clock !== null && controller.state.liveHelp === true, "clock and live help arrive from the dashboard");
-    check(controller.state.typeMenu?.title === "Discovery call" && controller.state.typeMenu.sparkle, "the call type is Vocify's proposal");
+    check(controller.state.typeMenu?.title === "Discovery call" && controller.state.typeMenu.proposed, "the call type is Vocify's proposal");
     const levelAt = controller.state.levels.at;
     await sleep(600);
     check(controller.state.levels.at > levelAt, "voice levels keep flowing");
@@ -75,7 +75,7 @@ app.whenReady().then(async () => {
 
     // --- the call type chosen in the island reaches the dashboard and comes back final
     controller.act({ name: "pickCallType", key: "demo" });
-    check(await until(() => controller.state.typeMenu?.title === "Demo" && !controller.state.typeMenu.sparkle, 4000, "type"), "a picked call type is final");
+    check(await until(() => controller.state.typeMenu?.title === "Demo" && !controller.state.typeMenu.proposed, 4000, "type"), "a picked call type is final");
 
     // --- the open island is sized to its shape
     controller.act({ name: "toggle" });

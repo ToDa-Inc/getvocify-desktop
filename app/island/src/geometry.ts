@@ -45,14 +45,17 @@ export const BRIEF_LINE = 20;
  * `briefLines`: the lines of the contact's recent-activity brief under the call offer (open idle island and the
  * confirm row only; 0 elsewhere).
  */
-export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody = 44, briefLines = 0): Size {
+/** A meeting's heads-up is as wide as the after-call card: who, the title, when and where beside Join and Record. */
+export const MEETING_WIDTH = POST_CALL_WIDTH;
+
+export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody = 44, briefLines = 0, meeting = false): Size {
   const closed = { width: gap(g) + earWidth(kind, false) * 2, height: g.barHeight };
   const wide = (min: number) => Math.max(gap(g) + EAR * 2, min);
   const brief = briefLines > 0 ? BRIEF_HEAD + briefLines * BRIEF_LINE : 0;
   switch (kind) {
     case "idle":
     case "dialConfirm":
-      return open ? { width: wide(380), height: g.barHeight + 56 + brief } : closed;
+      return open ? { width: wide(meeting && kind === "idle" ? MEETING_WIDTH : 380), height: g.barHeight + 56 + brief } : closed;
     case "call":
     case "stopped":
     case "finishing":
@@ -71,6 +74,11 @@ export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody 
 export function cornerRadius(kind: Kind, open: boolean): number {
   if (!open) return COLLAPSED_RADIUS;
   return kind === "recording" ? OPEN_RADIUS : OTHER_OPEN_RADIUS;
+}
+
+/** The open idle island shows a meeting about to start (see IdleMenu). */
+export function showsMeeting(state: { mode: { kind: Kind }; meeting?: IslandMeeting | null }): boolean {
+  return state.mode.kind === "idle" && Boolean(state.meeting);
 }
 
 /** The brief lines the call offer shows in this state (see `islandSize`). */

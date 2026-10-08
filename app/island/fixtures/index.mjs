@@ -65,7 +65,7 @@ const inCall = {
   expanded: true,
   onScreen: ana,
   liveHelp: true,
-  typeMenu: { title: "Llamada en frío", placeholder: false, sparkle: true, rows: [] },
+  typeMenu: { title: "Llamada en frío", placeholder: false, proposed: true, rows: [] },
   dial: dial("active", { answeredAt: NOW - 65_000 }),
   clock: { startedAt: NOW - 65_000, pausedMs: 0, pausedAt: null },
   assist: { label: "Price", isQuestion: false, drafting: false, bridge: "Fair question.", sayThis: "Most teams make it back in the first month of calls.", thenAsk: "" },
@@ -78,13 +78,12 @@ const inCall = {
 const typeMenu = {
   title: "Discovery call",
   placeholder: false,
-  sparkle: true,
+  proposed: true,
   rows: [
-    { key: null, label: "Let Vocify decide", checked: false, suggested: false },
-    { key: "discovery", label: "Discovery call", checked: false, suggested: true },
-    { key: "demo", label: "Demo", checked: false, suggested: false },
-    { key: "follow_up", label: "Follow-up", checked: false, suggested: false },
-    { key: "internal", label: "Internal", checked: false, suggested: false },
+    { key: "discovery", label: "Discovery call", checked: true },
+    { key: "demo", label: "Demo", checked: false },
+    { key: "follow_up", label: "Follow-up", checked: false },
+    { key: "internal", label: "Internal", checked: false },
   ],
 };
 
@@ -92,12 +91,11 @@ const typeMenu = {
 const channelTypeMenu = {
   title: "Llamada en frío",
   placeholder: false,
-  sparkle: true,
+  proposed: true,
   rows: [
-    { key: null, label: "Let Vocify decide", checked: false, suggested: false },
-    { key: "cold", label: "Llamada en frío", checked: false, suggested: true },
-    { key: "inbound_lead", label: "Lead inbound", checked: false, suggested: false },
-    { key: "internal", label: "Interna", checked: false, suggested: false },
+    { key: "cold", label: "Llamada en frío", checked: true },
+    { key: "inbound_lead", label: "Lead inbound", checked: false },
+    { key: "internal", label: "Interna", checked: false },
   ],
   channel: {
     title: "Llamada",
@@ -220,7 +218,7 @@ export const fixtures = [
   { name: "recording-open-type-list", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu, liveHelp: true }, steps: [".type-tag-button"], expect: { width: 460, height: 400 } },
   { name: "recording-open-channel", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: channelTypeMenu, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-channel-list", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: channelTypeMenu, liveHelp: true }, steps: [".type-tag-button"], expect: { width: 460, height: 400 } },
-  { name: "recording-open-channel-no-type", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Type", placeholder: true, sparkle: false, channel: { title: "Reunión", rows: [{ key: "call", label: "Llamada", checked: false }, { key: "meeting", label: "Reunión", checked: true }] } }, liveHelp: true }, expect: { width: 460, height: 400 } },
+  { name: "recording-open-channel-no-type", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Type", placeholder: true, proposed: false, channel: { title: "Reunión", rows: [{ key: "call", label: "Llamada", checked: false }, { key: "meeting", label: "Reunión", checked: true }] } }, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-audio-lost", state: { mode: { kind: "recording" }, expanded: true, clock: clock(95), turns: turns.slice(0, 2), typeMenu, liveHelp: true, callAudioLost: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-paused", state: { mode: { kind: "recording" }, expanded: true, clock: clock(412, { pausedAt: NOW }), paused: true, turns: turns.slice(0, 4), typeMenu, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-bar-only", state: { geometry: BAR_ONLY, mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu, liveHelp: true, material: "opaque" }, expect: { width: 460, height: 400 } },
@@ -323,5 +321,5 @@ export const interactions = [
   { name: "in-call-mutes", fixture: "in-call", click: ".controls .circle-button", expect: [{ name: "toggleMute" }] },
   { name: "in-call-hangs-up", fixture: "in-call", click: ".controls .stop-button", expect: [{ name: "hangup" }] },
   { name: "keypad-sends-digit", fixture: "in-call-muted-keypad", click: ".keypad-key", expect: [{ name: "digit", digit: "1" }] },
-  { name: "pick-type", fixture: "recording-open-type-list", click: ".option-row:nth-child(3)", expect: [{ name: "pickCallType", key: "demo" }], after: true },
+  { name: "pick-type", fixture: "recording-open-type-list", click: ".option-row:nth-child(2)", expect: [{ name: "pickCallType", key: "demo" }], after: true },
 ];

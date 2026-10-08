@@ -464,18 +464,13 @@ test("TypeMenu proposal", async (t) => {
     { key: "closing", label: "Demo y cierre" },
   ];
   const proposedMenu = new TypeMenu(typeOptions, "discovery", true);
-  await t.test("a proposal shows its type with the sparkle", () => {
+  await t.test("Vocify's proposal is the call's type: its name, ticked, and only the hover says it is Vocify's", () => {
     assert.strictEqual(proposedMenu.title, "Discovery");
-    assert.strictEqual(proposedMenu.sparkle, true);
+    assert.strictEqual(proposedMenu.proposed, true);
+    assert.ok(proposedMenu.rows.find((r) => r.key === "discovery")?.checked === true);
   });
-  await t.test("while Vocify proposes, 'Let Vocify decide' is ticked", () => {
-    assert.ok(proposedMenu.rows[0].key === null && proposedMenu.rows[0].checked === true);
-  });
-  await t.test("the proposed type is marked in the list", () => {
-    assert.ok(proposedMenu.rows.find((r) => r.key === "discovery")?.suggested === true);
-  });
-  await t.test("a proposal is not the rep's pick", () => {
-    assert.ok(proposedMenu.rows.find((r) => r.key === "discovery")?.checked === false);
+  await t.test("the list is the types only: no 'let Vocify decide' row", () => {
+    assert.deepStrictEqual(proposedMenu.rows.map((r) => r.key), ["discovery", "closing"]);
   });
 });
 
@@ -485,12 +480,10 @@ test("TypeMenu pick", async (t) => {
     { key: "closing", label: "Demo y cierre" },
   ];
   const pickedMenu = new TypeMenu(typeOptions, "closing", false);
-  await t.test("the rep's pick shows without the sparkle", () => {
+  await t.test("the rep's pick is ticked and is not a proposal", () => {
     assert.strictEqual(pickedMenu.title, "Demo y cierre");
-    assert.strictEqual(pickedMenu.sparkle, false);
-  });
-  await t.test("the pick is ticked", () => {
-    assert.ok(pickedMenu.rows.find((r) => r.key === "closing")?.checked === true && pickedMenu.rows[0].checked === false);
+    assert.strictEqual(pickedMenu.proposed, false);
+    assert.deepStrictEqual(pickedMenu.rows.map((r) => [r.key, r.checked]), [["discovery", false], ["closing", true]]);
   });
 });
 
@@ -500,10 +493,10 @@ test("TypeMenu empty", async (t) => {
     { key: "closing", label: "Demo y cierre" },
   ];
   const emptyMenu = new TypeMenu(typeOptions, null, false);
-  await t.test("nothing known yet reads Call type", () => {
+  await t.test("nothing known yet reads Call type, and nothing is ticked", () => {
     assert.strictEqual(emptyMenu.title, "Call type");
     assert.strictEqual(emptyMenu.placeholder, true);
-    assert.strictEqual(emptyMenu.sparkle, false);
+    assert.ok(emptyMenu.rows.every((r) => !r.checked));
   });
 });
 

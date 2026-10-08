@@ -407,16 +407,22 @@ test("the call type menu follows Vocify's proposal, and a pick is final and sent
   t.controller.applyShellState({ liveType: { selected: "discovery", proposed: true, options: [{ key: "discovery", label: "Discovery call" }, { key: "demo", label: "Demo" }] } });
   let menu = t.controller.state.typeMenu;
   assert.equal(menu?.title, "Discovery call");
-  assert.equal(menu?.sparkle, true);
-  assert.equal(menu?.rows.find((r) => r.suggested)?.key, "discovery");
+  assert.equal(menu?.proposed, true);
+  assert.equal(menu?.rows.find((r) => r.checked)?.key, "discovery");
   t.controller.act({ name: "pickCallType", key: "demo" });
   menu = t.controller.state.typeMenu;
   assert.equal(menu?.title, "Demo");
-  assert.equal(menu?.sparkle, false);
+  assert.equal(menu?.proposed, false);
   assert.equal(menu?.rows.find((r) => r.checked)?.key, "demo");
   assert.deepEqual(t.last("call:type"), { key: "demo" });
-  t.controller.act({ name: "pickCallType", key: null });
-  assert.deepEqual(t.last("call:type"), { key: null });
+});
+
+test("tapping Vocify's ticked proposal confirms it as the rep's own", () => {
+  const t = recording();
+  t.controller.applyShellState({ liveType: { selected: "discovery", proposed: true, options: [{ key: "discovery", label: "Discovery call" }] } });
+  t.controller.act({ name: "pickCallType", key: "discovery" });
+  assert.equal(t.controller.state.typeMenu?.proposed, false);
+  assert.deepEqual(t.last("call:type"), { key: "discovery" });
 });
 
 const CHANNEL_TYPES = {

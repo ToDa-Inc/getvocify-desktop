@@ -285,7 +285,7 @@ export class IslandController {
       : null;
     // "Reunión · Call type" would name the wrong thing: with a channel shown, no type yet is just "Type".
     const title = channel && menu.placeholder ? "Type" : menu.title;
-    return { title, placeholder: menu.placeholder, sparkle: menu.sparkle, rows: menu.rows, channel };
+    return { title, placeholder: menu.placeholder, proposed: menu.placeholder ? false : this.liveType.proposed, rows: menu.rows, channel };
   }
 
   private applyLevels(raw: unknown): void {

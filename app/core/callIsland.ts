@@ -41,7 +41,8 @@ const BRIEF_KINDS = new Set<string>(["call", "email", "note", "meeting", "task",
 const BRIEF_LINES = 3;
 const COMPANY_LINES = 2;
 
-function decodeBrief(raw: unknown): OnScreenBrief | null {
+/** A brief as the dashboard sends it, for a call offer or a meeting about to start. */
+export function decodeBrief(raw: unknown): OnScreenBrief | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
   if (r.state === "loading") return { state: "loading" };
@@ -118,7 +119,11 @@ export function briefWhen(line: Pick<BriefLine, "type" | "at">, now: Date = new 
 
 /** How many brief lines the offer shows (a loading brief takes one). */
 export function briefLinesShown(onScreen: OnScreenCall | null | undefined): number {
-  const brief = onScreen?.brief;
+  return briefLinesOf(onScreen?.brief);
+}
+
+/** How many lines a brief takes on the island (a loading brief takes one). */
+export function briefLinesOf(brief: OnScreenBrief | null | undefined): number {
   if (!brief) return 0;
   if (brief.state === "loading") return 1;
   // The company part: its label and its latest row (its lines open on request).

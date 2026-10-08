@@ -38,6 +38,25 @@ Which apps are using a microphone (Core Audio `kAudioProcessPropertyIsRunningInp
   app), as `MicActivityMonitor.owningApp` does in the Swift app.
 - Exit 0 on SIGTERM or stdin closed.
 
+## `vocify-mac-helper speakers [--ask-accessibility]`
+
+Who the meeting app shows speaking, while a call is recorded. Only display names, never audio.
+
+- Zoom: the "Zoom Meeting" window read through Accessibility every 0.4 s (tiles described "Name, Computer audio,
+  Active speaker"), as the Swift app's ActiveSpeakers. Needs Vocify allowed under Accessibility; `--ask-accessibility`
+  shows macOS's prompt once. Without it, or outside a Zoom meeting, nothing is reported for Zoom.
+- Google Meet: each reading the Vocify Chrome extension sends through native messaging (below), as it arrives.
+- **stdout**, JSON lines: `{"event":"speaking","source":"zoom"|"meet","names":["Marta García"]}` (`[]`: nobody).
+- Exit 0 on SIGTERM or stdin closed.
+
+## Chrome native messaging host (`vocify-mac-helper chrome-extension://<id>/`)
+
+Chrome starts the helper with the extension's origin as its first argument (host `com.vocify.speakers`, manifest written
+by the app at launch). stdin: Chrome's framing (32-bit native-order length, then UTF-8 JSON), each message
+`{"type":"meet-speakers","speaking":[...]}`. Each one is posted as the distributed notification
+`com.vocify.meet-speakers` (object: the JSON), which `speakers` and the Swift app listen to. Nothing is written back.
+Exits when Chrome closes stdin.
+
 ## `vocify-mac-helper screen`
 
 - **stdout**: one line, the built-in screen as JSON, then exit 0. Same fields as `main/native/screen.swift`:

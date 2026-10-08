@@ -25,6 +25,7 @@ const base = {
   finish: null,
   onScreen: null,
   dial: null,
+  meeting: null,
   keypadOpen: false,
   material: "vibrancy",
   reduceMotion: true,
@@ -259,7 +260,6 @@ export const fixtures = [
   { name: "idle-callable", state: { onScreen: ana }, expect: { width: 257, height: 32 } },
   { name: "idle-open-callable", state: { mode: { kind: "idle" }, expanded: true, onScreen: ana }, expect: { width: 380, height: 88 } },
   { name: "idle-open-needs-contact", state: { mode: { kind: "idle" }, expanded: true, onScreen: { ...ana, name: null, phone: null, state: "needs_contact" } }, expect: { width: 380, height: 88 } },
-  // what happened with the contact lately, under the offer: two lines at most, one while it loads
   // the contact's recent activity under the offer: every line in full, with what it is about and when (from the
   // interaction it cites); a line without them (an older dashboard, the company) is text alone
   { name: "idle-open-brief", state: { mode: { kind: "idle" }, expanded: true, onScreen: { ...ana, brief: { state: "ready", lines: BRIEF } } }, expect: { width: 380, lines: 3, whens: 3, icons: 3 }, natural: true },
@@ -271,6 +271,8 @@ export const fixtures = [
   { name: "confirm-brief-company-open", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, brief: { state: "ready", lines: BRIEF, company: ACME } } }, expect: { width: 380, lines: 5, whens: 5, icons: 5, who: 1 }, natural: true, steps: [".company-toggle"] },
   { name: "confirm-company-only", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, brief: { state: "ready", lines: [], company: { ...ACME, people: 1, lines: [] } } } }, expect: { width: 380, lines: 1, whens: 1, icons: 1, who: 0, toggles: 0 }, natural: true },
   { name: "confirm-brief-loading", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, brief: { state: "loading" } } }, expect: { width: 380, lines: 0, loading: true }, natural: true },
+  // a meeting about to start carries the same brief as a call offer
+  { name: "idle-open-meeting", state: { mode: { kind: "idle" }, expanded: true, meeting: { id: "ev-1", who: "Marta García", title: "Demo Vocify", startsAt: NOW + 60_000, url: "https://meet.google.com/abc-defg-hij", platform: "meet", brief: { state: "ready", lines: BRIEF.slice(0, 2), company: ACME } } }, expect: { width: 380, lines: 3, whens: 3, icons: 3 }, natural: true },
   { name: "idle-no-phone", state: { onScreen: { ...ana, phone: null, state: "no_phone" } }, expect: { width: 257, height: 32 } },
   { name: "confirm-callable", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: ana }, expect: { width: 380, height: 88 } },
   { name: "confirm-no-caller-id", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, callerId: null, state: "no_caller_id" } }, expect: { width: 380, height: 88 } },

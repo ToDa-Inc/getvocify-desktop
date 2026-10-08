@@ -40,7 +40,7 @@ Each machine needs its own **Vocify Dev** certificate unless you share a team `.
 
 | Step | What happens |
 |------|----------------|
-| Sign in | Uses production API (`api.getvocify.com`) |
+| Sign in | Uses the staging API (`getvocify-staging.up.railway.app`); you need a staging account |
 | Record meeting | Native macOS permission prompts |
 | After system audio | Quit and reopen Vocify once |
 | During call | Floating pill shows timer and live transcript |

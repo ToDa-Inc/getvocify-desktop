@@ -26,7 +26,7 @@ concurrency:
 
 env:
   GETVOCIFY_REF: staging
-  VOCIFY_API_URL: https://api.getvocify.com/api/v1
+  VOCIFY_API_URL: https://getvocify-staging.up.railway.app/api/v1
 
 jobs:
   # The daily run builds only if the dashboard or this repo changed since the last build.

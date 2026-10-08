@@ -15,6 +15,7 @@ import { JsonSettings } from "./settings.ts";
 import { ShortcutManager } from "./shortcut.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { trayItems } from "./tray-menu.ts";
+import { createBrowserCallWatch } from "./windows/browser-call.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
 import { createCrmScreenWatcher } from "./crm-screen-watcher.ts";
 import { CrmPages } from "../../core/crmPages.ts";
@@ -542,10 +543,38 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   // Call detection: the OS reports which app holds the microphone (none on a Mac until the native helper).
   let detection = Promise.resolve();
+  // What the island was last told of the call: nothing, an app, or a browser whose page said what the call is.
+  let told: "none" | "app" | "browser" = "none";
+  // On Windows a browser holding the microphone is only a call once a page says so, and is then named by it
+  // ("Google Meet call"), never "Google Chrome call" (see windows/browser-call.ts).
+  const browserCalls = createBrowserCallWatch({
+    readSource: async () => CallSource.page((await pageReader.read()).map((page) => page.url)),
+    announce: (caller) => {
+      told = "browser";
+      controller.callChanged(caller);
+    },
+    every: (ms, fn) => {
+      const timer = setInterval(fn, ms);
+      return () => clearInterval(timer);
+    },
+  });
   const report = (detected: DetectedCaller | null) => {
     // In order, and with the app's icon ready before the island hears of the call.
     detection = detection.then(async () => {
-      controller.callChanged(detected ? { name: detected.name, appId: detected.appId, icon: await iconFor(detected.path) } : null);
+      if (platform === "win32" && detected?.browser) {
+        // An app that was the call is over; the browser is only watched.
+        if (told === "app") {
+          controller.callChanged(null);
+          told = "none";
+        }
+        browserCalls.held({ appId: detected.appId, icon: await iconFor(detected.path) });
+        return;
+      }
+      browserCalls.released();
+      told = detected ? "app" : "none";
+      // A browser that reaches here (the Mac cannot read which page is the call) is not named: "Google Chrome call"
+      // is a guess, and the island says "Call in progress" instead.
+      controller.callChanged(detected ? { name: detected.browser ? null : detected.name, appId: detected.appId, icon: await iconFor(detected.path) } : null);
     });
   };
   os.callDetector?.start(report);

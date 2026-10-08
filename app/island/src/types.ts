@@ -32,7 +32,9 @@ export type Assist = {
 };
 
 export type TypeMenuRow = { key: string | null; label: string; checked: boolean; suggested: boolean };
-export type TypeMenuView = { title: string; placeholder: boolean; sparkle: boolean; rows: TypeMenuRow[] };
+/** Types by channel: the recording's channel and the two it can be; null when it is not offered. */
+export type ChannelMenuView = { title: string; rows: { key: "call" | "meeting"; label: string; checked: boolean }[] };
+export type TypeMenuView = { title: string; placeholder: boolean; sparkle: boolean; rows: TypeMenuRow[]; channel?: ChannelMenuView | null };
 
 /** Where the recording that just ended is, as the dashboard reports it. */
 export type Finish = { step: "stopping" | "uploading" | "failed"; message: string | null };
@@ -148,6 +150,7 @@ export type IslandAction =
   /** End the stopped recording now, without waiting for its line to run out. */
   | { name: "finish" }
   | { name: "pickCallType"; key: string | null }
+  | { name: "pickChannel"; kind: "call" | "meeting" }
   | { name: "toggleLiveHelp" }
   | { name: "pointer"; inside: boolean }
   /** Calling the contact on screen (sent to the dashboard as the bridge contract's commands). */

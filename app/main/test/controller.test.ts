@@ -419,6 +419,41 @@ test("the call type menu follows Vocify's proposal, and a pick is final and sent
   assert.deepEqual(t.last("call:type"), { key: null });
 });
 
+const CHANNEL_TYPES = {
+  selected: "cold",
+  proposed: true,
+  options: [{ key: "cold", label: "Llamada en frío" }, { key: "internal", label: "Interna" }],
+  channel: { selected: "call", fixed: false, options: [{ key: "call", label: "Llamada" }, { key: "meeting", label: "Reunión" }] },
+};
+
+test("types by channel: the menu also says the channel, and a switch is shown at once and sent to the dashboard", () => {
+  const t = recording();
+  t.controller.applyShellState({ liveType: CHANNEL_TYPES });
+  let channel = t.controller.state.typeMenu?.channel;
+  assert.equal(channel?.title, "Llamada");
+  assert.deepEqual(channel?.rows.map((row) => [row.key, row.checked]), [["call", true], ["meeting", false]]);
+  t.controller.act({ name: "pickChannel", kind: "meeting" });
+  channel = t.controller.state.typeMenu?.channel;
+  assert.equal(channel?.title, "Reunión");
+  assert.deepEqual(t.last("call:channel"), { kind: "meeting" });
+});
+
+test("types by channel: a fixed channel (a Vocify call) is not offered and never switches", () => {
+  const t = recording();
+  t.controller.applyShellState({ liveType: { ...CHANNEL_TYPES, channel: { ...CHANNEL_TYPES.channel, fixed: true } } });
+  assert.equal(t.controller.state.typeMenu?.channel, null);
+  t.controller.act({ name: "pickChannel", kind: "meeting" });
+  assert.equal(t.last("call:channel"), undefined);
+});
+
+test("without a channel (an older dashboard) the menu is the type alone, as before", () => {
+  const t = recording();
+  t.controller.applyShellState({ liveType: { selected: "demo", proposed: false, options: [{ key: "demo", label: "Demo" }] } });
+  assert.equal(t.controller.state.typeMenu?.channel, null);
+  t.controller.applyShellState({ liveType: { ...CHANNEL_TYPES, channel: { selected: "visit", fixed: false, options: [] } } });
+  assert.equal(t.controller.state.typeMenu?.channel, null);
+});
+
 test("a live type with no options is no menu, and clearing it removes the menu", () => {
   const t = recording();
   t.controller.applyShellState({ liveType: { selected: null, proposed: false, options: [] } });

@@ -5,7 +5,7 @@ import { TypeMenu } from "../../core/typeMenu.ts";
 import { WaveSide } from "../../core/waveSide.ts";
 import type { Assist, Geometry, IslandAction, IslandState, Levels, Mode, PostCallData } from "../../island/src/types.ts";
 import { postCallPending } from "../../island/src/types.ts";
-import { parseAssist, parseClock, parseContact, parseFinish, parseLiveType, parsePostCall, parseTurns, type LiveType } from "./parse.ts";
+import { parseAssist, parseClock, parseContact, parseFinish, parseLiveType, parsePostCall, parseTurns, type LiveChannelKind, type LiveType } from "./parse.ts";
 
 /**
  * The island's brain: what it shows and what each click does. A port of `MeetingPillController` and
@@ -233,7 +233,17 @@ export class IslandController {
   private typeMenuView(): IslandState["typeMenu"] {
     if (!this.liveType) return null;
     const menu = new TypeMenu(this.liveType.options, this.liveType.selected, this.liveType.proposed);
-    return { title: menu.title, placeholder: menu.placeholder, sparkle: menu.sparkle, rows: menu.rows };
+    // Types by channel: the same menu says the channel first, unless it cannot change (a Vocify call).
+    const live = this.liveType.channel;
+    const channel = live && !live.fixed
+      ? {
+          title: live.options.find((option) => option.key === live.selected)?.label ?? live.selected,
+          rows: live.options.map((option) => ({ key: option.key, label: option.label, checked: option.key === live.selected })),
+        }
+      : null;
+    // "Reunión · Call type" would name the wrong thing: with a channel shown, no type yet is just "Type".
+    const title = channel && menu.placeholder ? "Type" : menu.title;
+    return { title, placeholder: menu.placeholder, sparkle: menu.sparkle, rows: menu.rows, channel };
   }
 
   private applyLevels(raw: unknown): void {
@@ -275,6 +285,8 @@ export class IslandController {
         return this.finishRecording();
       case "pickCallType":
         return this.pickCallType(action.key);
+      case "pickChannel":
+        return this.pickChannel(action.kind);
       case "toggleLiveHelp":
         return this.effects.emit("shell:command", this.current.liveHelp === false ? "assist-on" : "assist-off");
       case "postCall":
@@ -581,6 +593,17 @@ export class IslandController {
       this.set({ typeMenu: this.typeMenuView() });
     }
     this.effects.emit("call:type", { key });
+  }
+
+  /** Types by channel: the channel the rep switched to. Shown at once; the dashboard sends back the
+   * channel's types (and drops a type of the other channel). A fixed channel never switches. */
+  private pickChannel(kind: LiveChannelKind): void {
+    const channel = this.liveType?.channel;
+    if (!this.liveType || !channel || channel.fixed || channel.selected === kind) return;
+    if (!channel.options.some((option) => option.key === kind)) return;
+    this.liveType = { ...this.liveType, channel: { ...channel, selected: kind } };
+    this.set({ typeMenu: this.typeMenuView() });
+    this.effects.emit("call:channel", { kind });
   }
 
   /** A choice made in the after-call card, sent to the dashboard as it is. */

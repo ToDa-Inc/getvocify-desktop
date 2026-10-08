@@ -99,18 +99,43 @@ export function parsePostCall(raw: unknown): PostCallData | null {
   };
 }
 
-export type LiveType = { selected: string | null; proposed: boolean; options: { key: string; label: string }[] };
+export type LiveChannelKind = "call" | "meeting";
+/** Types by channel: the recording's channel, and whether the rep may switch it (not on a Vocify call). */
+export type LiveChannel = { selected: LiveChannelKind; fixed: boolean; options: { key: LiveChannelKind; label: string }[] };
+export type LiveType = {
+  selected: string | null;
+  proposed: boolean;
+  options: { key: string; label: string }[];
+  channel: LiveChannel | null;
+};
 
-/** Null when there are no options to pick from. */
-export function parseLiveType(raw: unknown): LiveType | null {
-  if (!isRaw(raw)) return null;
-  const options = list(raw.options).flatMap((option) => {
+const CHANNEL_KINDS: readonly string[] = ["call", "meeting"];
+
+function labelled(raw: unknown): { key: string; label: string }[] {
+  return list(raw).flatMap((option) => {
     const key = str(option.key);
     const label = str(option.label);
     return key !== undefined && label !== undefined ? [{ key, label }] : [];
   });
+}
+
+/** Null unless the dashboard sent a call/meeting channel with both choices named (an older one sends none). */
+export function parseLiveChannel(raw: unknown): LiveChannel | null {
+  if (!isRaw(raw)) return null;
+  const selected = str(raw.selected);
+  const options = labelled(raw.options).filter((option): option is { key: LiveChannelKind; label: string } =>
+    CHANNEL_KINDS.includes(option.key),
+  );
+  if (selected === undefined || !CHANNEL_KINDS.includes(selected) || options.length !== CHANNEL_KINDS.length) return null;
+  return { selected: selected as LiveChannelKind, fixed: bool(raw.fixed) ?? false, options };
+}
+
+/** Null when there are no options to pick from. */
+export function parseLiveType(raw: unknown): LiveType | null {
+  if (!isRaw(raw)) return null;
+  const options = labelled(raw.options);
   if (options.length === 0) return null;
-  return { selected: str(raw.selected) ?? null, proposed: bool(raw.proposed) ?? false, options };
+  return { selected: str(raw.selected) ?? null, proposed: bool(raw.proposed) ?? false, options, channel: parseLiveChannel(raw.channel) };
 }
 
 /** A draft is the loading state; a card with no answer keeps its filler line; nothing at all is no card. */

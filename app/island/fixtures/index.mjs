@@ -71,6 +71,26 @@ const typeMenu = {
   ],
 };
 
+// Types by channel: the same menu says the channel first (Spanish labels, as the dashboard sends them).
+const channelTypeMenu = {
+  title: "Llamada en frío",
+  placeholder: false,
+  sparkle: true,
+  rows: [
+    { key: null, label: "Let Vocify decide", checked: false, suggested: false },
+    { key: "cold", label: "Llamada en frío", checked: false, suggested: true },
+    { key: "inbound_lead", label: "Lead inbound", checked: false, suggested: false },
+    { key: "internal", label: "Interna", checked: false, suggested: false },
+  ],
+  channel: {
+    title: "Llamada",
+    rows: [
+      { key: "call", label: "Llamada", checked: true },
+      { key: "meeting", label: "Reunión", checked: false },
+    ],
+  },
+};
+
 const postCall = (stage, extra = {}) => ({
   stage, memoId: "memo-1", contactName: "Marta Ruiz", changes: [], canApprove: false, applied: null, undoUntil: null, note: null,
   email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, ...extra,
@@ -181,6 +201,9 @@ export const fixtures = [
   { name: "recording-open-help-earlier", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu, liveHelp: true, lastHelp: answer }, expect: { width: 460, height: 400 } },
   { name: "recording-open-help-off", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu, liveHelp: false }, expect: { width: 460, height: 400 } },
   { name: "recording-open-type-list", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu, liveHelp: true }, steps: [".type-tag-button"], expect: { width: 460, height: 400 } },
+  { name: "recording-open-channel", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: channelTypeMenu, liveHelp: true }, expect: { width: 460, height: 400 } },
+  { name: "recording-open-channel-list", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: channelTypeMenu, liveHelp: true }, steps: [".type-tag-button"], expect: { width: 460, height: 400 } },
+  { name: "recording-open-channel-no-type", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Type", placeholder: true, sparkle: false, channel: { title: "Reunión", rows: [{ key: "call", label: "Llamada", checked: false }, { key: "meeting", label: "Reunión", checked: true }] } }, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-audio-lost", state: { mode: { kind: "recording" }, expanded: true, clock: clock(95), turns: turns.slice(0, 2), typeMenu, liveHelp: true, callAudioLost: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-paused", state: { mode: { kind: "recording" }, expanded: true, clock: clock(412, { pausedAt: NOW }), paused: true, turns: turns.slice(0, 4), typeMenu, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-bar-only", state: { geometry: BAR_ONLY, mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu, liveHelp: true, material: "opaque" }, expect: { width: 460, height: 400 } },

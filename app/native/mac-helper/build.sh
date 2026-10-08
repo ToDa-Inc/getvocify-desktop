@@ -18,6 +18,7 @@ echo "  Building for arm64..."
 swift build \
     -c release \
     --arch arm64 \
+    --package-path "$SCRIPT_DIR" \
     --build-path "$BUILD_DIR-arm64"
 
 # Build for x86_64
@@ -25,6 +26,7 @@ echo "  Building for x86_64..."
 swift build \
     -c release \
     --arch x86_64 \
+    --package-path "$SCRIPT_DIR" \
     --build-path "$BUILD_DIR-x86_64"
 
 # Create universal binary

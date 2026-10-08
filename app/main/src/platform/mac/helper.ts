@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { EventEmitter } from "node:events";
 
-export type HelperCommand = "audio" | "audio-permission" | "mic" | "screen";
+export type HelperCommand = "audio" | "audio-permission" | "mic" | "screen" | "speakers";
 
 /** A running `vocify-mac-helper` (see native/mac-helper/PROTOCOL.md), as much of a child process as the Mac code uses. */
 export type HelperChild = {
@@ -36,9 +36,9 @@ export function jsonLines(onEvent: (event: Record<string, unknown>) => void): (c
  * Starts the helper at `path` for `command`. A helper that is missing or cannot start exits at once (code 127) instead of
  * throwing or raising an unhandled `error` event, so a Mac without it degrades to "no call audio, no call detection".
  */
-export function spawnMacHelper(path: string, command: HelperCommand): HelperChild {
+export function spawnMacHelper(path: string, command: HelperCommand, args: string[] = []): HelperChild {
   if (!existsSync(path)) return exitedHelper();
-  const child = spawn(path, [command], { stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(path, [command, ...args], { stdio: ["pipe", "pipe", "pipe"] });
   let exited = false;
   child.on("exit", () => void (exited = true));
   child.on("error", () => {

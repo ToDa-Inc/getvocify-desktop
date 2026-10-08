@@ -126,6 +126,11 @@ export class IslandController {
     return this.current;
   }
 
+  /** The app the call being recorded happens in (what Record was pressed on, else what holds the mic). */
+  get recordingAppId(): string | null {
+    return this.recordingCaller?.appId ?? this.currentCaller?.appId ?? null;
+  }
+
   /** The dashboard says it is recording (`shell:state` listening). */
   get isListening(): boolean {
     return this.shell.listening === true;

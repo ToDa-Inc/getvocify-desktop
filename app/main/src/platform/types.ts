@@ -62,11 +62,19 @@ export interface IslandBehaviour {
   prepare(window: IslandWindow): string;
 }
 
-/** One OS's implementations. `callDetector` is null on an OS that cannot detect calls yet. */
+/** Who the meeting app shows speaking while a call is recorded (display names only). */
+export interface SpeakerReader {
+  /** Starts reporting each reading; `askAccessibility` shows the OS's prompt once (what reading Zoom needs). */
+  start(options: { askAccessibility: boolean }, onSpeaking: (names: string[]) => void): void;
+  stop(): void;
+}
+
+/** One OS's implementations. `callDetector` is null on an OS that cannot detect calls yet; `speakers` where it can't name them. */
 export type Platform = {
   systemAudio: SystemAudio;
   callDetector: CallDetector | null;
   crmScreenReader: CrmScreenReader;
   permissions: Permissions;
   island: IslandBehaviour;
+  speakers: SpeakerReader | null;
 };

@@ -384,7 +384,24 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       }, 800);
     });
   }
+  /** While a call is recorded, who the meeting app shows speaking goes to the dashboard (it names the other side's lines). */
+  let readingSpeakers = false;
+  function followSpeakers(state: IslandState): void {
+    const recording = state.mode.kind === "recording" || state.mode.kind === "stopped";
+    if (recording && !readingSpeakers && os.speakers) {
+      readingSpeakers = true;
+      const zoom = controller.recordingAppId === "us.zoom.xos";
+      const ask = zoom && settings.get("askedAccessibility") !== true;
+      if (ask) settings.set("askedAccessibility", true);
+      os.speakers.start({ askAccessibility: ask }, (names) => dashboard.emit("meeting:speakers", { names }));
+    } else if (!recording && readingSpeakers) {
+      readingSpeakers = false;
+      os.speakers?.stop();
+    }
+  }
+
   function pushState(state: IslandState): void {
+    followSpeakers(state);
     if (island.isDestroyed()) return;
     island.webContents.send("island:state", state);
     fit(targetSize(state), false);

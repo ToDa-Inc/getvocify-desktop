@@ -8,6 +8,8 @@ import { createMacIsland } from "./island.ts";
 import { spawnMacHelper } from "./helper.ts";
 import { createMacPermissions } from "./permissions.ts";
 import { createMacSystemAudio } from "./system-audio.ts";
+import { createMacSpeakerReader, installMeetHost } from "./speakers.ts";
+import { homedir } from "node:os";
 
 /**
  * macOS: osascript for the browsers; the call's audio, call detection and the notch through vocify-mac-helper
@@ -22,6 +24,8 @@ export function createMacPlatform(env: PlatformEnv): Platform {
     capture: createMacSystemAudio({ spawn: (command) => spawnMacHelper(helper, command) }),
   });
   void access.refresh();
+  // The Vocify extension reports Google Meet's speakers to the helper through Chrome native messaging.
+  installMeetHost(helper, homedir(), env.log);
   return {
     systemAudio: access.systemAudio,
     callDetector: createMacCallDetector({ spawn: (command) => spawnMacHelper(helper, command), ownBundleId: "com.vocify.app" }),
@@ -39,5 +43,8 @@ export function createMacPlatform(env: PlatformEnv): Platform {
       audioAccess: access,
     }),
     island: createMacIsland(env.nativePanelPath),
+    speakers: createMacSpeakerReader({
+      spawn: (askAccessibility) => spawnMacHelper(helper, "speakers", askAccessibility ? ["--ask-accessibility"] : []),
+    }),
   };
 }

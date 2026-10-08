@@ -13,6 +13,8 @@ import { createWindowsSystemAudio } from "./system-audio.ts";
 /** Windows: Chromium's loopback, the microphone-use record in the registry, one long-lived PowerShell reader. */
 export function createWindowsPlatform(env: PlatformEnv): Platform {
   return {
+    // Naming the other side's speakers is Mac-only for now (Zoom Accessibility, Meet through the extension's Mac host).
+    speakers: null,
     systemAudio: createWindowsSystemAudio(),
     callDetector: createWindowsCallDetector({
       read: () => runQuiet("reg.exe", ["query", MIC_CONSENT_KEY, "/s"], 5000),

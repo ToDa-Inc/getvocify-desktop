@@ -5,7 +5,7 @@ name: Desktop app
 # `latest-mac.yml` (Mac) from the newest release, so both files must be in the same release.
 on:
   push:
-    branches: [main, ci/one-desktop-release]
+    branches: [main]
     paths:
       - "app/**"
       - ".github/workflows/desktop-app.yml"

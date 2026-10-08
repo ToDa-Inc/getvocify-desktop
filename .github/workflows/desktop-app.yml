@@ -5,7 +5,7 @@ name: Desktop app
 # `latest-mac.yml` (Mac) from the newest release, so both files must be in the same release.
 on:
   push:
-    branches: [main]
+    branches: [main, ci/one-desktop-release]
     paths:
       - "app/**"
       - ".github/workflows/desktop-app.yml"
@@ -213,7 +213,7 @@ jobs:
   # Only when both systems built, passed their tests and started: one release holding both systems' files.
   publish:
     needs: [windows, mac]
-    if: github.event_name == 'push' || inputs.publish
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || inputs.publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

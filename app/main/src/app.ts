@@ -197,6 +197,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
         if (!island.isDestroyed()) island.webContents.send("island:levels", levels);
       },
       saveRecorderReady: (ready) => settings.set("recorderReady", ready),
+      openExternal: (url) => void shell.openExternal(url),
       // A call was detected: name where it happens and send the CRM pages on screen, so the dashboard can name the contact.
       lookUpCallContact: (caller) => {
         if (platform === "win32") {

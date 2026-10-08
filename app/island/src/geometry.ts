@@ -1,4 +1,5 @@
 import { briefLinesShown, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
+import { meetingBriefLines, type IslandMeeting } from "../../core/meetingHeadsUp.ts";
 import type { Geometry, Mode } from "./types.ts";
 
 export const EAR = 82;
@@ -72,7 +73,9 @@ export function cornerRadius(kind: Kind, open: boolean): number {
 }
 
 /** The brief lines the call offer shows in this state (see `islandSize`). */
-export function offerBriefLines(state: { mode: { kind: Kind }; onScreen: OnScreenCall | null; dial?: DialIslandState | null }): number {
+export function offerBriefLines(state: { mode: { kind: Kind }; onScreen: OnScreenCall | null; dial?: DialIslandState | null; meeting?: IslandMeeting | null }): number {
+  // At rest a meeting about to start comes first (see IdleMenu).
+  if (state.mode.kind === "idle" && state.meeting) return meetingBriefLines(state.meeting);
   if (state.mode.kind === "idle" || state.mode.kind === "dialConfirm") return briefLinesShown(state.onScreen);
   // Calling: the brief stays under "Calling…" (a missed call says why instead).
   if (state.mode.kind === "dialing" && state.dial && state.dial.phase !== "active" && state.dial.phase !== "ended") return state.dial.brief?.length ?? 0;

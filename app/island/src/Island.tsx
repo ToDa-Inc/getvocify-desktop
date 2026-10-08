@@ -2,8 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { cornerRadius, earWidth, islandSize, offerBriefLines } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, turnParts } from "./helpers.ts";
-import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Keypad, Mic, MicSlash, Pause, Phone, PhoneDown, Play, RecordCircle, Sparkle, Waveform } from "./icons.tsx";
-import { CallWording, PhoneFormat, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
+import { AlertCircle, ArrowDown, ArrowUpRight, Check, ChevronDown, Close, Keypad, Mic, MicSlash, Pause, Phone, PhoneDown, Play, RecordCircle, Sparkle, Video, Waveform } from "./icons.tsx";
+import { CallWording, PhoneFormat, type DialIslandState, type OnScreenBrief, type OnScreenCall } from "../../core/callIsland.ts";
+import { MeetingWording, type IslandMeeting } from "../../core/meetingHeadsUp.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
 import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuView } from "./types.ts";
@@ -268,7 +269,7 @@ function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onP
     case "dialing":
       return state.dial ? <DialingMenu dial={state.dial} act={act} /> : null;
     default:
-      return <IdleMenu ready={state.recorderReady} onScreen={state.onScreen} act={act} />;
+      return <IdleMenu ready={state.recorderReady} onScreen={state.onScreen} meeting={state.meeting} act={act} />;
   }
 }
 
@@ -277,8 +278,7 @@ function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onP
 /** At rest, open. With a CRM contact on screen it leads with who that is and Call, the way the
  * confirm row does, and recording a meeting becomes the quiet icon beside it. */
 /** The call offer's row, and under it what happened with the contact lately (at most two lines; one while it loads). */
-function Offer({ onScreen, children }: { onScreen: OnScreenCall | null; children: ReactNode }) {
-  const brief = onScreen?.brief;
+function Offer({ brief, children }: { brief: OnScreenBrief | null | undefined; children: ReactNode }) {
   if (!brief) return <div className="menu">{children}</div>;
   return (
     <div className="offer">
@@ -385,9 +385,10 @@ function CallBriefSection({ lines }: { lines: string[] }) {
   );
 }
 
-function IdleMenu({ ready, onScreen, act }: { ready: boolean; onScreen: OnScreenCall | null; act: Act }) {
+function IdleMenu({ ready, onScreen, meeting, act }: { ready: boolean; onScreen: OnScreenCall | null; meeting?: IslandMeeting | null; act: Act }) {
+  if (meeting) return <MeetingSoonMenu meeting={meeting} act={act} />;
   return (
-    <Offer onScreen={onScreen}>
+    <Offer brief={onScreen?.brief}>
       {onScreen ? (
         <>
           <OnScreenOffer onScreen={onScreen} act={act} />
@@ -403,6 +404,32 @@ function IdleMenu({ ready, onScreen, act }: { ready: boolean; onScreen: OnScreen
       )}
       <IconButton help="Open Vocify" onClick={() => act({ name: "openApp" })}>
         <ArrowUpRight size={12} />
+      </IconButton>
+    </Offer>
+  );
+}
+
+/** A meeting about to start (from the calendar): who it is with, its title, when and where, and what
+ * happened with them lately; Join opens the call, Record starts the recording. Same as MeetingSoonMenu in MeetingPill.swift. */
+function MeetingSoonMenu({ meeting, act }: { meeting: IslandMeeting; act: Act }) {
+  const now = useNow(15_000, true);
+  return (
+    <Offer brief={meeting.brief}>
+      <div className="menu-stack">
+        <span className="menu-title">{meeting.who}</span>
+        <span className="menu-line">{MeetingWording.line(meeting, now)}</span>
+      </div>
+      <div className="grow" />
+      {meeting.url && (
+        <PrimaryActionButton title="Join" help="Open the meeting" onClick={() => act({ name: "joinMeeting" })}>
+          <Video size={10} />
+        </PrimaryActionButton>
+      )}
+      <IconButton help="Record meeting" className="record-icon" onClick={() => act({ name: "record" })}>
+        <RecordCircle size={12} />
+      </IconButton>
+      <IconButton help="Dismiss" onClick={() => act({ name: "dismissMeeting" })}>
+        <Close size={11} />
       </IconButton>
     </Offer>
   );
@@ -507,7 +534,7 @@ function OnScreenOffer({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) 
 /** Who would be called and from which number; one click calls. */
 function DialConfirmMenu({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) {
   return (
-    <Offer onScreen={onScreen}>
+    <Offer brief={onScreen.brief}>
       <OnScreenOffer onScreen={onScreen} act={act} />
       <IconButton help="Record meeting" className="record-icon" onClick={() => act({ name: "record" })}>
         <RecordCircle size={12} />

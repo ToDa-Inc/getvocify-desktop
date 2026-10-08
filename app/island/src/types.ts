@@ -1,5 +1,6 @@
 /** Everything the island draws. Main computes it (call logic, transcript, menus); the island only renders it. */
 import type { DialIslandState, OnScreenCall } from "../../core/callIsland.ts";
+import type { IslandMeeting } from "../../core/meetingHeadsUp.ts";
 
 export type { DialIslandState, OnScreenCall };
 
@@ -131,6 +132,8 @@ export type IslandState = {
   onScreen: OnScreenCall | null;
   /** The Vocify call in progress, if any (`shell:state` dial). */
   dial: DialIslandState | null;
+  /** A meeting with someone from outside about to start (`shell:state` meeting, from the calendar). */
+  meeting: IslandMeeting | null;
   keypadOpen: boolean;
   /** "vibrancy": the window blurs what is behind it (macOS). "opaque": no blur available, so the glass is denser. */
   material: "vibrancy" | "opaque";
@@ -158,6 +161,8 @@ export type IslandAction =
   | { name: "keypad"; open: boolean }
   | { name: "digit"; digit: string }
   | { name: "openCalling" }
+  | { name: "joinMeeting" }
+  | { name: "dismissMeeting" }
   /** A choice in the after-call card; `type` and `details` go to the dashboard unchanged (approve, undo, review, setType, dismiss...). */
   | { name: "postCall"; type: string; details?: Record<string, unknown> };
 

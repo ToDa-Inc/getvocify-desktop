@@ -15,6 +15,7 @@ import { JsonSettings } from "./settings.ts";
 import { ShortcutManager } from "./shortcut.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { trayItems } from "./tray-menu.ts";
+import { startsPageAtLaunch } from "./calendar-watch.ts";
 import { createBrowserCallWatch } from "./windows/browser-call.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
 import { createCrmScreenWatcher } from "./crm-screen-watcher.ts";
@@ -425,8 +426,12 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   // Before it is ever shown: a click on the island must never activate Vocify (that brings the dashboard forward).
   log(`island: ${os.island.prepare(island)}`);
   island.showInactive();
-  // The meeting heads-up lives in the dashboard page: start it, hidden, for a rep whose calendar is connected.
-  if (calendarWatch) dashboard.ensureHidden();
+  // The meeting heads-up lives in the dashboard page: start it, hidden, for a rep whose calendar is connected, and for a
+  // signed-in rep not yet asked (the grace below keeps it until it has answered).
+  if (startsPageAtLaunch({ calendarWatch: settings.get("calendarWatch"), recorderReady: settings.get("recorderReady") })) {
+    dashboard.ensureHidden();
+    touch();
+  }
 
   /* ---------- wiring ---------- */
 
@@ -468,7 +473,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     },
     log,
     onCalendarWatch: (on) => {
-      if (on === calendarWatch) return;
+      // Also the first answer when it is "no": remembered, so the page is not started for nothing at every launch.
+      if (on === calendarWatch && settings.get("calendarWatch") === on) return;
       calendarWatch = on;
       settings.set("calendarWatch", on);
       log(`calendar heads-up ${on ? "on: the dashboard page stays alive" : "off: the dashboard page is given back when idle"}`);

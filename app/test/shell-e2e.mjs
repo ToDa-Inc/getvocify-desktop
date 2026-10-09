@@ -31,7 +31,7 @@ app.whenReady().then(async () => {
     const { startApp } = await import(pathToFileURL(join(here, "../main/dist-shell-test/app.mjs")).href);
     // A returning user: the island remembers that someone is signed in, so Record works before the dashboard has loaded.
     const userDataDir = mkdtempSync(join(tmpdir(), "vocify-e2e-"));
-    writeFileSync(join(userDataDir, "settings.json"), JSON.stringify({ recorderReady: true }));
+    writeFileSync(join(userDataDir, "settings.json"), JSON.stringify({ recorderReady: true, calendarWatch: false }));
     const handle = await startApp({
       dashboardUrl: pathToFileURL(join(here, "../main/demo/fake-dashboard.html")).href,
       trustFiles: true,

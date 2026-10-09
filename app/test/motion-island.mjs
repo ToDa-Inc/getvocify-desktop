@@ -10,6 +10,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const dist = resolve(process.argv.find((a) => a.startsWith("--dist="))?.slice(7) ?? join(here, "../island/dist"));
 const label = process.argv.find((a) => a.startsWith("--label="))?.slice(8) ?? "island";
 const script = process.argv.find((a) => a.startsWith("--script="))?.slice(9);
+const material = process.argv.find((a) => a.startsWith("--material="))?.slice(11);
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 app.whenReady().then(async () => {
@@ -19,7 +20,7 @@ app.whenReady().then(async () => {
     show: false, alwaysOnTop: true,
     webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false },
   });
-  await win.loadFile(join(dist, "live.html"), { query: { speed: "2", ...(script ? { script } : {}) } });
+  await win.loadFile(join(dist, "live.html"), { query: { speed: "2", ...(script ? { script } : {}), ...(material ? { material } : {}) } });
   win.showInactive();
   const read = () => win.webContents.executeJavaScript("JSON.stringify(window.__LIVE ?? {})").then(JSON.parse);
   const until = Date.now() + 120_000;
@@ -29,6 +30,6 @@ app.whenReady().then(async () => {
     live = await read();
   }
   console.log(`${label}: ${JSON.stringify(live)}`);
-  const failed = !live.done || live.shrinks > 0 || live.dotsAlone > 0 || live.unfollowed > 0;
+  const failed = !live.done || live.shrinks > 0 || live.dotsAlone > 0 || live.unfollowed > 0 || live.stillAnimating > 0;
   app.exit(process.argv.includes("--report") ? 0 : failed ? 1 : 0);
 });

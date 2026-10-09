@@ -21,7 +21,9 @@ const RALLY = [
 const rally = new URLSearchParams(location.search).get("script") === "rally";
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms / speed));
 const turns = [];
-const push = () => window.__setIslandState({ ...base, reduceMotion: false, turns: turns.map((turn) => ({ ...turn })) });
+// ?material=opaque: as on Windows (no blur behind the window).
+const material = new URLSearchParams(location.search).get("material") === "opaque" ? "opaque" : "vibrancy";
+const push = () => window.__setIslandState({ ...base, material, reduceMotion: false, turns: turns.map((turn) => ({ ...turn })) });
 
 /**
  * What a reader would see move, counted from the layout itself (not from frames, so a slow page counts the same):
@@ -90,7 +92,7 @@ async function say(you, text, id) {
 
 (async () => {
   while (!window.__setIslandState) await sleep(10);
-  window.__setIslandState({ ...base, reduceMotion: false, turns: [] });
+  window.__setIslandState({ ...base, material, reduceMotion: false, turns: [] });
   watch();
   await sleep(1500);
   for (let round = 0; round < 3; round += 1) {
@@ -101,5 +103,7 @@ async function say(you, text, id) {
   }
   await sleep(600);
   window.__LIVE.bubbles = document.querySelectorAll(".bubble").length;
+  // Anything still animating inside the conversation once it is over (a bubble kept on its own layer, a pulsing dot).
+  window.__LIVE.stillAnimating = document.querySelector(".transcript").getAnimations({ subtree: true }).length;
   window.__LIVE.done = true;
 })();

@@ -225,17 +225,19 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .turn-copy { flex: none; width: 22px; height: 22px; opacity: 0; transition: opacity 120ms, background 120ms, color 120ms; }
 .bubble-row:hover .turn-copy, .turn-copy:focus-visible { opacity: 1; }
 .bubble .words { color: var(--text); }
-/* Words still arriving are dimmer; settling is a change of colour only, so it eases instead of flashing. */
-.bubble .dim { font-size: inherit; transition: color 180ms ease-out; }
+.bubble .dim { font-size: inherit; }
 /* a turn that arrives during the call comes in, so the conversation grows instead of popping */
-.turn[data-entering="true"] { animation: turn-in 200ms var(--ease) both; }
+/* No fill mode: once it has played nothing of it stays, so a bubble is not kept on a layer of its own. */
+.turn[data-entering="true"] { animation: turn-in 200ms var(--ease); }
 @keyframes turn-in { from { opacity: 0; transform: translateY(6px); } }
 /* still being said: three dots that pulse in place (no layout, no re-render) */
 .live-dots { white-space: nowrap; }
-.live-dots i { display: inline-block; width: 4px; height: 4px; margin-right: 3px; border-radius: 50%; background: var(--secondary); vertical-align: 1.5px; animation: typing 1.2s ease-in-out infinite; }
+/* The pulse is the dot's colour, not its opacity: an opacity animation puts each dot on its own layer inside the text. */
+.live-dots i { display: inline-block; width: 4px; height: 4px; margin-right: 3px; border-radius: 50%; background: rgba(255, 255, 255, 0.3); vertical-align: 1.5px; animation: live-dot 1.2s ease-in-out infinite; }
+@keyframes live-dot { 0%, 50%, 100% { background-color: rgba(255, 255, 255, 0.3); } 25% { background-color: rgba(255, 255, 255, 0.8); } }
 .live-dots i:nth-child(2) { animation-delay: 0.2s; }
 .live-dots i:nth-child(3) { animation-delay: 0.4s; margin-right: 0; }
-.island[data-reduce-motion="true"] .live-dots i { animation: none; opacity: 0.6; }
+.island[data-reduce-motion="true"] .live-dots i, .island[data-material="opaque"] .live-dots i { animation: none; background: rgba(255, 255, 255, 0.5); }
 @media (prefers-reduced-motion: reduce) { .turn[data-entering="true"], .live-dots i { animation: none; } }
 
 .latest { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px; border-radius: 12px; background: #333; color: var(--text); font-size: 11px; font-weight: 500; }

@@ -893,7 +893,9 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
       {state.liveHelp !== false && <HelpSection current={state.assist} earlier={state.lastHelp} />}
       <div className="hairline" />
       {hasBrief && state.dial && <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} talking={state.turns.length > 0} />}
-      <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} />
+      {/* No blur behind the window (Windows): its see-through window left old words painted under new ones when the
+          view moved a little every frame, so there the view goes to the latest line at once and turns just appear. */}
+      <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion || state.material === "opaque"} />
     </div>
   );
 }
@@ -998,7 +1000,8 @@ function TranscriptScroll({ turns, reduceMotion }: { turns: Turn[]; reduceMotion
       if (rest < 0.5) return jump();
       at += rest * (1 - Math.exp(-(now - last) / GLIDE_MS));
       last = now;
-      el.scrollTop = at;
+      // Whole pixels only: text drawn between two pixels is redrawn blurred on every step.
+      el.scrollTop = Math.round(at);
       current.frame = requestAnimationFrame(step);
     };
     glide.current = { frame: requestAnimationFrame(step), limit: setTimeout(jump, GLIDE_LIMIT_MS) };

@@ -109,7 +109,7 @@ const channelTypeMenu = {
 
 const postCall = (stage, extra = {}) => ({
   stage, memoId: "memo-1", contactName: "Marta Ruiz", changes: [], canApprove: false, applied: null, undoUntil: null, note: null,
-  email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, ...extra,
+  email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, crmUrl: null, ...extra,
 });
 
 const postCallChanges = [
@@ -254,6 +254,11 @@ export const fixtures = [
   { name: "postcall-open-meeting-added", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, meeting: { state: "added", when: "Thursday 10:00" } }) }, expect: { width: 420 }, fit: true },
   { name: "postcall-open-meeting-check", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, meeting: { state: "check", when: "Thursday 10:00" } }) }, expect: { width: 420 }, fit: true },
   { name: "postcall-open-notes-tab", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, summary: "Discussed CRM migration timeline. Team concerned about data migration and costs. Marta interested in pilot next quarter.", notes: true }) }, expect: { width: 420 }, fit: true, steps: [".postcall-tab:nth-child(2)"] },
+  // every change is ticked, the one Vocify was less sure of included
+  { name: "postcall-open-all-ticked", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges, canApprove: true }) }, expect: { width: 420, ticked: 5, saveLabel: "Save 5 to HubSpot" }, fit: true },
+  // a recording with no contact: nothing is saved from here, the card sends the rep to Vocify's contact picker
+  { name: "postcall-open-needs-contact", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { contactName: null, changes: postCallChanges.slice(3) }) }, expect: { width: 420, ticked: 2, saveLabel: "Choose contact to save" }, fit: true },
+  { name: "postcall-open-done-link", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("done", { applied: 4, crmUrl: "https://app.hubspot.com/contacts/1/record/0-1/42" }) }, expect: { width: 420, height: 200, crmLink: "Open in HubSpot" }, fit: true },
   { name: "postcall-open-nothing-sure", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [], canApprove: false }) }, expect: { width: 420 }, fit: true },
   // calling the CRM contact on screen: same names and values as the Mac app's IslandFixtures.swift
   { name: "idle-callable", state: { onScreen: ana }, expect: { width: 257, height: 32 } },
@@ -284,11 +289,11 @@ export const fixtures = [
   { name: "confirm-no-caller-id", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, callerId: null, state: "no_caller_id" } }, expect: { width: 380, height: 88 } },
   { name: "confirm-needs-contact", state: { mode: { kind: "dialConfirm" }, expanded: true, onScreen: { ...ana, name: null, phone: null, state: "needs_contact" } }, expect: { width: 380, height: 88 } },
   { name: "dialing-ringing", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ringing") }, expect: { width: 380, height: 88 } },
-  // the brief stays with the call: under "Calling…", and once answered the first thing in the conversation
+  // the brief stays with the call: under "Calling…"; once answered it is in full until someone speaks, then one line above the conversation
   { name: "dialing-ringing-brief", state: { mode: { kind: "dialing" }, expanded: true, dial: dial("ringing", { brief: BRIEF, companyBrief: ACME }) }, expect: { width: 380, lines: 4, whens: 4, icons: 4 }, natural: true },
-  { name: "in-call-brief", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, brief: BRIEF, companyBrief: ACME }) }, expect: { width: 460, height: 400, briefRows: 4, briefInTranscript: true } },
+  { name: "in-call-brief", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, brief: BRIEF, companyBrief: ACME }) }, expect: { width: 460, height: 400, briefRows: 4, briefOpen: false, briefMaxHeight: 32 } },
   // just answered: the live view is there before a word is said, with the brief where the conversation will be
-  { name: "in-call-just-answered", state: { ...inCall, turns: [], dial: dial("active", { answeredAt: NOW - 2_000, brief: BRIEF, companyBrief: ACME }) }, expect: { width: 460, height: 400, briefRows: 4, briefInTranscript: true, listening: true } },
+  { name: "in-call-just-answered", state: { ...inCall, turns: [], dial: dial("active", { answeredAt: NOW - 2_000, brief: BRIEF, companyBrief: ACME }) }, expect: { width: 460, height: 400, briefRows: 4, briefOpen: true, listening: true } },
   { name: "in-call-first-word", state: { ...inCall, turns: [{ id: "k1", you: true, label: null, text: "", pending: "Hola" }], dial: dial("active", { answeredAt: NOW - 4_000 }) }, expect: { width: 460, height: 400, bubbleText: "Hola" } },
   { name: "in-call", state: inCall, expect: { width: 460, height: 400, copyButtons: 3 } },
   { name: "in-call-muted-keypad", state: { ...inCall, dial: dial("active", { answeredAt: NOW - 65_000, muted: true }), keypadOpen: true }, expect: { width: 460, height: 400, keypad: true } },
@@ -310,8 +315,8 @@ export const interactions = [
   { name: "finish-after-stop", fixture: "stopped-open-manual", click: ".primary-action", expect: [{ name: "finish" }] },
   { name: "open-vocify-after-failed-send", fixture: "finishing-open-failed", click: ".primary-action", expect: [{ name: "openApp" }] },
   // Save writes what is ticked: an unticked change, and one the call wasn't clear on, are left out (as the Mac app sends it).
-  { name: "save-leaves-out-unticked", fixture: "postcall-open-ready", before: [".change-row .change-toggle"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: ["contact:title", "contact:needs_review"], edits: {} } }] },
-  { name: "save-sends-a-picked-value", fixture: "postcall-open-ready", before: [".change-row .change-value", ".option-row:nth-child(2)"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: ["contact:needs_review"], edits: { "contact:title": "manager" } } }] },
+  { name: "save-leaves-out-unticked", fixture: "postcall-open-ready", before: [".change-row .change-toggle"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: ["contact:title"], edits: {} } }] },
+  { name: "save-sends-a-picked-value", fixture: "postcall-open-ready", before: [".change-row .change-value", ".option-row:nth-child(2)"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: [], edits: { "contact:title": "manager" } } }] },
   { name: "call-glyph-opens-confirm", fixture: "idle-callable", click: ".call-glyph", expect: [{ name: "openDialConfirm" }] },
   { name: "blocked-glyph-opens-the-island", fixture: "idle-crm-blocked", click: ".blocked-glyph", expect: [{ name: "toggle" }] },
   { name: "blocked-fix-opens-vocify", fixture: "idle-open-crm-blocked", click: ".primary-action", expect: [{ name: "fixCrmAccess" }] },

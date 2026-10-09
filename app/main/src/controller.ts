@@ -684,7 +684,9 @@ export class IslandController {
   private postCallAction(type: string, details: Record<string, unknown>): void {
     this.effects.emit("postcall:action", { ...details, type });
     // These also bring the dashboard forward, like the Swift controller.
-    if (type === "review" || type === "openEmail" || type === "notes") this.effects.showMainWindow();
+    if (type === "review" || type === "openEmail" || type === "openNotes" || type === "notes" || type === "chooseContact") this.effects.showMainWindow();
+    // The updated record opens in the browser, never in Vocify's window (only a web link reaches here: see parse).
+    if (type === "openCrm" && this.current.postCall?.crmUrl) this.effects.openExternal?.(this.current.postCall.crmUrl);
   }
 
   /** The dashboard moved the call on (written, ready, email drafted...). */

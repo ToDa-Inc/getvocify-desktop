@@ -71,7 +71,11 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
     atBottom: t ? t.scrollHeight - t.scrollTop - t.clientHeight < 2 : null,
     clipped,
     briefRows: document.querySelectorAll('.before-call .recent-line').length,
-    briefInTranscript: !!document.querySelector('.transcript .before-call'),
+    briefOpen: document.querySelector('.before-call') ? document.querySelector('.before-call').dataset.open === 'true' : null,
+    briefHeight: document.querySelector('.before-call') ? Math.round(document.querySelector('.before-call').getBoundingClientRect().height) : null,
+    ticked: document.querySelectorAll('.change-row .tick[data-kept="true"]').length,
+    saveLabel: document.querySelector('.postcall-actions .primary-action')?.textContent.trim() ?? null,
+    crmLink: [...document.querySelectorAll('.postcall-line .text-action')].map((e) => e.textContent.trim()).join('|'),
     listening: !!document.querySelector('.listening'),
     keypad: !!document.querySelector('.float-menu .dial-pad'),
     copyButtons: document.querySelectorAll('.copy-button').length,
@@ -200,7 +204,8 @@ for (const fixture of fixtures) {
       }
     }
     if (fixture.expect.briefRows !== undefined && m.briefRows !== fixture.expect.briefRows) problems.push(`${m.briefRows} row(s) in the call's brief, expected ${fixture.expect.briefRows}`);
-    for (const key of ["briefInTranscript", "listening", "keypad", "bubbleText", "copyButtons"]) {
+    if (fixture.expect.briefMaxHeight !== undefined && m.briefHeight > fixture.expect.briefMaxHeight) problems.push(`the call's brief is ${m.briefHeight}px tall, expected at most ${fixture.expect.briefMaxHeight}px`);
+    for (const key of ["briefOpen", "listening", "keypad", "bubbleText", "copyButtons", "ticked", "saveLabel", "crmLink"]) {
       if (fixture.expect[key] !== undefined && m[key] !== fixture.expect[key]) problems.push(`${key} is ${JSON.stringify(m[key])}, expected ${JSON.stringify(fixture.expect[key])}`);
     }
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);

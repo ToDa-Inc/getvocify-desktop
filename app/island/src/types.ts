@@ -69,7 +69,7 @@ export type PostCallChange = {
   multiple: boolean;
   /** Free text the dashboard will write as typed: the card lets the rep type over it. False everywhere else. */
   editable: boolean;
-  /** Scored under "needs review": shown unticked, or left to the review in Vocify. */
+  /** Scored under "needs review": ticked like the rest, with a mark saying Vocify was less sure. */
   check: boolean;
 };
 
@@ -97,6 +97,8 @@ export type PostCallData = {
   crm: string | null;
   offerStopEmails: boolean;
   type: PostCallType | null;
+  /** The updated record in the CRM, once written; null when it has no link. */
+  crmUrl: string | null;
 };
 
 /** What still needs the rep; the count on the closed island. */

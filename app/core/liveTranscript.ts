@@ -484,7 +484,8 @@ export class LiveTranscript {
       before.start !== undefined &&
       before.end !== undefined &&
       last.start >= before.start - LiveTranscript.overlapSlack &&
-      last.start <= before.end + LiveTranscript.overlapSlack
+      // During their paragraph, not just after it: a one-word answer right behind a question is a turn of its own.
+      last.start < before.end
     ) {
       return rows.length - 2;
     }

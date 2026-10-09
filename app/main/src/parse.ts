@@ -96,7 +96,14 @@ export function parsePostCall(raw: unknown): PostCallData | null {
     crm: nonBlank(raw.crm),
     offerStopEmails: bool(raw.offerStopEmails) ?? false,
     type,
+    crmUrl: webUrl(raw.crmUrl),
   };
+}
+
+/** Only a web link is ever opened from the card. */
+function webUrl(raw: unknown): string | null {
+  const url = nonBlank(raw);
+  return url && /^https?:\/\//i.test(url) ? url : null;
 }
 
 export type LiveChannelKind = "call" | "meeting";

@@ -430,13 +430,38 @@ function BriefKindIcon({ kind }: { kind: BriefKind }) {
   }
 }
 
-/** During the call: what happened with the contact before, as the first thing in the conversation. It scrolls away as
- * the call fills the space, so nothing needs folding and nothing stays pinned over the transcript. */
-function BeforeThisCall({ lines, company }: { lines: BriefLine[]; company: CompanyBrief | null }) {
+/**
+ * During the call: what happened with the contact before. In full while nobody has spoken yet (there is nothing else
+ * to read); once the conversation starts it folds to one line above it, so the call has the space, and opens on request.
+ */
+function BeforeThisCall({ lines, company, talking }: { lines: BriefLine[]; company: CompanyBrief | null; talking: boolean }) {
+  // The rep's own choice wins over the automatic fold, for the rest of the call.
+  const [picked, setPicked] = useState<boolean | null>(null);
+  const open = picked ?? !talking;
+  const latest = lines[0]?.text ?? company?.latest?.who ?? null;
+  const more = lines.length + (company ? 1 : 0) - 1;
   return (
-    <div className="before-call">
-      <div className="recent-label">Before this call</div>
-      <BriefBody lines={lines} company={company} labelled={false} />
+    <div className="before-call" data-open={open}>
+      <button
+        type="button"
+        className="recent-label before-call-toggle"
+        aria-expanded={open}
+        title={open ? "Show less" : "What happened before this call"}
+        onClick={(event) => {
+          event.stopPropagation();
+          setPicked(!open);
+        }}
+      >
+        <ChevronDown size={8} style={{ transform: open ? "none" : "rotate(-90deg)", transition: "transform 150ms" }} />
+        <span>Before this call</span>
+        {!open && latest && <span className="before-call-latest">{latest}</span>}
+        {!open && more > 0 && <span className="before-call-more">+{more}</span>}
+      </button>
+      <div className="before-call-fold" aria-hidden={!open}>
+        <div className="before-call-body">
+          <BriefBody lines={lines} company={company} labelled={false} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -786,7 +811,7 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
   }, [state.keypadOpen]);
   const closeKeypad = useCallback(() => act({ name: "keypad", open: false }), [act]);
   const menu = state.typeMenu;
-  const brief = state.dial?.brief || state.dial?.companyBrief ? <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} /> : null;
+  const hasBrief = Boolean(state.dial?.brief?.length || state.dial?.companyBrief);
   return (
     <div className="open-island">
       <div className="controls">
@@ -867,7 +892,8 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
       {state.callAudioLost && !state.paused && <CallAudioLostLine />}
       {state.liveHelp !== false && <HelpSection current={state.assist} earlier={state.lastHelp} />}
       <div className="hairline" />
-      <TranscriptScroll turns={state.turns} before={brief} />
+      {hasBrief && state.dial && <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} talking={state.turns.length > 0} />}
+      <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} />
     </div>
   );
 }
@@ -914,21 +940,74 @@ function HelpSection({ current, earlier }: { current: Assist | null; earlier: As
 }
 
 const FOLLOW_SLACK = 120;
+/** The glide covers what is left to the latest line on this time constant (ms): it lands in about a fifth of a second. */
+const GLIDE_MS = 60;
+/** A glide that got no frames (a window the system stopped painting) still ends at the latest line by then. */
+const GLIDE_LIMIT_MS = 400;
 
-function TranscriptScroll({ turns, before }: { turns: Turn[]; before?: ReactNode }) {
+/**
+ * The conversation, kept at its latest line while the rep is reading there. New words make the view glide down
+ * instead of snapping a line at a time, and only the rep's own scrolling (wheel, scrollbar) lets go of the latest line:
+ * the view's own movement never does.
+ */
+function TranscriptScroll({ turns, reduceMotion }: { turns: Turn[]; reduceMotion: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const [following, setFollowing] = useState(true);
+  const glide = useRef<{ frame: number; limit: ReturnType<typeof setTimeout> } | null>(null);
+  // Turns already there when the transcript opens just show; the ones that arrive after it come in.
+  const opened = useRef(false);
+  useEffect(() => {
+    opened.current = true;
+  }, []);
+
+  const stopGlide = useCallback(() => {
+    if (!glide.current) return;
+    cancelAnimationFrame(glide.current.frame);
+    clearTimeout(glide.current.limit);
+    glide.current = null;
+  }, []);
 
   const jump = useCallback(() => {
+    stopGlide();
     const el = ref.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, []);
+  }, [stopGlide]);
+
+  /** To the latest line: gliding when it is near and frames are running, at once otherwise (tests pin the clock). */
+  const follow = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const left = () => el.scrollHeight - el.clientHeight - el.scrollTop;
+    const still = reduceMotion || window.__fixedNow !== undefined || document.visibilityState !== "visible";
+    if (still || left() > el.clientHeight) return jump();
+    // A glide already under way just has further to go: its limit starts again with the new words.
+    if (glide.current) {
+      clearTimeout(glide.current.limit);
+      glide.current.limit = setTimeout(jump, GLIDE_LIMIT_MS);
+      return;
+    }
+    if (left() < 1) return;
+    let last = performance.now();
+    // The position is kept here: the element rounds what it is given, and a glide that read it back would stall.
+    let at = el.scrollTop;
+    const step = (now: number) => {
+      const current = glide.current;
+      if (!current) return;
+      const rest = el.scrollHeight - el.clientHeight - at;
+      if (rest < 0.5) return jump();
+      at += rest * (1 - Math.exp(-(now - last) / GLIDE_MS));
+      last = now;
+      el.scrollTop = at;
+      current.frame = requestAnimationFrame(step);
+    };
+    glide.current = { frame: requestAnimationFrame(step), limit: setTimeout(jump, GLIDE_LIMIT_MS) };
+  }, [jump, reduceMotion]);
 
   const onScroll = () => {
     const el = ref.current;
-    if (!el) return;
-    // Growth alone never counts as scrolling away: only the distance from the bottom does.
+    // The glide's own movement says nothing about where the rep wants to read.
+    if (!el || glide.current) return;
     const next = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_SLACK;
     if (next !== followingRef.current) {
       followingRef.current = next;
@@ -936,9 +1015,15 @@ function TranscriptScroll({ turns, before }: { turns: Turn[]; before?: ReactNode
     }
   };
 
+  /** The rep took the scroll (wheel up, or the scrollbar): the view stops moving under them. */
+  const letGo = () => {
+    stopGlide();
+    onScroll();
+  };
+
   useLayoutEffect(() => {
-    if (followingRef.current) jump();
-  }, [turns, jump]);
+    if (followingRef.current) follow();
+  }, [turns, follow]);
 
   // The viewport shrinks when the type list opens and the content grows as words stream in:
   // either way, a reader who is at the latest line stays there (the Swift view anchors to the bottom).
@@ -946,22 +1031,34 @@ function TranscriptScroll({ turns, before }: { turns: Turn[]; before?: ReactNode
     const el = ref.current;
     if (!el) return;
     const observer = new ResizeObserver(() => {
-      if (followingRef.current) jump();
+      if (followingRef.current) follow();
     });
     observer.observe(el);
     if (el.firstElementChild) observer.observe(el.firstElementChild);
-    return () => observer.disconnect();
-  }, [jump]);
+    return () => {
+      observer.disconnect();
+      stopGlide();
+    };
+  }, [follow, stopGlide]);
 
   return (
     <div className="transcript-wrap">
-      <div className="transcript" ref={ref} onScroll={onScroll}>
+      <div
+        className="transcript"
+        ref={ref}
+        onScroll={onScroll}
+        onWheel={(event) => {
+          if (event.deltaY < 0) letGo();
+        }}
+        onPointerDown={(event) => {
+          if (event.target === ref.current) letGo();
+        }}
+      >
         <div>
-          {before}
-          {turns.length === 0 && <div className="listening" data-after-brief={Boolean(before)}>Listening…</div>}
+          {turns.length === 0 && <div className="listening">Listening…</div>}
           <div className="bubbles">
             {turns.map((turn) => (
-              <TurnBubble key={turn.id} turn={turn} />
+              <TurnBubble key={turn.id} turn={turn} arrives={opened.current && !reduceMotion} />
             ))}
           </div>
           <div style={{ height: 12 }} />
@@ -1016,24 +1113,46 @@ function CopyButton({ text, help, className }: { text: string; help: string; cla
   );
 }
 
-function TurnBubble({ turn }: { turn: Turn }) {
+/**
+ * One turn. While its words are still arriving the bubble only ever grows: the live transcription rewrites its last
+ * words several times a second, and a bubble that followed every rewrite would shrink and stretch under the reader.
+ * It takes its real size again once the turn has settled.
+ */
+function TurnBubble({ turn, arrives }: { turn: Turn; arrives: boolean }) {
   const parts = turnParts(turn);
-  const phase = Math.floor(useNow(350, parts.dots) / 350) % 3;
-  const lead = parts.text === "" && parts.tail === "" ? "" : " ";
+  const bubble = useRef<HTMLDivElement>(null);
+  const floor = useRef({ width: 0, height: 0 });
+  // Decided once, when the bubble is first drawn: a later update never plays the entrance again.
+  const [entering] = useState(arrives);
+  useLayoutEffect(() => {
+    const el = bubble.current;
+    if (!el) return;
+    el.style.minWidth = "";
+    el.style.minHeight = "";
+    if (!parts.dots) {
+      floor.current = { width: 0, height: 0 };
+      return;
+    }
+    const box = el.getBoundingClientRect();
+    floor.current = { width: Math.max(floor.current.width, box.width), height: Math.max(floor.current.height, box.height) };
+    el.style.minWidth = `${floor.current.width}px`;
+    el.style.minHeight = `${floor.current.height}px`;
+  }, [parts.text, parts.tail, parts.dots]);
   return (
-    <div className="turn" data-you={turn.you}>
+    <div className="turn" data-you={turn.you} data-entering={entering}>
       {!turn.you && turn.label && <div className="turn-label">{turn.label}</div>}
       <div className="bubble-row" data-you={turn.you}>
-        <div className="bubble" data-you={turn.you}>
+        <div className="bubble" ref={bubble} data-you={turn.you}>
           <span className="words">{parts.text}</span>
           {parts.tail !== "" && <span className="dim">{(parts.joined ? "" : " ") + parts.tail}</span>}
+          {/* Held to the last word (no-break space), so the dots never drop to a line of their own. */}
           {parts.dots && (
-            <>
-              {lead}
-              {[0, 1, 2].map((dot) => (
-                <span key={dot} className="dim" style={{ opacity: dot === phase ? 1 : 0.35 }}>•</span>
-              ))}
-            </>
+            <span className="live-dots" aria-hidden>
+              {"\u00a0"}
+              <i />
+              <i />
+              <i />
+            </span>
           )}
         </div>
         {turnPlainText(turn) !== "" && <CopyButton text={turnPlainText(turn)} help="Copy" className="turn-copy" />}

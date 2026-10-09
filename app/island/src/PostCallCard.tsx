@@ -5,7 +5,7 @@ import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallD
 
 /**
  * The after-call card: a port of `PostCallMenu` (MeetingPill.swift) with its layout numbers (`PostCallLayout`).
- * CRM / Email / Notes tabs; the changes grouped by record with a tick each; a value with options opens a floating list,
+ * CRM / Email / Notes tabs; the changes grouped by record, every one ticked until the rep unticks it; a value with options opens a floating list,
  * free text is edited in Vocify (the dashboard only takes values from a field's options); the note is edited here and
  * saved with the update.
  */
@@ -21,11 +21,10 @@ const GROUPS = [
   { object: "other", title: "Other" },
 ];
 
-/** The changes the card lists, by record. One the call wasn't clear on is left to the review in Vocify. */
+/** The changes the card lists, by record. */
 function groupedChanges(postCall: PostCallData) {
-  const sure = postCall.changes.filter((c) => !c.check);
   return GROUPS.flatMap((group) => {
-    const changes = sure.filter((c) => c.object === group.object || (group.object === "other" && !["contact", "company", "deal"].includes(c.object)));
+    const changes = postCall.changes.filter((c) => c.object === group.object || (group.object === "other" && !["contact", "company", "deal"].includes(c.object)));
     return changes.length ? [{ title: group.title, changes }] : [];
   });
 }
@@ -44,7 +43,8 @@ function shownValue(change: PostCallChange, edited: string | undefined): string 
 }
 
 export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostCallData; act: Act; /** Where an open dropdown ends (px from the window's top), or null: the window grows to include it. */ onPopupExtent: (bottom: number | null) => void }) {
-  const [kept, setKept] = useState<Set<string>>(() => new Set(postCall.changes.filter((c) => !c.check).map((c) => c.key)));
+  // What the rep unticked. Everything else is written: a change that arrives after the card opened is ticked too.
+  const [dropped, setDropped] = useState<Set<string>>(() => new Set());
   const [edited, setEdited] = useState<Record<string, string>>({});
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("crm");
@@ -53,7 +53,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
 
   // A new call: its own ticks, picks and note.
   useEffect(() => {
-    setKept(new Set(postCall.changes.filter((c) => !c.check).map((c) => c.key)));
+    setDropped(new Set());
     setEdited({});
     setNoteDraft(null);
     setActiveTab("crm");
@@ -74,7 +74,8 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   if (postCall.email) tabs.push("email");
   if (postCall.notes || postCall.summary !== null || noteEditable) tabs.push("notes");
   const tab = tabs.includes(activeTab) ? activeTab : "crm";
-  const keptCount = postCall.changes.filter((c) => kept.has(c.key)).length;
+  const isKept = (key: string) => !dropped.has(key);
+  const keptCount = postCall.changes.filter((c) => isKept(c.key)).length;
   const crm = postCallCrmName(postCall);
 
   // The island never takes the keyboard (a click must not take it from the call), except while this card can still save:
@@ -92,9 +93,16 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   }, []);
 
   const toggleChange = (key: string) =>
-    setKept((previous) => {
+    setDropped((previous) => {
       const next = new Set(previous);
       next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  const keep = (key: string) =>
+    setDropped((previous) => {
+      if (!previous.has(key)) return previous;
+      const next = new Set(previous);
+      next.delete(key);
       return next;
     });
 
@@ -106,13 +114,13 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
       next = (values.includes(value) ? values.filter((v) => v !== value) : [...values, value]).join(";");
     }
     setEdited((previous) => ({ ...previous, [change.key]: next }));
-    setKept((previous) => new Set([...previous, change.key]));
+    keep(change.key);
     if (!change.multiple) setOptions(null);
   };
 
   /** Like the Mac app: what is not ticked is left out, and only values the rep changed are sent as edits. */
   const approve = () => {
-    const omit = postCall.changes.map((c) => c.key).filter((key) => !kept.has(key));
+    const omit = postCall.changes.map((c) => c.key).filter((key) => !isKept(key));
     if (omit.length >= postCall.changes.length) return;
     const edits = Object.fromEntries(Object.entries(edited).filter(([key, value]) => postCall.changes.some((c) => c.key === key && c.value !== value)));
     act({ name: "postCall", type: "approve", details: { omit, edits, ...(noteDraft !== null ? { note: noteDraft } : {}) } });
@@ -180,13 +188,13 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
                           key={change.key}
                           change={change}
                           shown={shownValue(change, edited[change.key])}
-                          kept={kept.has(change.key)}
+                          kept={isKept(change.key)}
                           open={options?.key === change.key}
                           toggle={() => toggleChange(change.key)}
                           editable={typable && change.editable}
                           onEdit={(text) => {
                             setEdited((previous) => ({ ...previous, [change.key]: text }));
-                            setKept((previous) => new Set([...previous, change.key]));
+                            keep(change.key);
                           }}
                           toggleOptions={(element) => {
                             setTypeMenu(null);
@@ -209,7 +217,11 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
                     </>
                   ) : (
                     <>
-                      {review}
+                      {/* No contact on this recording: Vocify's review has the contact picker, and saves from there. */}
+                      <button type="button" className="primary-action" title={`Pick who it was with in Vocify, then save to ${crm}`} onClick={() => send("chooseContact")}>
+                        <ArrowUpRight size={9} stroke={2.6} />
+                        <span>Choose contact to save</span>
+                      </button>
                       <div className="grow" />
                     </>
                   )}
@@ -225,7 +237,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
               </div>
             )}
             {postCall.stage === "done" && (
-              <Line icon={<Check size={10.5} stroke={3} />}>
+              <Line icon={<Check size={10.5} stroke={3} />} trailing={postCall.crmUrl ? <TextAction title={`Open in ${crm}`} arrow onClick={() => send("openCrm")} /> : undefined}>
                 <span>{postCall.applied === null ? `Updated in ${crm}` : postCall.applied === 1 ? `1 field updated in ${crm}` : `${postCall.applied} fields updated in ${crm}`}</span>
               </Line>
             )}
@@ -384,8 +396,8 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable,
   const hasOptions = change.options.length > 0;
   return (
     <div className="change-row">
-      <button type="button" className="change-toggle" title={kept ? "Untick to leave it out" : "Tick to write it"} aria-label={change.label} aria-pressed={kept} onClick={toggle}>
-        <span className="tick" data-kept={kept} data-check={change.check}>{kept && <Check size={7.5} stroke={4} />}</span>
+      <button type="button" className="change-toggle" title={kept ? (change.check ? "Vocify was less sure of this one. Untick to leave it out" : "Untick to leave it out") : "Tick to write it"} aria-label={change.label} aria-pressed={kept} onClick={toggle}>
+        <span className="tick" data-kept={kept}>{kept && <Check size={7.5} stroke={4} />}</span>
         <span className="change-label" style={{ width: L.label }}>{change.label}</span>
       </button>
       <div

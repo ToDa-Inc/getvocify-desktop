@@ -188,8 +188,19 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .help-drafting { display: flex; align-items: center; gap: 6px; height: 17px; }
 .help-say { font-size: 12.5px; font-weight: 500; color: var(--text); }
 .help-empty { font-size: 11.5px; color: rgba(255, 255, 255, 0.58); }
-/* the contact's brief during a call: the first thing in the conversation, scrolled away by it */
-.before-call { display: flex; flex-direction: column; gap: 5px; margin: 0 16px; padding: 10px 0 9px; border-bottom: 0.5px solid rgba(255, 255, 255, 0.07); user-select: text; }
+/* the contact's brief during a call: in full until someone speaks, then one line above the conversation */
+.before-call { flex: none; display: flex; flex-direction: column; margin: 0 16px; padding: 7px 0; border-bottom: 0.5px solid rgba(255, 255, 255, 0.07); user-select: text; }
+.before-call-toggle { display: flex; align-items: center; gap: 5px; min-width: 0; height: 16px; padding: 0; text-align: left; }
+.before-call-toggle:hover { color: var(--secondary); }
+.before-call-toggle > svg, .before-call-toggle > span:first-of-type { flex: none; }
+.before-call-latest { flex: 1; min-width: 0; margin-left: 4px; font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: offer-brief-in 200ms ease-out; }
+.before-call-more { flex: none; font-size: 11px; font-weight: 500; letter-spacing: 0; color: rgba(255, 255, 255, 0.45); font-variant-numeric: tabular-nums; }
+/* Folding is the row's height going to nothing (grid rows animate; `height: auto` does not). */
+.before-call-fold { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 240ms var(--ease); }
+.before-call[data-open="true"] .before-call-fold { grid-template-rows: 1fr; }
+.before-call-body { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 5px; max-height: 148px; }
+.before-call[data-open="true"] .before-call-body { overflow-y: auto; scrollbar-width: none; padding-top: 6px; }
+.island[data-reduce-motion="true"] .before-call-fold { transition: none; }
 .dim { color: var(--secondary); font-size: 12px; }
 .dots { display: inline-flex; gap: 4px; }
 .dots span { width: 5px; height: 5px; border-radius: 50%; background: rgba(255, 255, 255, 0.5); animation: typing 1.57s ease-in-out infinite; }
@@ -202,7 +213,6 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .transcript::-webkit-scrollbar { width: 8px; }
 .transcript::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.16); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
 .listening { text-align: center; color: var(--secondary); padding-top: 28px; }
-.listening[data-after-brief="true"] { padding-top: 14px; }
 .bubbles { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px 0; }
 .turn { display: flex; flex-direction: column; gap: 3px; max-width: 340px; align-self: flex-start; align-items: flex-start; }
 .turn[data-you="true"] { align-self: flex-end; align-items: flex-end; }
@@ -215,7 +225,18 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .turn-copy { flex: none; width: 22px; height: 22px; opacity: 0; transition: opacity 120ms, background 120ms, color 120ms; }
 .bubble-row:hover .turn-copy, .turn-copy:focus-visible { opacity: 1; }
 .bubble .words { color: var(--text); }
-.bubble .dim { font-size: inherit; }
+/* Words still arriving are dimmer; settling is a change of colour only, so it eases instead of flashing. */
+.bubble .dim { font-size: inherit; transition: color 180ms ease-out; }
+/* a turn that arrives during the call comes in, so the conversation grows instead of popping */
+.turn[data-entering="true"] { animation: turn-in 200ms var(--ease) both; }
+@keyframes turn-in { from { opacity: 0; transform: translateY(6px); } }
+/* still being said: three dots that pulse in place (no layout, no re-render) */
+.live-dots { white-space: nowrap; }
+.live-dots i { display: inline-block; width: 4px; height: 4px; margin-right: 3px; border-radius: 50%; background: var(--secondary); vertical-align: 1.5px; animation: typing 1.2s ease-in-out infinite; }
+.live-dots i:nth-child(2) { animation-delay: 0.2s; }
+.live-dots i:nth-child(3) { animation-delay: 0.4s; margin-right: 0; }
+.island[data-reduce-motion="true"] .live-dots i { animation: none; opacity: 0.6; }
+@media (prefers-reduced-motion: reduce) { .turn[data-entering="true"], .live-dots i { animation: none; } }
 
 .latest { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px; border-radius: 12px; background: #333; color: var(--text); font-size: 11px; font-weight: 500; }
 .latest:active { transform: translateX(-50%) scale(0.93); }
@@ -249,7 +270,6 @@ button.type-tag:hover { color: var(--text); }
 .change-row { display: flex; align-items: flex-start; gap: 8px; padding: 4px 6px; }
 .change-toggle { flex: none; display: flex; align-items: flex-start; gap: 8px; background: transparent; border: 0; padding: 0; text-align: left; }
 .tick { width: 14px; height: 14px; margin-top: 1.5px; flex: none; box-sizing: border-box; border-radius: 50%; border: 1.2px solid var(--secondary); display: inline-flex; align-items: center; justify-content: center; }
-.tick[data-check="true"]:not([data-kept="true"]) { border-color: var(--warning); }
 .tick[data-kept="true"] { background: var(--beige); border: 0; color: rgba(0, 0, 0, 0.85); }
 .change-label { font-size: 11.5px; line-height: 17px; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .change-value { flex: 1; min-width: 0; display: flex; align-items: flex-start; }

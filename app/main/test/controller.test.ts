@@ -593,10 +593,24 @@ test("choices in the card go to the dashboard unchanged; review, email and notes
   t.controller.act({ name: "postCall", type: "approve", details: { omit: ["deal:amount"], edits: {} } });
   assert.deepEqual(t.last("postcall:action"), { omit: ["deal:amount"], edits: {}, type: "approve" });
   assert.equal(t.log.mainWindow, 0);
-  for (const type of ["review", "openEmail", "notes"]) t.controller.act({ name: "postCall", type });
+  // "openNotes" is what the card's Notes tab sends ("notes" was the Swift card's name for it).
+  for (const type of ["review", "openEmail", "openNotes"]) t.controller.act({ name: "postCall", type });
   assert.equal(t.log.mainWindow, 3);
   t.controller.act({ name: "postCall", type: "undo" });
   assert.equal(t.log.mainWindow, 3);
+});
+
+test("the updated record opens in the browser, and only a web link the dashboard gave", () => {
+  const t = setup();
+  const opened: string[] = [];
+  (t.controller as unknown as { effects: Effects }).effects.openExternal = (url) => void opened.push(url);
+  t.controller.applyShellState({ postCall: postCall("done", { crmUrl: "javascript:alert(1)" }) });
+  t.controller.act({ name: "postCall", type: "openCrm" });
+  assert.deepEqual(opened, []);
+  t.controller.applyShellState({ postCall: postCall("done", { crmUrl: "https://app.hubspot.com/contacts/1/record/0-1/42" }) });
+  t.controller.act({ name: "postCall", type: "openCrm" });
+  assert.deepEqual(opened, ["https://app.hubspot.com/contacts/1/record/0-1/42"]);
+  assert.equal(t.log.mainWindow, 0);
 });
 
 test("malformed post-call data is dropped, not guessed", () => {

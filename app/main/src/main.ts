@@ -21,6 +21,11 @@ const PRODUCTION_DASHBOARD = "https://app.getvocify.com";
 /** What an installed build opens: the staging site, which has the bridge. Change to PRODUCTION_DASHBOARD once the live site has it. */
 const DEFAULT_DASHBOARD = "https://staging.getvocify.com";
 
+// Windows: the island is a see-through window, and drawn by the graphics card it left old words and black patches
+// inside bubbles whenever the transcript moved smoothly. Drawn in software it is clean (test/paint-island.mjs, on a
+// Windows machine). `--gpu` keeps hardware acceleration, to compare on a given PC.
+if (process.platform === "win32" && !process.argv.includes("--gpu")) app.disableHardwareAcceleration();
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {

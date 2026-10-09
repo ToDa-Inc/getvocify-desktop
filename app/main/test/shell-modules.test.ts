@@ -226,6 +226,7 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
   const emitted: { channel: string; payload: unknown }[] = [];
   const opened: string[] = [];
   const logs: string[] = [];
+  const calendarWatches: boolean[] = [];
   let mainWindow = 0;
   const pcmListeners = new Set<(p: ArrayBuffer) => void>();
   const lostListeners = new Set<(r: string) => void>();
@@ -260,6 +261,7 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
     crmTabs: options.crmTabs,
     askCrmTabs: options.askCrmTabs,
     systemAudioAccess: options.systemAudioAccess,
+    onCalendarWatch: (on) => void calendarWatches.push(on),
     askSystemAudio: options.askSystemAudio,
     controller,
     loopback,
@@ -273,7 +275,7 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
     fetch: async () => ({ status: 200, text: async () => "{}" }),
     log: (line) => logs.push(line),
   };
-  return { call: createBridge(deps), emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, loopbackStops: () => loopbackStops };
+  return { call: createBridge(deps), calendarWatches, emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, loopbackStops: () => loopbackStops };
 }
 
 test("bridge: the permission test shows both permissions as not asked until the dashboard asks for each", async () => {
@@ -438,4 +440,13 @@ test("bridge: on a Mac the call audio permission is the native helper's, and ask
 test("bridge: a build that cannot read browsers does not mention the CRM tab", async () => {
   const b = bridgeSetup({ platform: "darwin" });
   assert.equal("crmTabs" in ((await b.call("permissions:status", {})) as object), false);
+});
+
+test("bridge: the dashboard saying it watches the calendar (or stops) is passed on, nothing else is", async () => {
+  const t = bridgeSetup({});
+  await t.call("shell:state", { state: { calendarWatch: true } });
+  await t.call("shell:state", { state: { recorderReady: true } });
+  await t.call("shell:state", { state: { calendarWatch: "yes" } });
+  await t.call("shell:state", { state: { calendarWatch: false } });
+  assert.deepEqual(t.calendarWatches, [true, false]);
 });

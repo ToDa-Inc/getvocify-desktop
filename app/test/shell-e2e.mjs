@@ -105,6 +105,16 @@ app.whenReady().then(async () => {
     check(await until(() => controller.state.postCall === null && mode() === "idle", 6000, "dismissal"), "Dismissing the card clears the update and the island returns to idle");
     check(await until(() => !dashboard.exists, 6000, "dashboard released"), "the hidden dashboard is given back once nothing needs it");
 
+    // --- the meeting heads-up reads the calendar in the dashboard page: while it does, the page is not given back
+    dashboard.ensureHidden();
+    check(await until(() => dashboard.exists, 4000, "dashboard started"), "the dashboard page can be started hidden");
+    await sleep(800);
+    await dashboard.contents.executeJavaScript("window.vocifyDesktop.shell.setState({ calendarWatch: true })");
+    await sleep(3500);
+    check(dashboard.exists && !dashboard.visible, "the hidden dashboard stays alive while the calendar heads-up is on");
+    await dashboard.contents.executeJavaScript("window.vocifyDesktop.shell.setState({ calendarWatch: false })");
+    check(await until(() => !dashboard.exists, 6000, "dashboard released after the heads-up is off"), "and is given back when the heads-up is off");
+
     // --- a detected call, by hand: the helper's job
     // A recording marks the call as handled until the mic goes quiet, so the first call app to let go ends it (the Swift rule).
     handle.detectCall({ name: "Zoom", appId: "zoom.exe" });

@@ -270,7 +270,7 @@ export class IslandController {
   }
 
   /** A meeting is about to start: the resting island opens once to say who it is with.
-   * Busy (a call, a recording), it is not interrupted; the meeting waits in the open idle island. */
+   * Busy (a call, a recording), it is not interrupted: it is announced as soon as the island is back at rest. */
   private meetingChanged(): void {
     const meeting = this.current.meeting;
     if (!meeting || this.mode !== "idle" || this.announcedMeetings.has(IslandController.occasion(meeting))) return;
@@ -793,5 +793,7 @@ export class IslandController {
   private transition(mode: Mode, expanded: boolean): void {
     this.stopTimer("autoClose");
     this.set({ mode, expanded, countdown: null });
+    // A meeting that came up while a call, a recording or a card held the island is announced once it is back at rest.
+    if (mode.kind === "idle" && !expanded) this.meetingChanged();
   }
 }

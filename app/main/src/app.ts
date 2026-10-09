@@ -272,9 +272,12 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const recordingOrFinishing = () => ["recording", "stopped", "finishing"].includes(controller.state.mode.kind);
   // A call offer on show (or a call) needs the page that resolved it and that dials.
   const calling = () => controller.state.onScreen !== null || controller.state.dial !== null || ["dialConfirm", "dialing"].includes(controller.state.mode.kind);
+  // The meeting heads-up reads the rep's calendar in the dashboard page, so the page stays (hidden) while the dashboard
+  // says it watches the calendar. It is remembered: after a restart the page starts again without the rep opening Vocify.
+  let calendarWatch = settings.get("calendarWatch") === true;
   const canDestroy = () =>
     quitting ||
-    Date.now() >= busyUntil && !controller.isListening && !recordingOrFinishing() && !calling() && controller.state.postCall === null && drafts.count() === 0;
+    Date.now() >= busyUntil && !calendarWatch && !controller.isListening && !recordingOrFinishing() && !calling() && controller.state.postCall === null && drafts.count() === 0;
   const dashboard = new DashboardHost({
     url: options.dashboardUrl,
     preload: join(here, "dashboard-preload.cjs"),
@@ -422,6 +425,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   // Before it is ever shown: a click on the island must never activate Vocify (that brings the dashboard forward).
   log(`island: ${os.island.prepare(island)}`);
   island.showInactive();
+  // The meeting heads-up lives in the dashboard page: start it, hidden, for a rep whose calendar is connected.
+  if (calendarWatch) dashboard.ensureHidden();
 
   /* ---------- wiring ---------- */
 
@@ -462,6 +467,13 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       return { status: response.status, text: () => response.text() };
     },
     log,
+    onCalendarWatch: (on) => {
+      if (on === calendarWatch) return;
+      calendarWatch = on;
+      settings.set("calendarWatch", on);
+      log(`calendar heads-up ${on ? "on: the dashboard page stays alive" : "off: the dashboard page is given back when idle"}`);
+      if (!on) dashboard.releaseIfIdle();
+    },
     crmTabs: platform === "darwin" ? () => os.permissions.status().crmTabs : undefined,
     askCrmTabs: platform === "darwin" ? () => os.permissions.request("crmTabs") : undefined,
     systemAudioAccess: platform === "darwin" ? () => os.permissions.status().systemAudio : undefined,

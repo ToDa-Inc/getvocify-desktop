@@ -831,6 +831,35 @@ test("on a call the meeting does not interrupt", () => {
   assert.equal(t.controller.state.meeting?.id, "ev-1");
 });
 
+test("a meeting that came up during a call is announced once the island is back at rest", () => {
+  const t = setup();
+  t.controller.callChanged(zoom);
+  t.advance(1);
+  t.controller.applyShellState({ meeting: soonMeeting() });
+  t.controller.act({ name: "dismissCall" });
+  // The call card is gone, the meeting is still due, and nothing has announced it yet.
+  assert.equal(t.mode(), "idle");
+  assert.equal(t.controller.state.expanded, true);
+  assert.equal(t.controller.state.meeting?.id, "ev-1");
+  // Announced once: it closing on its own does not bring it back.
+  t.advance(70);
+  assert.equal(t.controller.state.expanded, false);
+  t.controller.callChanged(null);
+  assert.equal(t.controller.state.expanded, false);
+});
+
+test("a meeting that came up while the after-call card was open is announced when the card is dismissed", () => {
+  const t = setup();
+  t.controller.applyShellState({ postCall: postCall("ready") });
+  assert.equal(t.mode(), "postCall");
+  t.controller.applyShellState({ meeting: soonMeeting() });
+  assert.equal(t.mode(), "postCall");
+  t.controller.applyShellState({ postCall: null });
+  assert.equal(t.mode(), "idle");
+  assert.equal(t.controller.state.expanded, true);
+  assert.equal(t.controller.state.meeting?.id, "ev-1");
+});
+
 test("Join opens the meeting's link; closing it hides that meeting for good", () => {
   const opened: string[] = [];
   const t = setup();

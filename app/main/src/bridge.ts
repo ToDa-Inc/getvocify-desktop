@@ -34,6 +34,11 @@ export type BridgeDeps = {
   log(line: string): void;
   /** A draft was saved or removed: the dashboard page may now be needed, or no longer. */
   onDraftsChanged?(): void;
+  /**
+   * The dashboard watches the rep's calendar (the island announces a meeting a minute before it starts): while it does,
+   * its page has to stay alive, hidden, because the watching happens in the page.
+   */
+  onCalendarWatch?(on: boolean): void;
   /** Mac: may Vocify read the CRM tab (Automation consent), as the watcher last found it. Absent where it cannot be read. */
   crmTabs?(): string;
   /** Mac: reads each running supported browser once, which makes macOS ask for Automation consent. */
@@ -179,6 +184,7 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
             reportedReady = state.recorderReady;
             deps.log(`dashboard says signed ${state.recorderReady ? "in" : "out"}`);
           }
+          if (typeof state.calendarWatch === "boolean") deps.onCalendarWatch?.(state.calendarWatch);
           deps.controller.applyShellState(state);
         }
         return null;

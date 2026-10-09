@@ -73,6 +73,8 @@ async function say(you, text, id) {
       const heard = words.slice(0, shown).join(" ").toLowerCase().replace(/[¿?¡!.,:]/g, "");
       // The last word is often misheard first, then corrected: longer, then shorter.
       turn.pending = shown % 4 === 2 ? `${heard}mente y` : heard;
+      // A test can hold the call still to look at what is on screen (window.__livePause).
+      while (window.__livePause) await new Promise((resolve) => setTimeout(resolve, 30));
       push();
       await sleep(150);
     }

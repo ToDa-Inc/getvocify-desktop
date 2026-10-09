@@ -1,6 +1,7 @@
 name: Island paint check
 
 # Looks for stale paint in the island's see-through window on Windows (test/paint-island.mjs). Never publishes anything.
+# How to use it and what it can and cannot show: docs/WINDOWS-PAINT-CHECK.md
 on:
   workflow_dispatch:
   push:
@@ -22,14 +23,12 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: node island/build.mjs --preview
-      - name: Smoothing on, hardware acceleration on
-        run: npx electron test/paint-island.mjs --mode=smooth --report
-      - name: Smoothing on, quick back-and-forth
-        run: npx electron test/paint-island.mjs --mode=smooth --script=rally --report
-      - name: Smoothing off (what Windows has now)
-        run: npx electron test/paint-island.mjs --mode=plain --report
-      - name: Smoothing on, hardware acceleration off
-        run: npx electron test/paint-island.mjs --mode=smooth --nogpu --report
+      - name: A call with long turns
+        run: npx electron test/paint-island.mjs --report
+      - name: Quick back-and-forth
+        run: npx electron test/paint-island.mjs --script=rally --report
+      - name: The same call with hardware acceleration off
+        run: npx electron test/paint-island.mjs --nogpu --report
       - uses: actions/upload-artifact@v4
         if: always()
         with:

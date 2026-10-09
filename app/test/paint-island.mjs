@@ -1,9 +1,10 @@
 // Looks for stale paint in the island's see-through window while a call streams: words left on screen after the text
 // under them changed, or patches never drawn. Every so often the call is held still and the window is captured twice,
 // as it is and again after everything was forced to draw afresh; the two must be the same picture.
-// `--mode=smooth` plays the full smoothing (as on a Mac) over the solid glass Windows uses; `--mode=plain` plays what
-// Windows gets when the smoothing is off. `--nogpu` turns hardware acceleration off, to tell a GPU fault from the page's.
-// Run: node island/build.mjs --preview && electron test/paint-island.mjs --mode=smooth
+// The page is played as the Windows app shows it (the solid glass, no blur behind the window). `--nogpu` turns hardware
+// acceleration off, to tell a fault of the graphics card's drawing from one of the page's.
+// Run: node island/build.mjs --preview && electron test/paint-island.mjs [--script=rally] [--nogpu] [--report]
+// How to read it, and how it is run on a Windows machine: docs/WINDOWS-PAINT-CHECK.md
 import { app, BrowserWindow, desktopCapturer, screen } from "electron";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -11,9 +12,8 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const arg = (name, fallback) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
-const mode = arg("mode", "smooth");
 const script = arg("script", "");
-const label = `${mode}${script ? `-${script}` : ""}${process.argv.includes("--nogpu") ? "-nogpu" : ""}`;
+const label = `island${script ? `-${script}` : ""}${process.argv.includes("--nogpu") ? "-nogpu" : ""}`;
 const out = join(here, "out-paint");
 mkdirSync(out, { recursive: true });
 if (process.argv.includes("--nogpu")) app.disableHardwareAcceleration();
@@ -47,9 +47,7 @@ app.whenReady().then(async () => {
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
   win.setAlwaysOnTop(true, "screen-saver");
-  await win.loadFile(join(here, "../island/dist/live.html"), { query: { speed: "1.5", ...(script ? { script } : {}), ...(mode === "plain" ? { material: "opaque" } : {}) } });
-  // The smoothing over Windows' solid glass: the page takes the smooth path, drawn on the tint Windows uses.
-  if (mode === "smooth") await win.webContents.insertCSS('.island[data-open="true"] .bg-tint { background: rgb(24, 24, 27) !important; }');
+  await win.loadFile(join(here, "../island/dist/live.html"), { query: { speed: "1.5", ...(script ? { script } : {}), material: "opaque" } });
   win.showInactive();
   const run = (code) => win.webContents.executeJavaScript(code);
   const display = screen.getPrimaryDisplay();

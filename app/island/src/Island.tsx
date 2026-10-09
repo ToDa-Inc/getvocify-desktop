@@ -895,7 +895,7 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
       {hasBrief && state.dial && <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} talking={state.turns.length > 0} />}
       {/* No blur behind the window (Windows): its see-through window left old words painted under new ones when the
           view moved a little every frame, so there the view goes to the latest line at once and turns just appear. */}
-      <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion || state.material === "opaque"} />
+      <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion || state.material === "opaque"} plain={state.material === "opaque"} />
     </div>
   );
 }
@@ -952,7 +952,7 @@ const GLIDE_LIMIT_MS = 400;
  * instead of snapping a line at a time, and only the rep's own scrolling (wheel, scrollbar) lets go of the latest line:
  * the view's own movement never does.
  */
-function TranscriptScroll({ turns, reduceMotion }: { turns: Turn[]; reduceMotion: boolean }) {
+function TranscriptScroll({ turns, reduceMotion, plain }: { turns: Turn[]; reduceMotion: boolean; /** Bubbles drawn with nothing set on them from script (see `TurnBubble`). */ plain: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const [following, setFollowing] = useState(true);
@@ -1061,7 +1061,7 @@ function TranscriptScroll({ turns, reduceMotion }: { turns: Turn[]; reduceMotion
           {turns.length === 0 && <div className="listening">Listening…</div>}
           <div className="bubbles">
             {turns.map((turn) => (
-              <TurnBubble key={turn.id} turn={turn} arrives={opened.current && !reduceMotion} />
+              <TurnBubble key={turn.id} turn={turn} arrives={opened.current && !reduceMotion} plain={plain} />
             ))}
           </div>
           <div style={{ height: 12 }} />
@@ -1121,7 +1121,7 @@ function CopyButton({ text, help, className }: { text: string; help: string; cla
  * words several times a second, and a bubble that followed every rewrite would shrink and stretch under the reader.
  * It takes its real size again once the turn has settled.
  */
-function TurnBubble({ turn, arrives }: { turn: Turn; arrives: boolean }) {
+function TurnBubble({ turn, arrives, plain }: { turn: Turn; arrives: boolean; plain: boolean }) {
   const parts = turnParts(turn);
   const bubble = useRef<HTMLDivElement>(null);
   const floor = useRef({ width: 0, height: 0 });
@@ -1129,7 +1129,9 @@ function TurnBubble({ turn, arrives }: { turn: Turn; arrives: boolean }) {
   const [entering] = useState(arrives);
   useLayoutEffect(() => {
     const el = bubble.current;
-    if (!el) return;
+    // `plain` (Windows): the bubble is left to its text alone. Its see-through window showed black patches and old
+    // words inside bubbles after sizes were set here on every update.
+    if (!el || plain) return;
     el.style.minWidth = "";
     el.style.minHeight = "";
     if (!parts.dots) {
@@ -1140,7 +1142,7 @@ function TurnBubble({ turn, arrives }: { turn: Turn; arrives: boolean }) {
     floor.current = { width: Math.max(floor.current.width, box.width), height: Math.max(floor.current.height, box.height) };
     el.style.minWidth = `${floor.current.width}px`;
     el.style.minHeight = `${floor.current.height}px`;
-  }, [parts.text, parts.tail, parts.dots]);
+  }, [parts.text, parts.tail, parts.dots, plain]);
   return (
     <div className="turn" data-you={turn.you} data-entering={entering}>
       {!turn.you && turn.label && <div className="turn-label">{turn.label}</div>}
@@ -1149,7 +1151,8 @@ function TurnBubble({ turn, arrives }: { turn: Turn; arrives: boolean }) {
           <span className="words">{parts.text}</span>
           {parts.tail !== "" && <span className="dim">{(parts.joined ? "" : " ") + parts.tail}</span>}
           {/* Held to the last word (no-break space), so the dots never drop to a line of their own. */}
-          {parts.dots && (
+          {parts.dots && plain && <span className="dim">{"\u00a0•••"}</span>}
+          {parts.dots && !plain && (
             <span className="live-dots" aria-hidden>
               {"\u00a0"}
               <i />

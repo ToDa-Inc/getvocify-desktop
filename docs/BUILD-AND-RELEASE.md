@@ -8,7 +8,7 @@ and what is still missing. The app is the **Electron app in [`app/`](../app/)**,
 
 | What changed | Where it lives | How users get it |
 |---|---|---|
-| Dashboard screens, memos, calendar, briefs, backend | `getvocify` repo (dashboard + API) | **No app update.** The app loads the dashboard live from `https://staging.getvocify.com` (`app/main/src/main.ts`, `DEFAULT_DASHBOARD`). It shows on the next app start or page reload. |
+| Dashboard screens, memos, calendar, briefs, backend | `getvocify` repo (dashboard + API) | **No app update.** The app loads the dashboard live from `https://app.getvocify.com` (`app/main/src/main.ts`, `DEFAULT_DASHBOARD`). It shows on the next app start or page reload. |
 | The island, the main process, the Mac helper (`app/native/mac-helper`), the window panel | this repo, `app/` | **Only with a new app build**, installed by hand or through auto-update (below). |
 
 So: a dashboard or backend fix reaches every installed app once `getvocify` is deployed. An island or helper fix

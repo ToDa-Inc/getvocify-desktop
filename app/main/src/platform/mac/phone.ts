@@ -16,6 +16,8 @@ export function createMacPhone(deps: {
     async setup() {
       await deps.open(["-b", "com.apple.FaceTime"]).catch(() => {});
     },
+    // FaceTime is never pressed for the rep: nothing to stop.
+    callStarted() {},
     async micSettings() {
       await deps.open(["-b", "com.apple.FaceTime"]).catch(() => {});
     },

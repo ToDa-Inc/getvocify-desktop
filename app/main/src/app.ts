@@ -224,6 +224,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
                 else log(`audio sessions: ${line.slice(0, 300)}`);
               });
               void callSound.start(() => {
+                // The call is under way, whoever pressed Call: nothing may be pressed for the rep any more.
+                os.phone.callStarted();
                 session.heard();
                 onSound();
               });

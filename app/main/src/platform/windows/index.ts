@@ -76,6 +76,8 @@ function createAudioSessionReader(log: (line: string) => void): AudioSessionRead
 
 /** Windows: Chromium's loopback, the microphone-use record in the registry, one long-lived PowerShell reader. */
 export function createWindowsPlatform(env: PlatformEnv): Platform {
+  /** The Phone Link Call press still waiting, if any. */
+  let pressing: ReturnType<typeof spawn> | null = null;
   return {
     // Naming the other side's speakers is Mac-only for now (Zoom Accessibility, Meet through the extension's Mac host).
     speakers: null,
@@ -112,9 +114,24 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
       // Only Phone Link has a Call button Vocify knows; another app for TEL links is left to the rep.
       pressCall: (number) => {
         if (!telAppIsPhoneLink(env.protocolApp("tel:"))) return;
-        void runQuiet("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(phoneLinkCallScript(number))], 20_000)
-          .then((output) => env.log(`phone link call button: ${parsePhoneLinkCall(output)}`))
-          .catch((error) => env.log(`phone link call button: failed (${String(error)})`));
+        pressing?.kill();
+        const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(phoneLinkCallScript(number))], {
+          windowsHide: true,
+          stdio: ["ignore", "pipe", "ignore"],
+        });
+        pressing = child;
+        let output = "";
+        child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString("utf8")));
+        child.on("exit", () => {
+          if (pressing !== child) return env.log("phone link call button: stopped, the call had started");
+          pressing = null;
+          env.log(`phone link call button: ${parsePhoneLinkCall(output)}`);
+        });
+      },
+      stopPressing: () => {
+        const child = pressing;
+        pressing = null;
+        child?.kill();
       },
     }),
   };

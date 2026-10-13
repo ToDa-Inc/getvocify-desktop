@@ -98,6 +98,9 @@ export interface PhoneDialer {
   /** Opens where the call's microphone is chosen, for "they can't hear me" (Mac: FaceTime, which picks its own mic;
    * Windows: Sound › Recording, where Phone Link users set the default and default communication device). */
   micSettings(): Promise<void>;
+  /** The call has started (its sound was heard): stop any help still waiting to press the app's Call for the rep, so
+   * nothing is pressed during a call already under way. */
+  callStarted(): void;
 }
 
 /** The audio sessions playing sound on this computer, reported line by line (`SESSIONS [...]`, see

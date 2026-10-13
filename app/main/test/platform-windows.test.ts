@@ -129,3 +129,10 @@ test("Windows phone: after the link, Phone Link's Call is pressed for that same 
   await dialer.dial("abc");
   assert.deepEqual(pressed, ["+34600111222"], "nothing is pressed for a number that was not opened");
 });
+
+test("Windows phone: once the call has started, the press still waiting is stopped", () => {
+  let stopped = 0;
+  const dialer = createWindowsPhone({ telApp: () => "Enlace Móvil", openExternal: () => {}, openSoundRecording: () => {}, pressCall: () => {}, stopPressing: () => void (stopped += 1) });
+  dialer.callStarted();
+  assert.equal(stopped, 1);
+});

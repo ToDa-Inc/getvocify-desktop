@@ -10,12 +10,17 @@ export function createWindowsPhone(deps: {
   openSoundRecording(): void;
   /** Presses Phone Link's Call once its dialer shows exactly this number (see windows/phone-link-call.ts). */
   pressCall?(number: string): void;
+  /** Stops a press still waiting: the call has started. */
+  stopPressing?(): void;
 }): PhoneDialer {
   const app = () => deps.telApp().trim() || null;
   return {
     app,
     async setup() {
       deps.openExternal("ms-settings:defaultapps");
+    },
+    callStarted() {
+      deps.stopPressing?.();
     },
     async micSettings() {
       deps.openSoundRecording();

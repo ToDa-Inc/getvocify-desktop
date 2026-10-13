@@ -260,6 +260,7 @@ function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | n
     app: () => (options.phoneApp === undefined ? "Phone Link" : options.phoneApp),
     setup: async () => void dialed.push("setup"),
     micSettings: async () => void dialed.push("mic-settings"),
+    callStarted: () => {},
     dial: async (number) => {
       if (options.phoneFails) return { ok: false, reason: options.phoneFails };
       dialed.push(number);

@@ -56,7 +56,11 @@ function createAudioSessionReader(log: (line: string) => void): AudioSessionRead
         pending = lines.pop() ?? "";
         for (const line of lines) if (line.trim()) onLine(line.trim());
       });
-      started.stderr?.on("data", (chunk: Buffer) => log(`audio sessions: ${chunk.toString("utf8").trim().slice(0, 300)}`));
+      started.stderr?.on("data", (chunk: Buffer) => {
+        // PowerShell's own "#< CLIXML" header on its error stream is not an error.
+        const text = chunk.toString("utf8").replace(/#< CLIXML/g, "").trim();
+        if (text) log(`audio sessions: ${text.slice(0, 300)}`);
+      });
       started.on("exit", (code) => {
         if (child === started) child = null;
         if (code) log(`audio sessions: reader exited ${code}`);

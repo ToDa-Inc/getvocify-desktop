@@ -6,6 +6,15 @@ export const MAC_MICROPHONE_SETTINGS_URL = "x-apple.systempreferences:com.apple.
 /** Where the Mac app's call audio is allowed (Screen & System Audio Recording). Windows has no such setting. */
 export const MAC_SYSTEM_AUDIO_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
 
+/** Windows: where the default output device is picked. Call audio is what plays there, so a meeting app sending
+ * its sound to another device (a headset chosen in Zoom or Teams) is heard as silence. */
+export const WINDOWS_SOUND_SETTINGS_URL = "ms-settings:sound";
+
+/** Where call audio is fixed: the Mac's permission, or Windows' output device (it needs no permission). */
+export function callAudioSettingsUrl(platform: NodeJS.Platform): string {
+  return platform === "darwin" ? MAC_SYSTEM_AUDIO_SETTINGS_URL : WINDOWS_SOUND_SETTINGS_URL;
+}
+
 /** Where the microphone is switched on for this OS. */
 export function microphoneSettingsUrl(platform: NodeJS.Platform): string {
   return platform === "darwin" ? MAC_MICROPHONE_SETTINGS_URL : MICROPHONE_SETTINGS_URL;

@@ -297,6 +297,8 @@ test("bridge: on a Mac the microphone is asked for with the system prompt once, 
   const refused = bridgeSetup({ microphone: "denied", platform: "darwin", askMicrophone: async () => true });
   await refused.call("permissions:request", { type: "microphone" });
   assert.deepEqual(refused.opened, ["x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"]);
+  await refused.call("permissions:open", { type: "systemAudio" });
+  assert.equal(refused.opened.at(-1), "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
 });
 
 test("bridge: permissions report the global Windows microphone setting and open it on request", async () => {
@@ -305,7 +307,7 @@ test("bridge: permissions report the global Windows microphone setting and open 
   await t.call("permissions:request", { type: "microphone" });
   assert.deepEqual(t.opened, ["ms-settings:privacy-microphone"]);
   await t.call("permissions:open", { type: "systemAudio" });
-  assert.equal(t.opened.length, 1, "call audio has no setting to open");
+  assert.deepEqual(t.opened, ["ms-settings:privacy-microphone", "ms-settings:sound"], "call audio: the output device it plays on");
   assert.deepEqual(await t.call("permissions:appInfo", {}), { name: "Vocify", bundleId: "com.vocify.app" });
   const granted = bridgeSetup({ microphone: "granted" });
   await granted.call("permissions:request", { type: "microphone" });

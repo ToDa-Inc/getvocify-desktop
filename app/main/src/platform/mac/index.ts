@@ -26,6 +26,7 @@ export function createMacPlatform(env: PlatformEnv): Platform {
     capture: createMacSystemAudio({
       spawn: (command, args) => spawnMacHelper(helper, command, args),
       micAllowed: () => env.systemPreferences.getMediaAccessStatus("microphone") === "granted",
+      log: env.log,
     }),
     started: env.systemAudioStarted,
   });

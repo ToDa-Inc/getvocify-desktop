@@ -6,6 +6,10 @@ const FRAME_BYTES = 3200;
 /** The helper says `started` as soon as capture runs. ScreenCaptureKit's first start after launch can take several
  * seconds (it lists the displays first), so this only catches a helper that is stuck. */
 const START_TIMEOUT_MS = 12000;
+/** With the microphone, the helper's first audio callback (`io`) must come this soon after `started`. Inside the app
+ * macOS has started the device and then never run it (seen 2026-10-14 on a locally signed build): neither side
+ * arrived. Without it the capture restarts without the microphone, so the call's audio is never what is lost. */
+const MIC_IO_TIMEOUT_MS = 2000;
 
 /**
  * The call's audio on a Mac: `vocify-mac-helper audio` (a Core Audio process tap, see native/mac-helper/PROTOCOL.md)
@@ -18,6 +22,9 @@ export function createMacSystemAudio(deps: {
   spawn(command: "audio", args?: string[]): HelperChild;
   /** macOS allows Vocify the microphone. Without it the helper would read silence, so the page records its own (and asks). */
   micAllowed(): boolean;
+  /** Test only: how long the first audio callback may take with the microphone. */
+  micIoTimeoutMs?: number;
+  log?(line: string): void;
 }): SystemAudio {
   const pcmListeners = new Set<(pcm: ArrayBuffer) => void>();
   const micListeners = new Set<(pcm: ArrayBuffer) => void>();
@@ -51,7 +58,7 @@ export function createMacSystemAudio(deps: {
   let current: { helper: HelperChild; stopping: boolean } | null = null;
   let starting = false;
 
-  const capture = (helper: HelperChild, withMic: boolean) =>
+  const capture = (helper: HelperChild, withMic: boolean, onIo?: () => void) =>
     new Promise<{ ok: boolean; reason?: string }>((resolve) => {
       const session = { helper, stopping: false };
       let started = false;
@@ -84,6 +91,8 @@ export function createMacSystemAudio(deps: {
             settle({ ok: false, reason: typeof event.reason === "string" ? event.reason : "capture_failed" });
           } else if (event.event === "lost") {
             lostReason = typeof event.reason === "string" ? event.reason : "lost";
+          } else if (event.event === "io") {
+            onIo?.();
           }
         }),
       );
@@ -97,29 +106,42 @@ export function createMacSystemAudio(deps: {
       });
     });
 
+  async function stop(): Promise<void> {
+    const session = current;
+    if (!session) return;
+    session.stopping = true;
+    current = null;
+    // Closing stdin is the helper's way to stop; a helper that ignores it is killed.
+    session.helper.stdin.end();
+    setTimeout(() => session.helper.kill(), 1000).unref?.();
+  }
+
   return {
     async start(options) {
       if (current || starting) return { ok: false, reason: "already_running" };
       starting = true;
       try {
-        const withMic = options?.mic === true && deps.micAllowed();
-        const result = await capture(withMic ? deps.spawn("audio", ["--with-mic"]) : deps.spawn("audio"), withMic);
-        return result.ok ? { ...result, mic: withMic } : result;
+        if (options?.mic === true && deps.micAllowed()) {
+          let heard: () => void = () => {};
+          const io = new Promise<boolean>((resolve) => {
+            heard = () => resolve(true);
+            setTimeout(() => resolve(false), deps.micIoTimeoutMs ?? MIC_IO_TIMEOUT_MS);
+          });
+          const result = await capture(deps.spawn("audio", ["--with-mic"]), true, () => heard());
+          if (!result.ok) return result;
+          if (await io) return { ...result, mic: true };
+          deps.log?.("call audio: no audio with the microphone, restarting without it");
+          await stop();
+        }
+        const result = await capture(deps.spawn("audio"), false);
+        return result.ok ? { ...result, mic: false } : result;
       } catch (error) {
         return { ok: false, reason: `helper_failed:${String(error)}` };
       } finally {
         starting = false;
       }
     },
-    async stop() {
-      const session = current;
-      if (!session) return;
-      session.stopping = true;
-      current = null;
-      // Closing stdin is the helper's way to stop; a helper that ignores it is killed.
-      session.helper.stdin.end();
-      setTimeout(() => session.helper.kill(), 1000).unref?.();
-    },
+    stop,
     onPcm(cb) {
       pcmListeners.add(cb);
       return () => void pcmListeners.delete(cb);

@@ -379,6 +379,7 @@ test("Mac capture with the microphone: the helper's stereo is split, microphone 
   audio.onPcm((pcm) => call.push(...new Int16Array(pcm)));
   const started = audio.start({ mic: true });
   line(helper.stderr, { event: "started" });
+  line(helper.stderr, { event: "io", bytes: "2048,2048" });
   assert.deepEqual(await started, { ok: true, mic: true });
   assert.deepEqual(spawned, [{ command: "audio", args: ["--with-mic"] }]);
   // 100 ms of stereo in two pieces: left 1, 2, 3…; right -1, -2, -3…
@@ -412,4 +413,26 @@ test("Mac capture: the microphone only when the page asks and macOS allows it (e
     helper.stdout.emit("data", Buffer.alloc(3200));
     assert.deepEqual(call, [1600], "mono call audio, as before");
   }
+});
+
+test("Mac capture: a helper whose device never runs with the microphone is restarted without it, so the call is heard", async () => {
+  const helpers = [fakeHelper(), fakeHelper()];
+  const spawned: Array<string[] | undefined> = [];
+  const audio = createMacSystemAudio({
+    spawn: (_command, args) => helpers[spawned.push(args) - 1] as unknown as HelperChild,
+    micAllowed: () => true,
+    micIoTimeoutMs: 20,
+  });
+  const call: number[] = [];
+  audio.onPcm((pcm) => call.push(new Int16Array(pcm).length));
+  const started = audio.start({ mic: true });
+  line(helpers[0].stderr, { event: "started" });
+  // No `io`: after the wait the first helper is stopped and a plain one started.
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  line(helpers[1].stderr, { event: "started" });
+  assert.deepEqual(await started, { ok: true, mic: false });
+  assert.deepEqual(spawned, [["--with-mic"], undefined]);
+  assert.equal(helpers[0].killed, true, "the first helper was stopped");
+  helpers[1].stdout.emit("data", Buffer.alloc(3200));
+  assert.deepEqual(call, [1600]);
 });

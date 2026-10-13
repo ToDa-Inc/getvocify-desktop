@@ -31,6 +31,8 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
     private var micPending: [Int16] = []
     /// Which of the aggregate's input buffers is the microphone (the tap's is always the last).
     private var micBuffer = 0
+    /// The first callback's buffers were reported (`io` status): what macOS actually hands over.
+    private var reportedIO = false
     private var tapPending: [Int16] = []
 
     init(withMic: Bool = false) {
@@ -256,9 +258,20 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
             guard error == nil, let samples = out.int16ChannelData?[0] else { return [] }
             return Array(UnsafeBufferPointer(start: samples, count: Int(out.frameLength)))
         }
-        guard buffers.count >= micBuffer + 2, let mic = channelZero(buffers[micBuffer]), let tap = channelZero(buffers[buffers.count - 1]) else { return }
-        micPending += convert(mic, micConverter)
-        tapPending += convert(tap, mixConverter)
+        if !reportedIO {
+            reportedIO = true
+            status(["event": "io", "bytes": buffers.map { String($0.mDataByteSize) }.joined(separator: ",")])
+        }
+        guard buffers.count >= micBuffer + 2, let tap = channelZero(buffers[buffers.count - 1]) else { return }
+        let call = convert(tap, mixConverter)
+        tapPending += call
+        // A microphone macOS hands over empty never costs the call its audio: it goes on with a silent microphone
+        // (the app then records the page's own).
+        if let mic = channelZero(buffers[micBuffer]) {
+            micPending += convert(mic, micConverter)
+        } else {
+            micPending += [Int16](repeating: 0, count: call.count)
+        }
         let frames = min(micPending.count, tapPending.count)
         guard frames > 0 else { return }
         var stereo = [Int16](repeating: 0, count: frames * 2)

@@ -218,6 +218,9 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .turn[data-you="true"] { align-self: flex-end; align-items: flex-end; }
 .turn-label { font-size: 10.5px; font-weight: 500; color: var(--beige); padding: 0 4px; }
 .bubble { padding: 7px 11px; border-radius: 14px; background: var(--them-bubble); line-height: 1.32; font-size: 12.5px; user-select: text; word-wrap: break-word; overflow-wrap: anywhere; }
+/* Windows: the island never takes the keyboard, so a selection there could never be copied, and a drag over the
+   transcript ran across every bubble with no way to clear it. Nothing outside a field is selectable; Copy copies. */
+:root[data-platform="win32"] :is(.bubble, .help, .before-call, .recent-text) { user-select: none; }
 .bubble[data-you="true"] { background: var(--you-bubble); }
 /* a turn's copy button sits beside its bubble, shown on hover (the island has no keyboard for Ctrl+C) */
 .bubble-row { display: flex; align-items: center; gap: 2px; min-width: 0; }

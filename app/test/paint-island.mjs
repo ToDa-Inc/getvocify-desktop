@@ -3,7 +3,9 @@
 // as it is and again after everything was forced to draw afresh; the two must be the same picture.
 // The page is played as the Windows app shows it (the solid glass, no blur behind the window). `--nogpu` turns hardware
 // acceleration off, to tell a fault of the graphics card's drawing from one of the page's.
-// Run: node island/build.mjs --preview && electron test/paint-island.mjs [--script=rally] [--nogpu] [--report]
+// `--scale=1.25` draws as a display set to 125% does (Windows laptops default to 125% or 150%), and `--resize` changes the
+// window's size the way the island does (it first covers the old and the new shape, then fits the new one).
+// Run: node island/build.mjs --preview && electron test/paint-island.mjs [--script=rally] [--nogpu] [--scale=1.25] [--resize] [--report]
 // How to read it, and how it is run on a Windows machine: docs/WINDOWS-PAINT-CHECK.md
 import { app, BrowserWindow, desktopCapturer, screen } from "electron";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -13,12 +15,16 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const arg = (name, fallback) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const script = arg("script", "");
-const label = `island${script ? `-${script}` : ""}${process.argv.includes("--nogpu") ? "-nogpu" : ""}`;
+const scale = arg("scale", "");
+const resize = process.argv.includes("--resize");
+const label = `island${script ? `-${script}` : ""}${process.argv.includes("--nogpu") ? "-nogpu" : ""}${scale ? `-x${scale}` : ""}${resize ? "-resize" : ""}`;
 const out = join(here, "out-paint");
 mkdirSync(out, { recursive: true });
 if (process.argv.includes("--nogpu")) app.disableHardwareAcceleration();
+if (scale) app.commandLine.appendSwitch("force-device-scale-factor", scale);
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
-const BOUNDS = { x: 60, y: 60, width: 520, height: 440 };
+// Odd sizes on purpose: at 125% or 150% they are not a whole number of pixels, as the island's own sizes often are not.
+const BOUNDS = { x: 61, y: 61, width: 521, height: 437 };
 
 /** How many pixels differ clearly between two captures of the same size (and where the first one is). */
 function differing(a, b) {
@@ -30,7 +36,7 @@ function differing(a, b) {
   let count = 0;
   let at = null;
   // The top bar has the clock and the voice wave, which move on their own: the conversation starts under it.
-  for (let i = 44 * Math.round(sa.width / BOUNDS.width) * sa.width * 4; i < pa.length; i += 4) {
+  for (let i = Math.ceil((44 * sa.width) / BOUNDS.width) * sa.width * 4; i < pa.length; i += 4) {
     if (Math.abs(pa[i] - pb[i]) + Math.abs(pa[i + 1] - pb[i + 1]) + Math.abs(pa[i + 2] - pb[i + 2]) > 90) {
       count += 1;
       at ??= { x: (i / 4) % sa.width, y: Math.floor(i / 4 / sa.width) };
@@ -64,7 +70,15 @@ app.whenReady().then(async () => {
   let checks = 0;
   let screenWorks = true;
   const until = Date.now() + 150_000;
+  let grown = false;
   for (;;) {
+    if (resize) {
+      // The island's own way: the window covers both shapes at once, then fits the new one a moment later.
+      grown = !grown;
+      win.setBounds({ ...BOUNDS, height: BOUNDS.height + 23 });
+      await sleep(200);
+      if (!grown) win.setBounds(BOUNDS);
+    }
     await sleep(650);
     const done = await run("Boolean(window.__LIVE && window.__LIVE.done)");
     if (done || Date.now() > until) break;

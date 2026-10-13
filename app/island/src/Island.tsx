@@ -585,9 +585,14 @@ function FinishingMenu({ finish, act }: { finish: IslandState["finish"]; act: Ac
       <span className="menu-title menu-title-wrap">{finishLine(finish)}</span>
       <div className="grow" />
       {finish?.step === "failed" && (
-        <PrimaryActionButton title="Open Vocify" help="See the meeting in Vocify" onClick={() => act({ name: "openApp" })}>
-          <ArrowUpRight size={9} />
-        </PrimaryActionButton>
+        <>
+          <PrimaryActionButton title="Open Vocify" help="See the meeting in Vocify" onClick={() => act({ name: "openApp" })}>
+            <ArrowUpRight size={9} />
+          </PrimaryActionButton>
+          <IconButton help="Dismiss" onClick={() => act({ name: "dismissFinish" })}>
+            <Close size={11} />
+          </IconButton>
+        </>
       )}
     </div>
   );

@@ -338,6 +338,8 @@ export class IslandController {
         return this.resumeRecording();
       case "finish":
         return this.finishRecording();
+      case "dismissFinish":
+        return this.dismissFinish();
       case "pickCallType":
         return this.pickCallType(action.key);
       case "pickChannel":
@@ -484,10 +486,7 @@ export class IslandController {
         return;
       case "finishing":
         // Closing a failure ends the wait; otherwise it just peeks at where the call is.
-        if (this.current.finish?.step === "failed" && expanded) {
-          this.stopTimer("finishTimeout");
-          return this.rest();
-        }
+        if (this.current.finish?.step === "failed" && expanded) return this.dismissFinish();
         return this.transition(mode, !expanded);
       case "dialConfirm":
         return this.transition({ kind: "idle" }, false);
@@ -645,6 +644,13 @@ export class IslandController {
     });
   }
 
+  /** The rep closes the card that says the ended recording failed (the dashboard has already kept what it could). */
+  private dismissFinish(): void {
+    if (this.mode !== "finishing" || this.current.finish?.step !== "failed") return;
+    this.stopTimer("finishTimeout");
+    this.rest();
+  }
+
   /** The dashboard says how the ended recording is going: a failure opens the island and stays. */
   private finishChanged(): void {
     if (this.mode !== "finishing" || this.current.finish?.step !== "failed") return;
@@ -693,6 +699,13 @@ export class IslandController {
     if (type === "review" || type === "openEmail" || type === "openNotes" || type === "notes" || type === "chooseContact") this.effects.showMainWindow();
     // The updated record opens in the browser, never in Vocify's window (only a web link reaches here: see parse).
     if (type === "openCrm" && this.current.postCall?.crmUrl) this.effects.openExternal?.(this.current.postCall.crmUrl);
+    // The card closes here, not when the dashboard answers: a page that was signed out, reloaded or closed since the
+    // call never answers, and the card would stay on screen with nothing able to close it.
+    if (type === "dismiss" && this.current.postCall) {
+      this.lastPostCallStage = null;
+      this.set({ postCall: null });
+      if (this.mode === "postCall") this.transition({ kind: "idle" }, false);
+    }
   }
 
   /** The dashboard moved the call on (written, ready, email drafted...). */

@@ -159,6 +159,8 @@ export type IslandAction =
   | { name: "resume" }
   /** End the stopped recording now, without waiting for its line to run out. */
   | { name: "finish" }
+  /** Close the card that says the ended recording failed. */
+  | { name: "dismissFinish" }
   | { name: "pickCallType"; key: string | null }
   | { name: "pickChannel"; kind: "call" | "meeting" }
   | { name: "toggleLiveHelp" }

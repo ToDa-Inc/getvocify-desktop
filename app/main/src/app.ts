@@ -159,7 +159,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     nativeHelperPath: macHelper,
     nativePanelPath: macPanel,
     // Dev only: the microphone captured natively, to compare with the page's own capture (see SystemAudio.micMode).
-    nativeMic: !app.isPackaged && (process.env.VOCIFY_CAPTURE === "shared" || process.env.VOCIFY_CAPTURE === "apple") ? process.env.VOCIFY_CAPTURE : undefined,
+    nativeMic: !app.isPackaged && ["shared", "apple", "all"].includes(process.env.VOCIFY_CAPTURE ?? "") ? (process.env.VOCIFY_CAPTURE as "shared" | "apple" | "all") : undefined,
   });
 
   /* ---------- who is on the call ---------- */

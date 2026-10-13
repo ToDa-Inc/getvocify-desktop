@@ -18,7 +18,7 @@ export type DashboardOptions = {
   /** Dev only: the page may hand its raw call audio to the app (`devTrace`), to replay real calls offline. */
   devTrace?: boolean;
   /** Dev only: the page records the microphone the app captures natively (`nativeMic`), not its own. */
-  nativeMic?: "shared" | "apple";
+  nativeMic?: "shared" | "apple" | "all";
   /** Hosts that may open inside the app without being trusted with the microphone (a preview's sign-in). */
   isSignInHost?(host: string): boolean;
   /** Local file pages (the demo's stand-in dashboard) count as the app. */

@@ -75,11 +75,14 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
   let unsubscribeLost: (() => void) | null = null;
   let silence: ReturnType<typeof setInterval> | null = null;
 
+  let unsubscribeMic: (() => void) | null = null;
   const stopListening = () => {
     unsubscribePcm?.();
     unsubscribeLost?.();
+    unsubscribeMic?.();
     unsubscribePcm = null;
     unsubscribeLost = null;
+    unsubscribeMic = null;
     if (silence) clearInterval(silence);
     silence = null;
   };
@@ -89,6 +92,7 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
     await deps.loopback.stop();
     unsubscribePcm = deps.loopback.onPcm((pcm) => deps.emit("system-audio:pcm", pcm));
     unsubscribeLost = deps.loopback.onLost((reason) => deps.emit("system-audio:lost", { reason }));
+    unsubscribeMic = deps.loopback.onMicPcm?.((pcm) => deps.emit("native-mic:pcm", pcm)) ?? null;
     const startedAt = Date.now();
     const started = await deps.loopback.start();
     deps.log(`system audio start: ${started.ok ? "ok" : started.reason ?? "failed"} in ${Date.now() - startedAt} ms`);

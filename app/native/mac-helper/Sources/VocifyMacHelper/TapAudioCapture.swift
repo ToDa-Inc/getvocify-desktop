@@ -22,6 +22,19 @@ extension SystemAudioCapture: AudioCapture {}
 final class TapAudioCapture: AudioCapture, @unchecked Sendable {
     var onEnd: ((_ event: String, _ reason: String) -> Void)?
 
+    /// `audio --with-mic`: the default microphone is read through the same device as the tap, so both come from one
+    /// callback on one clock. Out: interleaved stereo, left = microphone, right = what the Mac plays.
+    private let withMic: Bool
+    private var micConverter: AVAudioConverter?
+    private var mixConverter: AVAudioConverter?
+    private var ioFormat: AVAudioFormat?
+    private var micPending: [Int16] = []
+    private var tapPending: [Int16] = []
+
+    init(withMic: Bool = false) {
+        self.withMic = withMic
+    }
+
     private let queue = DispatchQueue(label: "vocify.helper.tap", qos: .userInteractive)
     private var tap = AudioObjectID(kAudioObjectUnknown)
     private var aggregate = AudioObjectID(kAudioObjectUnknown)
@@ -33,7 +46,7 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var outputListener: AudioObjectPropertyListenerBlock?
     /// 100 ms of silence: written when nothing arrived for a while, so the stream never stalls.
-    private static let silence = Data(count: 3200)
+    private var silence: Data { Data(count: withMic ? 6400 : 3200) }
 
     func start() {
         queue.async {
@@ -71,6 +84,15 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
             close()
             return false
         }
+        var subDevices: [[String: Any]] = [[kAudioSubDeviceUIDKey: outputUID]]
+        if withMic {
+            guard let inputUID = Self.defaultInputUID() else {
+                close()
+                return false
+            }
+            // On the output's clock, like the tap: the microphone is resampled to it, so both stay sample for sample.
+            subDevices.append([kAudioSubDeviceUIDKey: inputUID, kAudioSubDeviceDriftCompensationKey: true])
+        }
         let settings: [String: Any] = [
             kAudioAggregateDeviceNameKey: "Vocify call audio",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
@@ -78,7 +100,7 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,
             kAudioAggregateDeviceTapAutoStartKey: true,
-            kAudioAggregateDeviceSubDeviceListKey: [[kAudioSubDeviceUIDKey: outputUID]],
+            kAudioAggregateDeviceSubDeviceListKey: subDevices,
             kAudioAggregateDeviceTapListKey: [[kAudioSubTapDriftCompensationKey: true, kAudioSubTapUIDKey: description.uuid.uuidString]],
         ]
         guard AudioHardwareCreateAggregateDevice(settings as CFDictionary, &aggregate) == noErr else {
@@ -96,6 +118,23 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
         }
         tapFormat = format
         self.converter = converter
+        if withMic {
+            // Through the aggregate every stream is the device's own float format at its rate: one mono converter each.
+            var rate = Float64(0)
+            var rateSize = UInt32(MemoryLayout<Float64>.size)
+            var rateAddress = Self.address(kAudioDevicePropertyNominalSampleRate)
+            guard AudioObjectGetPropertyData(aggregate, &rateAddress, 0, nil, &rateSize, &rate) == noErr, rate > 0,
+                  let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false),
+                  let mic = AVAudioConverter(from: mono, to: target),
+                  let mix = AVAudioConverter(from: mono, to: target) else {
+                close()
+                return false
+            }
+            ioFormat = mono
+            micConverter = mic
+            mixConverter = mix
+            status(["event": "streams", "rate": String(Int(rate)), "buffers": Self.inputBufferChannels(aggregate).map(String.init).joined(separator: ",")])
+        }
         // Read on a queue: Core Audio's own thread calls the block, the PCM is written in order on `queue`.
         let created = AudioDeviceCreateIOProcIDWithBlock(&ioProc, aggregate, queue) { [weak self] _, input, _, _, _ in
             self?.receive(input)
@@ -120,9 +159,18 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
         tap = AudioObjectID(kAudioObjectUnknown)
         converter = nil
         tapFormat = nil
+        micConverter = nil
+        mixConverter = nil
+        ioFormat = nil
+        micPending = []
+        tapPending = []
     }
 
     private func receive(_ input: UnsafePointer<AudioBufferList>) {
+        if withMic {
+            receiveBoth(input)
+            return
+        }
         guard let format = tapFormat, let converter,
               let buffer = AVAudioPCMBuffer(pcmFormat: format, bufferListNoCopy: input, deallocator: nil),
               buffer.frameLength > 0 else { return }
@@ -144,6 +192,53 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
         write(Data(bytes: channel, count: Int(out.frameLength) * MemoryLayout<Int16>.size))
     }
 
+    /// One callback of the aggregate: the microphone's stream first, the tap's last. Each is converted on its own and
+    /// written as interleaved stereo, as many frames as both have (the rest waits for the next callback).
+    private func receiveBoth(_ input: UnsafePointer<AudioBufferList>) {
+        let buffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: input))
+        guard buffers.count >= 2, let mono = ioFormat, let micConverter, let mixConverter else { return }
+        func channelZero(_ buffer: AudioBuffer) -> AVAudioPCMBuffer? {
+            let channels = max(1, Int(buffer.mNumberChannels))
+            let frames = Int(buffer.mDataByteSize) / MemoryLayout<Float32>.size / channels
+            guard frames > 0, let data = buffer.mData?.assumingMemoryBound(to: Float32.self),
+                  let out = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: AVAudioFrameCount(frames)),
+                  let dst = out.floatChannelData?[0] else { return nil }
+            for i in 0..<frames { dst[i] = data[i * channels] }
+            out.frameLength = AVAudioFrameCount(frames)
+            return out
+        }
+        func convert(_ buffer: AVAudioPCMBuffer, _ converter: AVAudioConverter) -> [Int16] {
+            let capacity = AVAudioFrameCount(Double(buffer.frameLength) * target.sampleRate / mono.sampleRate) + 32
+            guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return [] }
+            var consumed = false
+            var error: NSError?
+            converter.convert(to: out, error: &error) { _, status in
+                if consumed {
+                    status.pointee = .noDataNow
+                    return nil
+                }
+                consumed = true
+                status.pointee = .haveData
+                return buffer
+            }
+            guard error == nil, let samples = out.int16ChannelData?[0] else { return [] }
+            return Array(UnsafeBufferPointer(start: samples, count: Int(out.frameLength)))
+        }
+        guard let mic = channelZero(buffers[0]), let tap = channelZero(buffers[buffers.count - 1]) else { return }
+        micPending += convert(mic, micConverter)
+        tapPending += convert(tap, mixConverter)
+        let frames = min(micPending.count, tapPending.count)
+        guard frames > 0 else { return }
+        var stereo = [Int16](repeating: 0, count: frames * 2)
+        for i in 0..<frames {
+            stereo[2 * i] = micPending[i]
+            stereo[2 * i + 1] = tapPending[i]
+        }
+        micPending.removeFirst(frames)
+        tapPending.removeFirst(frames)
+        stereo.withUnsafeBytes { write(Data($0)) }
+    }
+
     private func write(_ data: Data) {
         lastWriteAt = Date()
         FileHandle.standardOutput.write(data)
@@ -161,7 +256,7 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
         timer.schedule(deadline: .now() + 0.1, repeating: 0.1)
         timer.setEventHandler { [weak self] in
             guard let self, Date().timeIntervalSince(self.lastWriteAt) > 0.3 else { return }
-            self.write(Self.silence)
+            self.write(self.silence)
         }
         timer.resume()
         self.timer = timer
@@ -202,6 +297,26 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
         var address = address(kAudioHardwarePropertyDefaultSystemOutputDevice)
         guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr else { return nil }
         return string(device, kAudioDevicePropertyDeviceUID)
+    }
+
+    private static func defaultInputUID() -> String? {
+        var device = AudioObjectID(0)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var address = address(kAudioHardwarePropertyDefaultInputDevice)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr else { return nil }
+        return string(device, kAudioDevicePropertyDeviceUID)
+    }
+
+    /// Channels of each input buffer the aggregate delivers (for the log: which stream is which).
+    private static func inputBufferChannels(_ device: AudioObjectID) -> [Int] {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(device, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
+        let raw = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { raw.deallocate() }
+        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, raw) == noErr else { return [] }
+        let list = UnsafeMutableAudioBufferListPointer(raw.assumingMemoryBound(to: AudioBufferList.self))
+        return list.map { Int($0.mNumberChannels) }
     }
 
     private static func string(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {

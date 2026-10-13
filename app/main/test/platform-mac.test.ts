@@ -362,3 +362,50 @@ test("Mac phone: 'they can't hear me' opens FaceTime, which chooses its own micr
   await h.dialer.micSettings();
   assert.deepEqual(h.runs, [["-b", "com.apple.FaceTime"]]);
 });
+
+test("Mac, dev 'shared' capture: the helper's stereo is split, microphone left and call right, sample for sample", async () => {
+  const helper = fakeHelper();
+  const spawned: Array<{ command: string; args?: string[] }> = [];
+  const audio = createMacSystemAudio({
+    spawn: (command, args) => {
+      spawned.push({ command, args });
+      return helper as unknown as HelperChild;
+    },
+    micMode: "shared",
+  });
+  const mic: number[] = [];
+  const call: number[] = [];
+  audio.onMicPcm!((pcm) => mic.push(...new Int16Array(pcm)));
+  audio.onPcm((pcm) => call.push(...new Int16Array(pcm)));
+  const started = audio.start();
+  line(helper.stderr, { event: "started" });
+  assert.deepEqual(await started, { ok: true });
+  assert.deepEqual(spawned, [{ command: "audio", args: ["--with-mic"] }]);
+  // 100 ms of stereo in two pieces: left 1, 2, 3…; right -1, -2, -3…
+  const stereo = new Int16Array(3200);
+  for (let i = 0; i < 1600; i++) {
+    stereo[2 * i] = i + 1;
+    stereo[2 * i + 1] = -(i + 1);
+  }
+  const bytes = Buffer.from(stereo.buffer);
+  helper.stdout.emit("data", bytes.subarray(0, 1001));
+  helper.stdout.emit("data", bytes.subarray(1001));
+  assert.equal(mic.length, 1600);
+  assert.equal(call.length, 1600);
+  assert.deepEqual([mic[0], mic[1599], call[0], call[1599]], [1, 1600, -1, -1600]);
+  assert.equal(audio.micMode, "shared");
+});
+
+test("Mac, dev 'apple' capture: a voice helper next to the call audio, its microphone in 100 ms frames", async () => {
+  const helpers = { audio: fakeHelper(), voice: fakeHelper() };
+  const audio = createMacSystemAudio({ spawn: (command) => helpers[command as "audio" | "voice"] as unknown as HelperChild, micMode: "apple" });
+  const mic: number[] = [];
+  audio.onMicPcm!((pcm) => mic.push(new Int16Array(pcm).length));
+  const started = audio.start();
+  line(helpers.audio.stderr, { event: "started" });
+  assert.deepEqual(await started, { ok: true });
+  helpers.voice.stdout.emit("data", Buffer.alloc(5000));
+  assert.deepEqual(mic, [1600]);
+  await audio.stop();
+  assert.equal(helpers.voice.killed, true);
+});

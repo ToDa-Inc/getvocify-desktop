@@ -1,4 +1,4 @@
-import type { SystemAudio } from "../types.ts";
+import type { NativeMicMode, SystemAudio } from "../types.ts";
 import { jsonLines, type HelperChild } from "./helper.ts";
 
 /** 100 ms of mono 16 kHz signed 16-bit audio. */
@@ -11,8 +11,42 @@ const START_TIMEOUT_MS = 12000;
  * The call's audio on a Mac: `vocify-mac-helper audio` (a Core Audio process tap, see native/mac-helper/PROTOCOL.md)
  * writes PCM on stdout and its status on stderr. One helper per capture; its stdout is cut into exact 3200-byte frames.
  */
-export function createMacSystemAudio(deps: { spawn(command: "audio"): HelperChild }): SystemAudio {
+export function createMacSystemAudio(deps: {
+  spawn(command: "audio" | "voice", args?: string[]): HelperChild;
+  /** Dev only: also capture the microphone natively (see SystemAudio.micMode). */
+  micMode?: NativeMicMode;
+}): SystemAudio {
   const pcmListeners = new Set<(pcm: ArrayBuffer) => void>();
+  const micListeners = new Set<(pcm: ArrayBuffer) => void>();
+  /** "shared": the helper writes stereo, the microphone left and the call right, sample for sample. */
+  const shared = deps.micMode === "shared";
+  /** "apple": a second helper captures the microphone through voice processing. */
+  let voice: HelperChild | null = null;
+  const frames = (onFrame: (frame: Buffer) => void, size: number) => {
+    let pending: Buffer = Buffer.alloc(0);
+    return (chunk: Buffer) => {
+      pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
+      while (pending.length >= size) {
+        onFrame(pending.subarray(0, size));
+        pending = pending.subarray(size);
+      }
+    };
+  };
+  const emitTo = (listeners: Set<(pcm: ArrayBuffer) => void>, frame: Buffer) => {
+    const pcm = new Uint8Array(frame).buffer;
+    for (const listener of listeners) listener(pcm);
+  };
+  /** One stereo frame (left microphone, right call) into a mono frame for each. */
+  const split = (frame: Buffer) => {
+    const mic = Buffer.alloc(FRAME_BYTES);
+    const call = Buffer.alloc(FRAME_BYTES);
+    for (let i = 0; i < FRAME_BYTES / 2; i++) {
+      mic.writeInt16LE(frame.readInt16LE(i * 4), i * 2);
+      call.writeInt16LE(frame.readInt16LE(i * 4 + 2), i * 2);
+    }
+    emitTo(micListeners, mic);
+    emitTo(pcmListeners, call);
+  };
   const lostListeners = new Set<(reason: string) => void>();
   /** The running capture, or null. */
   let current: { helper: HelperChild; stopping: boolean } | null = null;
@@ -21,7 +55,6 @@ export function createMacSystemAudio(deps: { spawn(command: "audio"): HelperChil
   const capture = (helper: HelperChild) =>
     new Promise<{ ok: boolean; reason?: string }>((resolve) => {
       const session = { helper, stopping: false };
-      let pending: Buffer = Buffer.alloc(0);
       let started = false;
       let lostReason: string | null = null;
       let settled = false;
@@ -37,14 +70,10 @@ export function createMacSystemAudio(deps: { spawn(command: "audio"): HelperChil
         helper.kill();
       }, START_TIMEOUT_MS);
 
+      const cut = shared ? frames(split, FRAME_BYTES * 2) : frames((frame) => emitTo(pcmListeners, frame), FRAME_BYTES);
       helper.stdout.on("data", (chunk: Buffer) => {
         if (!started || session.stopping) return;
-        pending = pending.length ? Buffer.concat([pending, chunk]) : chunk;
-        while (pending.length >= FRAME_BYTES) {
-          const frame = new Uint8Array(pending.subarray(0, FRAME_BYTES)).buffer;
-          pending = pending.subarray(FRAME_BYTES);
-          for (const listener of pcmListeners) listener(frame);
-        }
+        cut(chunk);
       });
       helper.stderr.on(
         "data",
@@ -74,7 +103,12 @@ export function createMacSystemAudio(deps: { spawn(command: "audio"): HelperChil
       if (current || starting) return { ok: false, reason: "already_running" };
       starting = true;
       try {
-        return await capture(deps.spawn("audio"));
+        const result = await capture(shared ? deps.spawn("audio", ["--with-mic"]) : deps.spawn("audio"));
+        if (result.ok && deps.micMode === "apple") {
+          voice = deps.spawn("voice");
+          voice.stdout.on("data", frames((frame) => emitTo(micListeners, frame), FRAME_BYTES));
+        }
+        return result;
       } catch (error) {
         return { ok: false, reason: `helper_failed:${String(error)}` };
       } finally {
@@ -82,6 +116,12 @@ export function createMacSystemAudio(deps: { spawn(command: "audio"): HelperChil
       }
     },
     async stop() {
+      if (voice) {
+        const helper = voice;
+        voice = null;
+        helper.stdin.end();
+        setTimeout(() => helper.kill(), 1000).unref?.();
+      }
       const session = current;
       if (!session) return;
       session.stopping = true;
@@ -98,5 +138,14 @@ export function createMacSystemAudio(deps: { spawn(command: "audio"): HelperChil
       lostListeners.add(cb);
       return () => void lostListeners.delete(cb);
     },
+    ...(deps.micMode
+      ? {
+          micMode: deps.micMode,
+          onMicPcm(cb: (pcm: ArrayBuffer) => void) {
+            micListeners.add(cb);
+            return () => void micListeners.delete(cb);
+          },
+        }
+      : {}),
   };
 }

@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { encodePowerShell, READER_LOOP_SCRIPT } from "../../windows/browser-pages.ts";
 import { MIC_CONSENT_KEY } from "../../windows/mic-use.ts";
 import type { ReaderChild } from "../../windows/page-reader-process.ts";
@@ -10,6 +10,17 @@ import { createWindowsCrmScreenReader } from "./crm-screen-reader.ts";
 import { createWindowsPermissions } from "./permissions.ts";
 import { createWindowsPhone } from "./phone.ts";
 import { createWindowsSystemAudio } from "./system-audio.ts";
+
+/** The rep chose an app for TEL links (Settings › Default apps): Windows keeps it as the UserChoice ProgId. */
+function hasDefaultTelApp(): boolean {
+  try {
+    return /ProgId\s+REG_SZ\s+\S/.test(
+      execFileSync("reg.exe", ["query", "HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\tel\\UserChoice", "/v", "ProgId"], { encoding: "utf8", timeout: 5000, windowsHide: true }),
+    );
+  } catch {
+    return false;
+  }
+}
 
 /** Windows: Chromium's loopback, the microphone-use record in the registry, one long-lived PowerShell reader. */
 export function createWindowsPlatform(env: PlatformEnv): Platform {
@@ -40,7 +51,9 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
     // A window that cannot take focus (focusable: false) is created WS_EX_NOACTIVATE: a click never activates the app.
     island: { prepare: () => "non-activating (Windows: not focusable)" },
     phone: createWindowsPhone({
-      telApp: () => env.protocolApp("tel:"),
+      // Only a default Windows keeps for TEL links counts: without one, Electron names Windows' own app picker
+      // ("Choose an app", in the system's language) as if it were an app.
+      telApp: () => (hasDefaultTelApp() ? env.protocolApp("tel:") : ""),
       openExternal: env.openExternal,
       openSoundRecording: () => void runQuiet("control.exe", ["mmsys.cpl,,1"], 10_000).catch((error) => env.log(`sound settings did not open: ${String(error)}`)),
     }),

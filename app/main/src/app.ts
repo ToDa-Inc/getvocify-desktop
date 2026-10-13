@@ -11,7 +11,7 @@ import { IslandController, type Caller } from "./controller.ts";
 import { DashboardHost } from "./dashboard.ts";
 import { Drafts } from "./drafts.ts";
 import { createLogger } from "./logger.ts";
-import { createTranscriptTrace } from "./transcript-trace.ts";
+import { createAudioTrace, createTranscriptTrace } from "./transcript-trace.ts";
 import { JsonSettings } from "./settings.ts";
 import { ShortcutManager } from "./shortcut.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
@@ -282,6 +282,12 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const canDestroy = () =>
     quitting ||
     Date.now() >= busyUntil && !calendarWatch && !controller.isListening && !recordingOrFinishing() && !calling() && controller.state.postCall === null && drafts.count() === 0;
+  // Dev only: what the island is given and the page's raw audio are kept in traces/, to replay real calls offline.
+  const traceOn = !app.isPackaged || process.env.VOCIFY_TRACE === "1";
+  if (traceOn) {
+    const audioTrace = createAudioTrace(options.userDataDir);
+    ipcMain.on("vocify:trace-audio", (_event, side: unknown, pcm: unknown, at: unknown, recording: unknown) => audioTrace(side, pcm, at, recording));
+  }
   const dashboard = new DashboardHost({
     url: options.dashboardUrl,
     preload: join(here, "dashboard-preload.cjs"),
@@ -290,6 +296,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     isSignInHost: signInHostsFor(options.dashboardUrl),
     reportedPlatform: options.reportedPlatform ?? (platform === "win32" ? "win32" : "darwin"),
     trustFiles: options.trustFiles === true,
+    devTrace: traceOn,
     canDestroy,
     log,
   });
@@ -415,7 +422,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     }
   }
 
-  const trace = !app.isPackaged || process.env.VOCIFY_TRACE === "1" ? createTranscriptTrace(options.userDataDir) : null;
+  const trace = traceOn ? createTranscriptTrace(options.userDataDir) : null;
 
   function pushState(state: IslandState): void {
     trace?.(state);

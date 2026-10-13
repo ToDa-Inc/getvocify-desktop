@@ -36,6 +36,8 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
     }
 
     private let queue = DispatchQueue(label: "vocify.helper.tap", qos: .userInteractive)
+    private let devices = DispatchQueue(label: "vocify.helper.tap.devices")
+    private var stopped = false
     private var tap = AudioObjectID(kAudioObjectUnknown)
     private var aggregate = AudioObjectID(kAudioObjectUnknown)
     private var ioProc: AudioDeviceIOProcID?
@@ -62,15 +64,26 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
 
     func stop() {
         queue.sync {
+            stopped = true
             timer?.cancel()
             timer = nil
             if let listener = outputListener {
                 var address = Self.defaultOutputAddress
-                AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, queue, listener)
+                AudioObjectRemovePropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, devices, listener)
                 outputListener = nil
             }
-            close()
         }
+        stopReading()
+        queue.sync { close() }
+    }
+
+    /// Core Audio holds its device lock while it waits to run the read block on `queue`, so stopping the device on `queue`
+    /// waited on that lock forever (about 1 stop in 20: the helper outlived the app, its tap still open). It is stopped here,
+    /// off `queue`, and `close()` then only tears down a device that no longer reads.
+    private func stopReading() {
+        dispatchPrecondition(condition: .notOnQueue(queue))
+        let (device, proc) = queue.sync { (aggregate, ioProc) }
+        if let proc, device != kAudioObjectUnknown { AudioDeviceStop(device, proc) }
     }
 
     // MARK: The tap and the device it is read through (on `queue`)
@@ -248,8 +261,13 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
 
     private func watch() {
         var address = Self.defaultOutputAddress
-        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.reopen() }
-        if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, queue, listener) == noErr {
+        // Heard on `devices`, not `queue`: the device is stopped off `queue` (see `stopReading`).
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            guard let self else { return }
+            self.stopReading()
+            self.queue.async { self.reopen() }
+        }
+        if AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &address, devices, listener) == noErr {
             outputListener = listener
         }
         let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -264,6 +282,7 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
 
     /// The output device changed (headphones, AirPods): the old device may be gone, so the tap is read through the new one.
     private func reopen() {
+        guard !stopped else { return }
         close()
         if !open() { onEnd?("lost", "device_changed") }
     }

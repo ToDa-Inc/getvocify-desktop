@@ -78,7 +78,7 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
     }
 
     /// Core Audio holds its device lock while it waits to run the read block on `queue`, so stopping the device on `queue`
-    /// waited on that lock forever (about 1 stop in 20: the helper outlived the app, its tap still open). It is stopped here,
+    /// waited on that lock forever (18 stops in 200: the helper outlived the app, its tap still open). It is stopped here,
     /// off `queue`, and `close()` then only tears down a device that no longer reads.
     private func stopReading() {
         dispatchPrecondition(condition: .notOnQueue(queue))

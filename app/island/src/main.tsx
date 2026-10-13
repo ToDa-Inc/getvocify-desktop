@@ -45,4 +45,6 @@ function App() {
   return <Island state={state} act={act} />;
 }
 
+// The stylesheet tells the systems apart where they behave differently (see island.css).
+if (window.vocifyIsland?.platform) document.documentElement.dataset.platform = window.vocifyIsland.platform;
 createRoot(document.getElementById("root")!).render(<App />);

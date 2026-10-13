@@ -68,6 +68,9 @@ jobs:
       # What a rep notices first: a real mouse click on the island must act at once and must not take focus from the call.
       - name: Real click on the island does not take focus
         run: npm run test:focus
+      # The island never takes the keyboard, so a selection in it could never be copied: a real drag selects nothing.
+      - name: Real drag over the transcript selects nothing
+        run: npm run test:select
       # The whole flow with Windows' own mouse and keyboard: every island interaction, typing in the card, and the call
       # window keeping focus throughout.
       - name: Whole flow with real input

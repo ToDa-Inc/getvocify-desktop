@@ -1,4 +1,4 @@
-import { build } from "esbuild";
+import { build, context } from "esbuild";
 import { cpSync, mkdirSync, copyFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,8 +6,16 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, "dist");
 mkdirSync(dist, { recursive: true });
+/** `--watch` (npm run dev): build once, then again on every save. */
+const watch = process.argv.includes("--watch");
+const bundle = async (options) => {
+  if (!watch) return build(options);
+  const ctx = await context(options);
+  await ctx.rebuild();
+  await ctx.watch();
+};
 
-await build({
+await bundle({
   entryPoints: { island: join(here, "src/main.tsx") },
   bundle: true,
   outdir: dist,
@@ -21,7 +29,7 @@ await build({
   logLevel: "info",
 });
 // The stylesheet is imported by name from index.html, so bundle it as its own entry.
-await build({
+await bundle({
   entryPoints: { island: join(here, "src/island.css") },
   bundle: true,
   outdir: dist,
@@ -37,3 +45,6 @@ if (process.argv.includes("--preview")) {
   writeFileSync(join(dist, "fixtures.js"), `window.__NOW=${NOW};window.__FIXTURES=${JSON.stringify(fixtures)};window.__INTERACTIONS=${JSON.stringify(interactions)};`);
   cpSync(join(here, "preview"), dist, { recursive: true });
 }
+
+// Tells `npm run dev` the first build is done and saves are being watched.
+if (watch) process.send?.("ready");

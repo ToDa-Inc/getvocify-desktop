@@ -56,6 +56,12 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
     onCallChannel: on("call:channel"),
     onPostCallAction: on("postcall:action"),
   },
+  // Vocify calling on this computer: off, the island's Call opens on the rep's phone ({ onPhone, phoneApp }).
+  calling: {
+    get: () => call("calling:get"),
+    set: (onPhone: boolean) => call("calling:set", { onPhone }),
+    dialOnPhone: (number: string) => call("calling:phone", { number }),
+  },
   saas: { request: (payload: Record<string, unknown>) => call("saas:request", { payload }) },
   crm: {
     pages: (options: Record<string, unknown> = {}) => call("crm:pages", options),

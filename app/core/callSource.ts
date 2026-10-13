@@ -19,6 +19,8 @@ export class CallSource {
     ["net.whatsapp.WhatsApp", new CallSource("WhatsApp", "call")],
     ["ru.keepcoder.Telegram", new CallSource("Telegram", "call")],
     ["com.apple.FaceTime", new CallSource("FaceTime", null)],
+    // The system service FaceTime and the iPhone's calls on the Mac run their audio in.
+    ["com.apple.avconferenced", new CallSource("FaceTime", null)],
   ];
 
   static app(bundleID?: string): CallSource | null {

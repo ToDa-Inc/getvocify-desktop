@@ -86,6 +86,8 @@ export class IslandController {
   private shownSide: "you" | "them" = "them";
   /** The Vocify call on show was answered: its end waits for the memo ("processing"), not back to rest. */
   private dialAnswered = false;
+  /** Recording a call opened on the rep's phone whose call service has not shown on the mic yet: the first one that does is that call. */
+  private awaitingPhoneCall = false;
   /** Meetings already announced: each opens the island once. */
   private announcedMeetings = new Set<string>();
   /** One meeting at one time: a meeting moved to another time is announced (and can be closed) again. */
@@ -399,16 +401,42 @@ export class IslandController {
     this.transition({ kind: "dialing" }, true);
     this.effects.emit("shell:command", "dial");
     this.start("dialTimeout", DIAL_TIMEOUT, () => {
-      if (this.mode !== "dialing" || this.current.dial !== null) return;
-      // The dashboard never took the call: say so where the rep clicked, for a moment. Never open the dashboard for it.
-      const offer = this.current.onScreen;
-      this.set({ dial: { phase: "ended", name: offer?.name ?? null, phone: offer?.phone ?? "", answeredAt: null, muted: false, message: DIAL_FAILED, brief: null, companyBrief: null } });
-      this.start("dialFailedHold", DIAL_FAILED_HOLD, () => {
-        if (this.mode !== "dialing" || this.current.dial?.message !== DIAL_FAILED) return;
-        this.set({ dial: null });
-        this.rest();
-      });
+      // The dashboard never took the call.
+      if (this.mode === "dialing" && this.current.dial === null) this.dialFailed(DIAL_FAILED);
     });
+  }
+
+  /** Says why the call did not start, where the rep clicked, for a moment. Never opens the dashboard for it. */
+  private dialFailed(message: string): void {
+    this.stopTimer("dialTimeout");
+    const offer = this.current.onScreen;
+    this.set({ dial: { phase: "ended", name: offer?.name ?? null, phone: offer?.phone ?? "", answeredAt: null, muted: false, message, brief: null, companyBrief: null } });
+    this.start("dialFailedHold", DIAL_FAILED_HOLD, () => {
+      if (this.mode !== "dialing" || this.current.dial?.message !== message) return;
+      this.set({ dial: null });
+      this.rest();
+    });
+  }
+
+  /** The call is open in the rep's phone app (Vocify calling off): it is recorded from now, as a call Record was pressed on. */
+  phoneDialed(): void {
+    if (this.mode !== "dialing" || this.current.dial !== null) return;
+    this.stopTimer("dialTimeout");
+    this.recordingCaller = null;
+    this.awaitingPhoneCall = true;
+    this.transition({ kind: "starting" }, false);
+    this.effects.emit("shell:command", "listen");
+    this.start("startTimeout", START_TIMEOUT, () => {
+      if (this.mode !== "starting") return;
+      this.awaitingPhoneCall = false;
+      this.rest();
+      this.effects.showMainWindow();
+    });
+  }
+
+  /** The rep's phone app could not open the call (`message` says why, in the rep's words). */
+  phoneDialFailed(message: string): void {
+    if (this.mode === "dialing" && this.current.dial === null) this.dialFailed(message);
   }
 
   /** Hangs up, or cancels while it rings. Answered, the island waits for the call's memo. */
@@ -608,6 +636,7 @@ export class IslandController {
     if (this.vocifyCallUp) this.recordingCaller = null;
     else if (this.current.mode.kind === "call") this.recordingCaller = this.shownCaller;
     else if (this.mode !== "recording") this.recordingCaller = this.currentCaller;
+    if (this.recordingCaller) this.awaitingPhoneCall = false;
     // The call the rep placed from the island stays as open (or closed) as they had it when it is answered.
     const keepsShape = this.mode === "recording" || (this.mode === "dialing" && this.vocifyCallUp);
     this.transition({ kind: "recording" }, keepsShape && this.current.expanded);
@@ -627,6 +656,7 @@ export class IslandController {
       this.quiet = { appId: this.recordingCaller.appId, until: this.effects.now() + AFTER_CALL_QUIET * 1000 };
     }
     this.recordingCaller = null;
+    this.awaitingPhoneCall = false;
     this.set({ callContact: null });
     if (finishing) this.finish();
     // The dashboard hides the island as it stops; a finishing one keeps waiting.
@@ -766,6 +796,10 @@ export class IslandController {
     }
     switch (this.mode) {
       case "recording":
+        if (this.awaitingPhoneCall && caller) {
+          this.awaitingPhoneCall = false;
+          this.recordingCaller = caller;
+        }
         return this.watchForHangUp(caller);
       case "starting":
       case "stopped":

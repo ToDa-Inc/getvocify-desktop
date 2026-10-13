@@ -8,6 +8,7 @@ import type { Platform } from "../types.ts";
 import { createWindowsCallDetector } from "./call-detector.ts";
 import { createWindowsCrmScreenReader } from "./crm-screen-reader.ts";
 import { createWindowsPermissions } from "./permissions.ts";
+import { createWindowsPhone } from "./phone.ts";
 import { createWindowsSystemAudio } from "./system-audio.ts";
 
 /** Windows: Chromium's loopback, the microphone-use record in the registry, one long-lived PowerShell reader. */
@@ -37,5 +38,6 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
     }),
     // A window that cannot take focus (focusable: false) is created WS_EX_NOACTIVATE: a click never activates the app.
     island: { prepare: () => "non-activating (Windows: not focusable)" },
+    phone: createWindowsPhone({ telApp: () => env.protocolApp("tel:"), openExternal: env.openExternal }),
   };
 }

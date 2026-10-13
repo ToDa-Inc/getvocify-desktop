@@ -8,6 +8,8 @@ import type { ReaderChild } from "../src/windows/page-reader-process.ts";
 import { callDetectorContract } from "./contracts/call-detector.contract.ts";
 import { crmScreenReaderContract } from "./contracts/crm-screen-reader.contract.ts";
 import { permissionsContract } from "./contracts/permissions.contract.ts";
+import { phoneDialerContract } from "./contracts/phone-dialer.contract.ts";
+import { createWindowsPhone } from "../src/platform/windows/phone.ts";
 
 const START = 1_800_000_000_000;
 const KEY = "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone";
@@ -93,3 +95,10 @@ permissionsContract("Windows", () => {
     opened: () => opened,
   };
 });
+
+const windowsPhone = (telApp: string) => {
+  const opened: string[] = [];
+  return { dialer: createWindowsPhone({ telApp: () => telApp, openExternal: (url) => void opened.push(url) }), opened: () => opened };
+};
+
+phoneDialerContract("Windows", () => windowsPhone("Phone Link"), () => windowsPhone(""));

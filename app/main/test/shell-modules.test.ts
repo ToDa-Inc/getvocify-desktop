@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createBridge, type BridgeDeps } from "../src/bridge.ts";
+import type { PhoneDialer } from "../src/platform/types.ts";
 import { IslandController } from "../src/controller.ts";
 import { Drafts } from "../src/drafts.ts";
 import type { Loopback } from "../src/loopback/loopback.ts";
@@ -222,7 +223,7 @@ test("a saved shortcut is restored on the next launch, and 'off' stays off", () 
 
 /* ---------- the bridge ---------- */
 
-function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void>; systemAudioAccess?: () => string; askSystemAudio?: () => Promise<void> } = {}) {
+function bridgeSetup(options: { phoneApp?: string | null; phoneFails?: "no_dialer" | "invalid_number" | "open_failed"; microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void>; systemAudioAccess?: () => string; askSystemAudio?: () => Promise<void> } = {}) {
   const emitted: { channel: string; payload: unknown }[] = [];
   const opened: string[] = [];
   const logs: string[] = [];
@@ -253,7 +254,18 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
   const store = new Map<string, unknown>();
   const shortcut = new ShortcutManager("win32", { get: (k) => store.get(k), set: (k, v) => void store.set(k, v) }, { register: () => true, unregister: () => {} }, () => {});
   shortcut.activate();
+  const dialed: string[] = [];
+  const phone: PhoneDialer = {
+    app: () => (options.phoneApp === undefined ? "Phone Link" : options.phoneApp),
+    dial: async (number) => {
+      if (options.phoneFails) return { ok: false, reason: options.phoneFails };
+      dialed.push(number);
+      return { ok: true };
+    },
+  };
   const deps: BridgeDeps = {
+    phone,
+    callOnPhone: { get: () => store.get("callOnPhone") === true, set: (on) => void store.set("callOnPhone", on) },
     readCrmPages: async () => ({ urls: ["https://app.hubspot.com/contacts/1/contact/2"], browsers: [{ name: "chrome", bundleId: "chrome", access: "granted" }] }),
     platform: options.platform ?? "win32",
     askMicrophone: options.askMicrophone,
@@ -275,7 +287,7 @@ function bridgeSetup(options: { microphone?: string; loopbackStart?: { ok: boole
     fetch: async () => ({ status: 200, text: async () => "{}" }),
     log: (line) => logs.push(line),
   };
-  return { call: createBridge(deps), calendarWatches, emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, loopbackStops: () => loopbackStops };
+  return { call: createBridge(deps), dialed, calendarWatches, emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, loopbackStops: () => loopbackStops };
 }
 
 test("bridge: the permission test shows both permissions as not asked until the dashboard asks for each", async () => {
@@ -451,4 +463,40 @@ test("bridge: the dashboard saying it watches the calendar (or stops) is passed 
   await t.call("shell:state", { state: { calendarWatch: "yes" } });
   await t.call("shell:state", { state: { calendarWatch: false } });
   assert.deepEqual(t.calendarWatches, [true, false]);
+});
+
+/* ---------- calls on the rep's own phone (Vocify calling off) ---------- */
+
+const callable = { provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", phone: "+34600111222", callerId: null, state: "callable" };
+
+/** The island's Call pressed on the contact on screen: the dashboard is now asked to place it. */
+const pressCall = (t: ReturnType<typeof bridgeSetup>) => {
+  t.controller.applyShellState({ onScreen: callable });
+  t.controller.act({ name: "openDialConfirm" });
+  t.controller.act({ name: "dial" });
+};
+
+test("bridge: Vocify calling is on until the rep turns it off on this computer, and says which app calls go to", async () => {
+  const t = bridgeSetup();
+  assert.deepEqual(await t.call("calling:get", {}), { onPhone: false, phoneApp: "Phone Link" });
+  assert.deepEqual(await t.call("calling:set", { onPhone: true }), { onPhone: true, phoneApp: "Phone Link" });
+  assert.deepEqual(await t.call("calling:get", {}), { onPhone: true, phoneApp: "Phone Link" });
+  assert.deepEqual(await bridgeSetup({ phoneApp: null }).call("calling:get", {}), { onPhone: false, phoneApp: null });
+});
+
+test("bridge: a call on the phone opens it there and the island records it from then", async () => {
+  const t = bridgeSetup();
+  pressCall(t);
+  assert.deepEqual(await t.call("calling:phone", { number: "+34600111222" }), { ok: true });
+  assert.deepEqual(t.dialed, ["+34600111222"]);
+  assert.equal(t.controller.state.mode.kind, "starting");
+  assert.ok(t.emitted.some((e) => e.channel === "shell:command" && e.payload === "listen"));
+});
+
+test("bridge: a phone that cannot open the call says why on the island", async () => {
+  const t = bridgeSetup({ phoneFails: "no_dialer" });
+  pressCall(t);
+  assert.deepEqual(await t.call("calling:phone", { number: "+34600111222" }), { ok: false, reason: "no_dialer" });
+  assert.equal(t.controller.state.mode.kind, "dialing");
+  assert.equal(t.controller.state.dial?.message, "No app on this computer makes phone calls");
 });

@@ -71,6 +71,18 @@ export interface SpeakerReader {
   stop(): void;
 }
 
+/** Why the rep's phone could not open a call. */
+export type PhoneDialFailure = "no_dialer" | "invalid_number" | "open_failed";
+
+/** Calls on the rep's own phone line, through the OS's calling app (Mac: FaceTime with the iPhone; Windows: the app
+ * that opens phone links, e.g. Phone Link), for when Vocify calling is off. */
+export interface PhoneDialer {
+  /** The app a call opens in, or null when this computer has none. */
+  app(): string | null;
+  /** Opens a call to `number` (E.164; spaces and dashes are ignored) in that app; says why not instead of throwing. */
+  dial(number: string): Promise<{ ok: true } | { ok: false; reason: PhoneDialFailure }>;
+}
+
 /** One OS's implementations. `callDetector` is null on an OS that cannot detect calls yet; `speakers` where it can't name them. */
 export type Platform = {
   systemAudio: SystemAudio;
@@ -79,4 +91,5 @@ export type Platform = {
   permissions: Permissions;
   island: IslandBehaviour;
   speakers: SpeakerReader | null;
+  phone: PhoneDialer;
 };

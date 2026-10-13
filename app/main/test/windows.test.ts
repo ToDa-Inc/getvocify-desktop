@@ -57,6 +57,8 @@ test("call apps by desktop executable and by Store package family", () => {
   assert.equal(callAppFor("msteams_8wekyb3d8bbwe_variant")?.name, "Microsoft Teams");
   assert.equal(callAppFor("chrome.exe")?.browser, true);
   assert.equal(callAppFor("slack.exe")?.browser, false);
+  assert.equal(callAppFor("PhoneExperienceHost.exe")?.name, "Phone Link", "a call on the rep's phone, through Phone Link");
+  assert.equal(callAppFor("Microsoft.YourPhone_8wekyb3d8bbwe")?.name, "Phone Link");
   assert.equal(callAppFor("granola.exe"), null, "note-takers use the microphone too and are not calls");
   assert.equal(callAppFor("wispr flow.exe"), null);
 });

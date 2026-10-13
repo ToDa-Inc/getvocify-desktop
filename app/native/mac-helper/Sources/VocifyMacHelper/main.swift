@@ -106,7 +106,10 @@ func commandAudio() {
     // Writing to the app after it went away must end the helper, not kill it with SIGPIPE mid-write.
     signal(SIGPIPE, SIG_IGN)
     stopWhenStdinCloses()
-    let capture = SystemAudioCapture()
+    // A process tap hears every process, system call services included (an iPhone call on the Mac); ScreenCaptureKit
+    // only apps. Taps exist from macOS 14.2.
+    let capture: AudioCapture
+    if #available(macOS 14.2, *) { capture = TapAudioCapture() } else { capture = SystemAudioCapture() }
     var ended: (event: String, reason: String)?
     capture.onEnd = { event, reason in
         DispatchQueue.main.async {
@@ -138,7 +141,12 @@ func stopWhenStdinCloses() {
 // MARK: - Audio Permission Command
 
 func commandAudioPermission() {
-    print("{\"status\":\"\(systemAudioPermission())\"}")
+    // A process tap's permission (System Audio Recording) cannot be read: the app remembers a capture that started.
+    if #available(macOS 14.2, *) {
+        print("{\"status\":\"unknown\"}")
+    } else {
+        print("{\"status\":\"\(systemAudioPermission())\"}")
+    }
 }
 
 

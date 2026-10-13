@@ -385,6 +385,17 @@ test("losing the call's audio opens a closed recording island once", () => {
   assert.equal(t.controller.state.expanded, false, "no change, no reopening");
 });
 
+test("a silent mic opens a closed recording island, and clears", () => {
+  const t = recording();
+  t.controller.applyShellState({ micSilent: true });
+  assert.equal(t.controller.state.expanded, true);
+  assert.equal(t.controller.state.micSilent, true);
+  t.controller.act({ name: "toggle" });
+  t.controller.applyShellState({ micSilent: false });
+  assert.equal(t.controller.state.micSilent, false);
+  assert.equal(t.controller.state.expanded, false, "the mic coming back does not open it");
+});
+
 test("recorderReady is remembered across launches", () => {
   const t = setup({ recorderReady: false });
   t.controller.applyShellState({ recorderReady: true });

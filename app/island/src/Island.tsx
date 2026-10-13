@@ -201,7 +201,11 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
             <span className="paused">Paused</span>
           ) : (
             <>
-              {state.callAudioLost && (
+              {state.micSilent ? (
+                <span title="Your mic isn't sending audio" aria-label="Your mic isn't sending audio" className="warn-icon">
+                  <AlertCircle size={12} />
+                </span>
+              ) : state.callAudioLost && (
                 <span title="Not hearing the call: only your mic is recording" aria-label="Can't hear the call" className="warn-icon">
                   <AlertCircle size={12} />
                 </span>
@@ -889,11 +893,23 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
       {state.keypadOpen && state.dial?.phase === "active" && keypadAnchor && (
         <KeypadPopover anchor={keypadAnchor} onDigit={(digit) => act({ name: "digit", digit })} onClose={closeKeypad} />
       )}
-      {state.callAudioLost && !state.paused && <CallAudioLostLine />}
+      {state.micSilent && !state.paused ? <MicSilentLine /> : state.callAudioLost && !state.paused && <CallAudioLostLine />}
       {state.liveHelp !== false && <HelpSection current={state.assist} earlier={state.lastHelp} />}
       <div className="hairline" />
       {hasBrief && state.dial && <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} talking={state.turns.length > 0} />}
       <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} />
+    </div>
+  );
+}
+
+function MicSilentLine() {
+  return (
+    <div className="lost-line">
+      <AlertCircle size={11} style={{ color: "var(--warning)", marginTop: 2 }} />
+      <div>
+        <div className="lost-title">Your mic isn't sending audio</div>
+        <div className="lost-body">Check it isn't muted and that the right input is selected.</div>
+      </div>
     </div>
   );
 }

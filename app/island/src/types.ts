@@ -120,6 +120,8 @@ export type IslandState = {
   paused: boolean;
   recorderReady: boolean;
   callAudioLost: boolean;
+  /** The mic has sent only silence for a while (muted, or the wrong input): the dashboard watches it. */
+  micSilent: boolean;
   callContact: string | null;
   clock: Clock | null;
   levels: Levels;

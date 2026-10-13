@@ -105,6 +105,7 @@ export class IslandController {
       paused: false,
       recorderReady: options.recorderReady ?? false,
       callAudioLost: false,
+      micSilent: false,
       callContact: null,
       clock: null,
       levels: { you: 0, them: 0, side: "them", at: effects.now() },
@@ -191,6 +192,11 @@ export class IslandController {
     if (typeof update.callAudioLost === "boolean" && update.callAudioLost !== this.current.callAudioLost) {
       audioChange = [this.current.callAudioLost, update.callAudioLost];
       patch.callAudioLost = update.callAudioLost;
+    }
+    if (typeof update.micSilent === "boolean" && update.micSilent !== this.current.micSilent) {
+      // Opens the island the same way: a recording that hears nothing must say so even with the dashboard hidden.
+      audioChange ??= [this.current.micSilent, update.micSilent];
+      patch.micSilent = update.micSilent;
     }
     let postCallChanged = false;
     if (has("postCall")) {

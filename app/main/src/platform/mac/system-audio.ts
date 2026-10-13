@@ -6,24 +6,22 @@ const FRAME_BYTES = 3200;
 /** The helper says `started` as soon as capture runs. ScreenCaptureKit's first start after launch can take several
  * seconds (it lists the displays first), so this only catches a helper that is stuck. */
 const START_TIMEOUT_MS = 12000;
-/** With the microphone, the helper's first audio callback (`io`) must come this soon after `started`. Inside the app
- * macOS has started the device and then never run it (seen 2026-10-14 on a locally signed build): neither side
- * arrived. Without it the capture restarts without the microphone, so the call's audio is never what is lost. */
-const MIC_IO_TIMEOUT_MS = 2000;
+/** The microphone helper's first audio must come this soon; otherwise the page records its own microphone. */
+const MIC_START_TIMEOUT_MS = 3000;
 
 /**
  * The call's audio on a Mac: `vocify-mac-helper audio` (a Core Audio process tap, see native/mac-helper/PROTOCOL.md)
  * writes PCM on stdout and its status on stderr. One helper per capture; its stdout is cut into exact 3200-byte frames.
- * With the microphone (`audio --with-mic`) it reads both through one device on one clock and writes stereo, the
- * microphone left and the call right, sample for sample: the server measured the call's echo in it 21 ms early, the
- * whole call long, which is what lets it take the echo out.
+ * With the microphone, `vocify-mac-helper microphone` reads it in a process of its own, next to the call's (as anarlog
+ * reads its mic next to its system-audio tap): read inside the call's helper it stopped the call's audio inside the app
+ * (2026-10-14). The two run on different clocks; the server measures how late the mic hears the call and lines them up.
  */
 export function createMacSystemAudio(deps: {
-  spawn(command: "audio", args?: string[]): HelperChild;
+  spawn(command: "audio" | "microphone"): HelperChild;
   /** macOS allows Vocify the microphone. Without it the helper would read silence, so the page records its own (and asks). */
   micAllowed(): boolean;
-  /** Test only: how long the first audio callback may take with the microphone. */
-  micIoTimeoutMs?: number;
+  /** Test only: how long the microphone's first audio may take. */
+  micStartTimeoutMs?: number;
   log?(line: string): void;
 }): SystemAudio {
   const pcmListeners = new Set<(pcm: ArrayBuffer) => void>();
@@ -42,23 +40,14 @@ export function createMacSystemAudio(deps: {
     const pcm = new Uint8Array(frame).buffer;
     for (const listener of listeners) listener(pcm);
   };
-  /** One stereo frame (left microphone, right call) into a mono frame for each. */
-  const split = (frame: Buffer) => {
-    const mic = Buffer.alloc(FRAME_BYTES);
-    const call = Buffer.alloc(FRAME_BYTES);
-    for (let i = 0; i < FRAME_BYTES / 2; i++) {
-      mic.writeInt16LE(frame.readInt16LE(i * 4), i * 2);
-      call.writeInt16LE(frame.readInt16LE(i * 4 + 2), i * 2);
-    }
-    emitTo(micListeners, mic);
-    emitTo(pcmListeners, call);
-  };
   const lostListeners = new Set<(reason: string) => void>();
   /** The running capture, or null. */
   let current: { helper: HelperChild; stopping: boolean } | null = null;
+  /** The microphone's own helper while it runs. */
+  let microphone: HelperChild | null = null;
   let starting = false;
 
-  const capture = (helper: HelperChild, withMic: boolean, onIo?: () => void) =>
+  const capture = (helper: HelperChild) =>
     new Promise<{ ok: boolean; reason?: string }>((resolve) => {
       const session = { helper, stopping: false };
       let started = false;
@@ -76,7 +65,7 @@ export function createMacSystemAudio(deps: {
         helper.kill();
       }, START_TIMEOUT_MS);
 
-      const cut = withMic ? frames(split, FRAME_BYTES * 2) : frames((frame) => emitTo(pcmListeners, frame), FRAME_BYTES);
+      const cut = frames((frame) => emitTo(pcmListeners, frame), FRAME_BYTES);
       helper.stdout.on("data", (chunk: Buffer) => {
         if (!started || session.stopping) return;
         cut(chunk);
@@ -91,8 +80,6 @@ export function createMacSystemAudio(deps: {
             settle({ ok: false, reason: typeof event.reason === "string" ? event.reason : "capture_failed" });
           } else if (event.event === "lost") {
             lostReason = typeof event.reason === "string" ? event.reason : "lost";
-          } else if (event.event === "io") {
-            onIo?.();
           }
         }),
       );
@@ -106,7 +93,47 @@ export function createMacSystemAudio(deps: {
       });
     });
 
+  /** True once the microphone's helper delivers audio; a helper that does not (or cannot open it) is stopped. */
+  function startMicrophone(): Promise<boolean> {
+    const helper = deps.spawn("microphone");
+    microphone = helper;
+    const cut = frames((frame) => emitTo(micListeners, frame), FRAME_BYTES);
+    return new Promise<boolean>((resolve) => {
+      let heard = false;
+      const timer = setTimeout(() => {
+        if (heard) return;
+        deps.log?.("microphone: no audio from the app's own mic, the page records its own");
+        endMicrophone(helper);
+        resolve(false);
+      }, deps.micStartTimeoutMs ?? MIC_START_TIMEOUT_MS);
+      helper.stdout.on("data", (chunk: Buffer) => {
+        if (microphone !== helper) return;
+        if (!heard) {
+          heard = true;
+          clearTimeout(timer);
+          resolve(true);
+        }
+        cut(chunk);
+      });
+      helper.on("exit", () => {
+        if (microphone === helper) microphone = null;
+        if (!heard) {
+          clearTimeout(timer);
+          resolve(false);
+        }
+      });
+    });
+  }
+
+  function endMicrophone(helper: HelperChild | null): void {
+    if (!helper) return;
+    if (microphone === helper) microphone = null;
+    helper.stdin.end();
+    setTimeout(() => helper.kill(), 1000).unref?.();
+  }
+
   async function stop(): Promise<void> {
+    endMicrophone(microphone);
     const session = current;
     if (!session) return;
     session.stopping = true;
@@ -121,20 +148,9 @@ export function createMacSystemAudio(deps: {
       if (current || starting) return { ok: false, reason: "already_running" };
       starting = true;
       try {
-        if (options?.mic === true && deps.micAllowed()) {
-          let heard: () => void = () => {};
-          const io = new Promise<boolean>((resolve) => {
-            heard = () => resolve(true);
-            setTimeout(() => resolve(false), deps.micIoTimeoutMs ?? MIC_IO_TIMEOUT_MS);
-          });
-          const result = await capture(deps.spawn("audio", ["--with-mic"]), true, () => heard());
-          if (!result.ok) return result;
-          if (await io) return { ...result, mic: true };
-          deps.log?.("call audio: no audio with the microphone, restarting without it");
-          await stop();
-        }
-        const result = await capture(deps.spawn("audio"), false);
-        return result.ok ? { ...result, mic: false } : result;
+        const result = await capture(deps.spawn("audio"));
+        if (!result.ok) return result;
+        return { ...result, mic: options?.mic === true && deps.micAllowed() ? await startMicrophone() : false };
       } catch (error) {
         return { ok: false, reason: `helper_failed:${String(error)}` };
       } finally {

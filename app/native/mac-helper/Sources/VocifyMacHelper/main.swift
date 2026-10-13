@@ -23,7 +23,7 @@ if arguments.count >= 2, arguments[1].hasPrefix("chrome-extension://") {
 
 guard arguments.count >= 2 else {
     fputs("usage: vocify-mac-helper <command>\n", stderr)
-    fputs("commands: screen, mic, audio [--with-mic], audio-permission, speakers\n", stderr)
+    fputs("commands: screen, mic, audio, microphone, audio-permission, speakers\n", stderr)
     exit(1)
 }
 
@@ -37,7 +37,9 @@ case "screen":
 case "mic":
     commandMic()
 case "audio":
-    commandAudio(withMic: arguments.contains("--with-mic"))
+    commandAudio()
+case "microphone":
+    commandMicrophone()
 case "audio-permission":
     commandAudioPermission()
 default:
@@ -100,7 +102,7 @@ func commandMic() {
 
 // MARK: - Audio Command
 
-func commandAudio(withMic: Bool = false) {
+func commandAudio() {
     signal(SIGTERM, handleSignal)
     signal(SIGINT, handleSignal)
     // Writing to the app after it went away must end the helper, not kill it with SIGPIPE mid-write.
@@ -109,10 +111,7 @@ func commandAudio(withMic: Bool = false) {
     // A process tap hears every process, system call services included (an iPhone call on the Mac); ScreenCaptureKit
     // only apps. Taps exist from macOS 14.2.
     let capture: AudioCapture
-    if #available(macOS 14.2, *) { capture = TapAudioCapture(withMic: withMic) } else if withMic {
-        status(["event": "error", "reason": "unsupported_os"])
-        exit(1)
-    } else { capture = SystemAudioCapture() }
+    if #available(macOS 14.2, *) { capture = TapAudioCapture() } else { capture = SystemAudioCapture() }
     var ended: (event: String, reason: String)?
     capture.onEnd = { event, reason in
         DispatchQueue.main.async {
@@ -130,6 +129,36 @@ func commandAudio(withMic: Bool = false) {
         status(["event": ended.event, "reason": ended.reason])
         exit(ended.event == "error" ? 1 : 0)
     }
+    exit(0)
+}
+
+// MARK: - Microphone Command
+
+/// `vocify-mac-helper microphone`: the default microphone alone, 16 kHz mono PCM16 on stdout, its own process next to
+/// `audio` (as anarlog reads its mic next to the system-audio tap): a microphone that fails never stops the call's audio.
+func commandMicrophone() {
+    signal(SIGTERM, handleSignal)
+    signal(SIGINT, handleSignal)
+    signal(SIGPIPE, SIG_IGN)
+    stopWhenStdinCloses()
+    let mic = MicInput()
+    var reported = false
+    mic.onSamples = { samples in
+        if !reported {
+            reported = true
+            status(["event": "started"])
+        }
+        samples.withUnsafeBytes { FileHandle.standardOutput.write(Data($0)) }
+    }
+    guard mic.start() else {
+        status(["event": "error", "reason": "mic_failed"])
+        exit(1)
+    }
+    let runLoop = RunLoop.current
+    while isRunning {
+        runLoop.run(until: Date(timeIntervalSinceNow: 0.1))
+    }
+    mic.stop()
     exit(0)
 }
 

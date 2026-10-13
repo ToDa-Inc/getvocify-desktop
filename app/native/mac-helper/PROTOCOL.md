@@ -20,6 +20,7 @@ reports no refusal: the tap then hears silence.
   into 3200-byte (100 ms) frames. When nothing plays, silence is written, so the stream never stalls.
 - **stderr**, JSON lines:
   - `{"event":"started"}` once capture runs.
+  - `{"event":"io"}` once the tap's device really runs (its first callback; macOS 14.2+).
   - `{"event":"error","reason":"<code>"}` then exit 1, when capture cannot start: `capture_failed`, and before
     macOS 14.2 `permission_denied` (Screen & System Audio Recording is off).
   - `{"event":"lost","reason":"<code>"}` then exit 0, when capture ends on its own and a restart did not bring it back.
@@ -27,19 +28,18 @@ reports no refusal: the tap then hears silence.
   samples, restarts the capture, at most once per 30 s unless forced).
 - Exit 0 on SIGTERM or stdin closed.
 
-### `vocify-mac-helper audio --with-mic` (macOS 14.2+)
+## `vocify-mac-helper microphone`
 
-The call's audio and the default microphone read through the same aggregate device, on the output's clock (the
-microphone is drift-compensated to it), so the two stay sample for sample: what the server needs to take the call's
-echo out of the microphone. Permission: also the app's microphone (`NSMicrophoneUsageDescription`); without it the
-microphone reads silence, so the app only asks for it once macOS allows Vocify the microphone.
+The default microphone alone, through AVAudioEngine, in a process of its own next to `audio` (as anarlog reads its mic
+next to its system-audio tap): read inside `audio`'s device it stopped the call's audio inside the app. The two run on
+different clocks; the server measures how late the mic hears the call and lines them up. Permission: the app's
+microphone (`NSMicrophoneUsageDescription`); the app only starts it once macOS allows Vocify the microphone.
 
-- **stdout**: interleaved stereo PCM, signed 16-bit little-endian, 16 000 Hz: left the microphone, right the call
-  (6400-byte frames are 100 ms). Silence is 6400 bytes.
-- **stderr**: as `audio`, plus `{"event":"streams","rate":"<Hz>","buffers":"<channels per input buffer>","mic":"<index>"}`
-  once the device is built: which input buffer is the microphone (a headset that is both output and microphone is
-  added once; an output with its own inputs comes before the microphone).
-- A change of audio output or of default microphone rebuilds the device.
+- **stdout**: raw PCM, signed 16-bit little-endian, mono, 16 000 Hz, as the microphone delivers it (no silence added).
+- **stderr**: `{"event":"started"}` with its first audio; `{"event":"error","reason":"mic_failed"}` then exit 1 when the
+  microphone cannot be opened; `{"event":"mic","state":"lost"}` when a change of input device could not reopen it.
+- A change of default microphone restarts it on the new one.
+- Exit 0 on SIGTERM or stdin closed.
 
 ## `vocify-mac-helper audio-permission`
 

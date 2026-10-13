@@ -40,8 +40,8 @@ export function createAudioAccess(deps: {
 
   const systemAudio: SystemAudio = {
     ...deps.capture,
-    async start() {
-      const result = await deps.capture.start();
+    async start(options) {
+      const result = await deps.capture.start(options);
       if (result.ok) {
         known = "authorized";
         if (!deps.started.get()) deps.started.set();

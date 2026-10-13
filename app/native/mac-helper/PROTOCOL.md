@@ -27,6 +27,20 @@ reports no refusal: the tap then hears silence.
   samples, restarts the capture, at most once per 30 s unless forced).
 - Exit 0 on SIGTERM or stdin closed.
 
+### `vocify-mac-helper audio --with-mic` (macOS 14.2+)
+
+The call's audio and the default microphone read through the same aggregate device, on the output's clock (the
+microphone is drift-compensated to it), so the two stay sample for sample: what the server needs to take the call's
+echo out of the microphone. Permission: also the app's microphone (`NSMicrophoneUsageDescription`); without it the
+microphone reads silence, so the app only asks for it once macOS allows Vocify the microphone.
+
+- **stdout**: interleaved stereo PCM, signed 16-bit little-endian, 16 000 Hz: left the microphone, right the call
+  (6400-byte frames are 100 ms). Silence is 6400 bytes.
+- **stderr**: as `audio`, plus `{"event":"streams","rate":"<Hz>","buffers":"<channels per input buffer>","mic":"<index>"}`
+  once the device is built: which input buffer is the microphone (a headset that is both output and microphone is
+  added once; an output with its own inputs comes before the microphone).
+- A change of audio output or of default microphone rebuilds the device.
+
 ## `vocify-mac-helper audio-permission`
 
 - **stdout**: one line `{"status":"authorized"|"never_requested"|"unknown"}` then exit 0. Never shows a prompt.

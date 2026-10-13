@@ -6,6 +6,7 @@ var FRAME_BYTES = 3200;
 var here = dirname(fileURLToPath(import.meta.url));
 function createLoopback(options = {}) {
   const pcmListeners = /* @__PURE__ */ new Set();
+  const micListeners = /* @__PURE__ */ new Set();
   const lostListeners = /* @__PURE__ */ new Set();
   let window = null;
   let partition = null;
@@ -21,10 +22,22 @@ function createLoopback(options = {}) {
     }
   };
   const fromOurPage = (event) => window !== null && !window.isDestroyed() && event.sender === window.webContents;
+  const asFrame = (data) => {
+    const bytes = data instanceof ArrayBuffer ? data : ArrayBuffer.isView(data) ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : null;
+    return bytes && bytes.byteLength === FRAME_BYTES ? bytes : null;
+  };
   const onFrame = (event, data) => {
     if (!fromOurPage(event)) return;
-    const bytes = data instanceof ArrayBuffer ? data : ArrayBuffer.isView(data) ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) : null;
-    if (bytes && bytes.byteLength === FRAME_BYTES) notify(pcmListeners, bytes, "pcm");
+    const call = asFrame(data);
+    if (call) notify(pcmListeners, call, "pcm");
+  };
+  const onPair = (event, micData, callData) => {
+    if (!fromOurPage(event)) return;
+    const mic = asFrame(micData);
+    const call = asFrame(callData);
+    if (!mic || !call) return;
+    notify(micListeners, mic, "mic");
+    notify(pcmListeners, call, "pcm");
   };
   const onEnded = (event, reason) => {
     if (!fromOurPage(event) || stopping) return;
@@ -37,6 +50,7 @@ function createLoopback(options = {}) {
   }
   function release() {
     ipcMain.off("loopback:frame", onFrame);
+    ipcMain.off("loopback:pair", onPair);
     ipcMain.off("loopback:ended", onEnded);
     const closing = window;
     window = null;
@@ -45,7 +59,7 @@ function createLoopback(options = {}) {
     partition = null;
     if (closing && !closing.isDestroyed()) closing.destroy();
   }
-  async function start() {
+  async function start(startOptions) {
     if (running) return { ok: false, reason: "already_running" };
     if (process.platform !== "win32" && !options.testSource) return { ok: false, reason: "unsupported_platform" };
     running = true;
@@ -59,7 +73,10 @@ function createLoopback(options = {}) {
         if (video) callback({ video, audio: "loopback" });
         else callback({});
       });
+      own.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === "media"));
+      own.setPermissionCheckHandler((_contents, permission) => permission === "media");
       ipcMain.on("loopback:frame", onFrame);
+      ipcMain.on("loopback:pair", onPair);
       ipcMain.on("loopback:ended", onEnded);
       window = new BrowserWindow({
         show: false,
@@ -75,8 +92,11 @@ function createLoopback(options = {}) {
       });
       window.webContents.on("render-process-gone", () => lose("renderer_gone"));
       await window.loadFile(join(here, "loopback-page.html"));
-      await window.webContents.executeJavaScript(`window.__vocifyLoopback.start(${JSON.stringify({ test: options.testSource === true })})`, true);
-      return { ok: true };
+      const page = await window.webContents.executeJavaScript(
+        `window.__vocifyLoopback.start(${JSON.stringify({ test: options.testSource === true, mic: startOptions?.mic === true })})`,
+        true
+      );
+      return { ok: true, mic: page?.mic === true };
     } catch (error) {
       release();
       return { ok: false, reason: error instanceof Error && error.name ? `capture_failed:${error.name}` : "capture_failed" };
@@ -99,6 +119,10 @@ function createLoopback(options = {}) {
     onLost(cb) {
       lostListeners.add(cb);
       return () => void lostListeners.delete(cb);
+    },
+    onMicPcm(cb) {
+      micListeners.add(cb);
+      return () => void micListeners.delete(cb);
     }
   };
 }

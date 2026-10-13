@@ -8,11 +8,15 @@
 
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import {
   createFrameState,
+  createPairState,
   downmixToMono,
   floatToInt16,
   processAudioBlock,
+  processPairBlock,
 } from '../main/src/loopback/pcm-frames.ts';
 
 const FRAME_SIZE = 1600; // samples at 16 kHz
@@ -272,4 +276,72 @@ test('createFrameState: initial state is empty carryover', () => {
   const state = createFrameState();
   assert(state.carryover instanceof Float32Array, 'carryover should be Float32Array');
   assert.equal(state.carryover.length, 0, 'initial carryover should be empty');
+});
+
+/** 128-sample blocks (what an AudioWorklet gets) of a microphone ramp and a call ramp of the opposite sign. */
+function pairBlocks(count: number, withCall = true): Float32Array[][] {
+  const blocks: Float32Array[][] = [];
+  for (let b = 0; b < count; b++) {
+    const mic = new Float32Array(128);
+    const call = new Float32Array(128);
+    for (let i = 0; i < 128; i++) {
+      const n = b * 128 + i;
+      mic[i] = ((n % 1000) + 1) / 2000;
+      call[i] = -mic[i];
+    }
+    blocks.push(withCall ? [mic, call] : [mic]);
+  }
+  return blocks;
+}
+
+test('processPairBlock: microphone and call cut at the same samples, one pair per 100 ms', () => {
+  const state = createPairState();
+  // 25 blocks = 3200 samples = exactly two pairs.
+  const pairs = pairBlocks(25).flatMap((block) => processPairBlock(block, state));
+  assert.equal(pairs.length, 2);
+  for (const { mic, call } of pairs) {
+    assert.equal(mic.byteLength, FRAME_BYTES);
+    assert.equal(call.byteLength, FRAME_BYTES);
+    const m = new Int16Array(mic);
+    const c = new Int16Array(call);
+    for (let i = 0; i < FRAME_SIZE; i++) assert.ok(Math.abs(m[i] + c[i]) <= 1, `sample ${i}: the call's is the microphone's, negated`);
+  }
+  assert.equal(new Int16Array(pairs[1].mic)[0], floatToInt16(new Float32Array([((1600 % 1000) + 1) / 2000]))[0]);
+  assert.equal(state.filled, 0);
+});
+
+test('processPairBlock: no right channel means a silent call, the microphone still framed', () => {
+  const state = createPairState();
+  const pairs = pairBlocks(13, false).flatMap((block) => processPairBlock(block, state));
+  assert.equal(pairs.length, 1);
+  assert.ok(new Int16Array(pairs[0].call).every((x) => x === 0));
+  assert.ok(new Int16Array(pairs[0].mic).some((x) => x !== 0));
+  assert.equal(state.filled, 13 * 128 - FRAME_SIZE);
+});
+
+test('worklet equivalence: the pair processor in pcm-worklet.js frames exactly as processPairBlock', () => {
+  const posted: { mic: ArrayBuffer; call: ArrayBuffer }[] = [];
+  const registered: Record<string, new () => { process(inputs: Float32Array[][][]): boolean }> = {};
+  class AudioWorkletProcessor {
+    port = { postMessage: (message: { type: string; mic: ArrayBuffer; call: ArrayBuffer }) => posted.push(message), onmessage: null };
+  }
+  runInNewContext(readFileSync(new URL('../main/src/loopback/pcm-worklet.js', import.meta.url), 'utf8'), {
+    AudioWorkletProcessor,
+    registerProcessor: (name: string, processor: new () => { process(inputs: Float32Array[][][]): boolean }) => (registered[name] = processor),
+    Float32Array,
+    Int16Array,
+    Math,
+  });
+  const worklet = new registered['pcm-pair-processor']();
+  const state = createPairState();
+  const expected: { mic: ArrayBuffer; call: ArrayBuffer }[] = [];
+  for (const block of pairBlocks(40)) {
+    worklet.process([block]);
+    expected.push(...processPairBlock(block, state));
+  }
+  assert.equal(posted.length, expected.length);
+  posted.forEach((pair, i) => {
+    assert.deepEqual(new Int16Array(pair.mic), new Int16Array(expected[i].mic));
+    assert.deepEqual(new Int16Array(pair.call), new Int16Array(expected[i].call));
+  });
 });

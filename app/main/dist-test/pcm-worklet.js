@@ -93,3 +93,52 @@ class PcmProcessor extends AudioWorkletProcessor {
 }
 
 registerProcessor('pcm-processor', PcmProcessor);
+
+/**
+ * Two channels kept apart (left the microphone, right the call), cut at the same samples: posts a 3200-byte frame of
+ * each, together. Must match processPairBlock in pcm-frames.ts.
+ */
+class PcmPairProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.frameSize = 1600;
+    this.mic = new Float32Array(this.frameSize);
+    this.call = new Float32Array(this.frameSize);
+    this.filled = 0;
+  }
+
+  toInt16(samples) {
+    const int16 = new Int16Array(samples.length);
+    for (let i = 0; i < samples.length; i++) {
+      const s = Math.max(-1, Math.min(1, samples[i]));
+      int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return int16.buffer;
+  }
+
+  process(inputs) {
+    const channels = inputs[0];
+    if (!channels || channels.length === 0) return true;
+    const mic = channels[0];
+    // A one-channel input means the merger had nothing on the right yet: the call is silent.
+    const call = channels[1];
+    let at = 0;
+    while (at < mic.length) {
+      const take = Math.min(mic.length - at, this.frameSize - this.filled);
+      this.mic.set(mic.subarray(at, at + take), this.filled);
+      if (call) this.call.set(call.subarray(at, at + take), this.filled);
+      else this.call.fill(0, this.filled, this.filled + take);
+      this.filled += take;
+      at += take;
+      if (this.filled === this.frameSize) {
+        const micFrame = this.toInt16(this.mic);
+        const callFrame = this.toInt16(this.call);
+        this.port.postMessage({ type: "pair", mic: micFrame, call: callFrame }, [micFrame, callFrame]);
+        this.filled = 0;
+      }
+    }
+    return true;
+  }
+}
+
+registerProcessor('pcm-pair-processor', PcmPairProcessor);

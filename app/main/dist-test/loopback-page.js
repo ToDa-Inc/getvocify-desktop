@@ -19,6 +19,25 @@
     return stream;
   };
 
+  /**
+   * The default microphone, raw: the browser's echo cancellation only knows audio this page plays (never the call), and
+   * its gain and noise suppression would change the echo the server has to take out. Null when it cannot be opened.
+   */
+  const micStream = () =>
+    navigator.mediaDevices
+      .getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } })
+      .catch(() => null);
+
+  /** `node` mixed down to one channel. */
+  const mono = (audioContext, node) => {
+    const down = audioContext.createGain();
+    down.channelCount = 1;
+    down.channelCountMode = "explicit";
+    down.channelInterpretation = "speakers";
+    node.connect(down);
+    return down;
+  };
+
   /** Test only: a 440 Hz sine on the left channel and silence on the right, standing in for a call. */
   const testStream = (audioContext) => {
     const oscillator = audioContext.createOscillator();
@@ -43,21 +62,36 @@
       await context.audioWorklet.addModule("./pcm-worklet.js");
       const stream = options && options.test ? testStream(context) : await loopbackStream();
       streams.push(stream);
+      const mic = options && options.mic ? await micStream() : null;
+      if (mic) streams.push(mic);
       const source = context.createMediaStreamSource(stream);
-      const framer = new AudioWorkletNode(context, "pcm-processor", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: "explicit" });
-      framer.port.onmessage = (event) => {
-        if (event.data && event.data.type === "frame") window.loopbackHost.frame(event.data.buffer);
-      };
       // A node nobody pulls is never run, so the framer ends in a muted gain: the captured audio must not play back.
       const mute = context.createGain();
       mute.gain.value = 0;
-      source.connect(framer);
-      framer.connect(mute);
       mute.connect(context.destination);
+      if (mic) {
+        // The microphone left, the call right, through one framer: each pair of frames comes from the same blocks.
+        const both = context.createChannelMerger(2);
+        mono(context, context.createMediaStreamSource(mic)).connect(both, 0, 0);
+        mono(context, source).connect(both, 0, 1);
+        const framer = new AudioWorkletNode(context, "pcm-pair-processor", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: "explicit" });
+        framer.port.onmessage = (event) => {
+          if (event.data && event.data.type === "pair") window.loopbackHost.pair(event.data.mic, event.data.call);
+        };
+        both.connect(framer);
+        framer.connect(mute);
+      } else {
+        const framer = new AudioWorkletNode(context, "pcm-processor", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: "explicit" });
+        framer.port.onmessage = (event) => {
+          if (event.data && event.data.type === "frame") window.loopbackHost.frame(event.data.buffer);
+        };
+        source.connect(framer);
+        framer.connect(mute);
+      }
       for (const track of stream.getAudioTracks()) {
         track.addEventListener("ended", () => window.loopbackHost.ended("track_ended"));
       }
-      return { sampleRate: context.sampleRate, tracks: stream.getAudioTracks().length };
+      return { sampleRate: context.sampleRate, tracks: stream.getAudioTracks().length, mic: mic !== null };
     },
     stop: stopEverything,
   };

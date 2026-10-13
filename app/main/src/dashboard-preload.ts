@@ -28,21 +28,13 @@ const devTrace = process.argv.includes("--vocify-dev-trace")
   ? { audio: (side: string, pcm: ArrayBuffer, at: number, recording: number) => ipcRenderer.send("vocify:trace-audio", side, pcm, at, recording) }
   : undefined;
 
-// Dev only: the microphone the app captures natively, next to the call ("shared": on the call audio's clock; "apple":
-// through Apple's voice processing). The page then records it instead of its own.
-const nativeMicMode = process.argv.find((a) => a.startsWith("--vocify-native-mic="))?.slice("--vocify-native-mic=".length);
-// "all": "shared" plus Apple's voice-processed microphone (onVoicePcm) and the page's own, recorded side by side.
-const nativeMic =
-  nativeMicMode === "shared" || nativeMicMode === "apple" || nativeMicMode === "all"
-    ? { mode: nativeMicMode, onPcm: on("native-mic:pcm"), onVoicePcm: on("native-voice:pcm") }
-    : undefined;
-
 contextBridge.exposeInMainWorld("vocifyDesktop", {
   platform,
   ...(devTrace ? { devTrace } : {}),
-  ...(nativeMic ? { nativeMic } : {}),
+  // The microphone the app captures with the call, when `systemAudio.start({ mic: true })` answered `mic: true`.
+  nativeMic: { onPcm: on("native-mic:pcm") },
   systemAudio: {
-    start: () => call("system-audio:start"),
+    start: (options?: { mic?: boolean }) => call("system-audio:start", { mic: options?.mic === true }),
     stop: () => call("system-audio:stop"),
     onPcm: on("system-audio:pcm"),
     onLost: on("system-audio:lost"),

@@ -5,6 +5,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
+// Chromium's own fake microphone (a beep every second), so the microphone path runs without a real one or a prompt.
+app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
 const failures = [];
 const check = (ok, message) => {
   if (!ok) failures.push(message);
@@ -71,6 +74,31 @@ app.whenReady().then(async () => {
     await sleep(600);
     await loopback.stop();
     check(BrowserWindow.getAllWindows().length === baseWindows, "a second cycle also leaves no window behind");
+
+    // With the microphone: opened in the same page, each of its frames paired with the call's of the same moment.
+    const withMic = await loopback.start({ mic: true });
+    check(withMic.ok === true && withMic.mic === true, `start({ mic: true }) opens the microphone too (${JSON.stringify(withMic)})`);
+    await sleep(500);
+    const order = [];
+    const micFrames = [];
+    const offMic = loopback.onMicPcm((pcm) => (order.push("mic"), micFrames.push(pcm)));
+    const callFrames = await (async () => {
+      const frames = [];
+      const off = loopback.onPcm((pcm) => (order.push("call"), frames.push(pcm)));
+      await sleep(2000);
+      off();
+      return frames;
+    })();
+    offMic();
+    check(micFrames.length >= 18 && micFrames.length <= 22, `about 20 microphone frames in 2 s (${micFrames.length})`);
+    check(Math.abs(micFrames.length - callFrames.length) <= 1, `as many call frames as microphone frames (${callFrames.length})`);
+    check(order.every((side, i) => side === (i % 2 === 0 ? (order[0] === "mic" ? "mic" : "call") : order[0] === "mic" ? "call" : "mic")), "microphone and call frames alternate, in pairs");
+    check([...micFrames, ...callFrames].every((f) => f.byteLength === 3200), "every frame is exactly 3200 bytes");
+    const call = analyse(callFrames);
+    check(Math.abs(call.hz - 440) < 8 && Math.abs(call.rms - expected) / expected < 0.08, `the call side is still the tone alone (${call.hz.toFixed(1)} Hz, RMS ${call.rms.toFixed(0)})`);
+    check(analyse(micFrames).peak > 1000, `the microphone side carries the fake microphone's beep (peak ${analyse(micFrames).peak})`);
+    await loopback.stop();
+    check(BrowserWindow.getAllWindows().length === baseWindows, "the microphone cycle also leaves no window behind");
   } catch (error) {
     failures.push(`threw: ${error instanceof Error ? error.stack : String(error)}`);
     console.log(`FAIL threw: ${error instanceof Error ? error.stack : error}`);

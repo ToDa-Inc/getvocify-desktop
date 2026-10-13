@@ -1,11 +1,15 @@
 import { BrowserWindow, desktopCapturer, ipcMain, session, type IpcMainEvent } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { SystemAudio } from "../platform/types.ts";
 
 /**
  * The call's audio on Windows: everything the PC plays, captured by Electron's loopback source in a hidden window
  * and delivered as mono 16 kHz signed 16-bit little-endian PCM in exact 3200-byte (100 ms) chunks.
  * Electron 33 supports `audio: 'loopback'` on Windows only; elsewhere `start()` reports `unsupported_platform`.
+ * With `mic`, the window also opens the default microphone, raw (the server takes the call's echo out and sets its
+ * level), into the same audio context: both are cut into frames from the same audio blocks and sent as a pair, so they
+ * stay together. What is left between them (each device's own latency) the server measures and lines up.
  */
 
 const FRAME_BYTES = 3200;
@@ -16,18 +20,11 @@ export type LoopbackOptions = {
   testSource?: boolean;
 };
 
-export type Loopback = {
-  start(): Promise<{ ok: boolean; reason?: string }>;
-  stop(): Promise<void>;
-  onPcm(cb: (pcm: ArrayBuffer) => void): () => void;
-  onLost(cb: (reason: string) => void): () => void;
-  /** Dev only (a Mac capturing the microphone natively): see SystemAudio.onMicPcm. */
-  onMicPcm?(cb: (pcm: ArrayBuffer) => void): () => void;
-  onVoicePcm?(cb: (pcm: ArrayBuffer) => void): () => void;
-};
+export type Loopback = SystemAudio;
 
 export function createLoopback(options: LoopbackOptions = {}): Loopback {
   const pcmListeners = new Set<(pcm: ArrayBuffer) => void>();
+  const micListeners = new Set<(pcm: ArrayBuffer) => void>();
   const lostListeners = new Set<(reason: string) => void>();
   let window: BrowserWindow | null = null;
   let partition: string | null = null;
@@ -47,10 +44,25 @@ export function createLoopback(options: LoopbackOptions = {}): Loopback {
 
   const fromOurPage = (event: IpcMainEvent): boolean => window !== null && !window.isDestroyed() && event.sender === window.webContents;
 
+  const asFrame = (data: unknown): ArrayBuffer | null => {
+    const bytes = data instanceof ArrayBuffer ? data : ArrayBuffer.isView(data) ? (data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer) : null;
+    return bytes && bytes.byteLength === FRAME_BYTES ? bytes : null;
+  };
+
   const onFrame = (event: IpcMainEvent, data: unknown) => {
     if (!fromOurPage(event)) return;
-    const bytes = data instanceof ArrayBuffer ? data : ArrayBuffer.isView(data) ? (data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer) : null;
-    if (bytes && bytes.byteLength === FRAME_BYTES) notify(pcmListeners, bytes, "pcm");
+    const call = asFrame(data);
+    if (call) notify(pcmListeners, call, "pcm");
+  };
+
+  /** A microphone frame and the call's frame of the same moment: the microphone's goes first, as on the Mac. */
+  const onPair = (event: IpcMainEvent, micData: unknown, callData: unknown) => {
+    if (!fromOurPage(event)) return;
+    const mic = asFrame(micData);
+    const call = asFrame(callData);
+    if (!mic || !call) return;
+    notify(micListeners, mic, "mic");
+    notify(pcmListeners, call, "pcm");
   };
 
   const onEnded = (event: IpcMainEvent, reason: unknown) => {
@@ -67,6 +79,7 @@ export function createLoopback(options: LoopbackOptions = {}): Loopback {
 
   function release(): void {
     ipcMain.off("loopback:frame", onFrame);
+    ipcMain.off("loopback:pair", onPair);
     ipcMain.off("loopback:ended", onEnded);
     const closing = window;
     window = null;
@@ -76,7 +89,7 @@ export function createLoopback(options: LoopbackOptions = {}): Loopback {
     if (closing && !closing.isDestroyed()) closing.destroy();
   }
 
-  async function start(): Promise<{ ok: boolean; reason?: string }> {
+  async function start(startOptions?: { mic?: boolean }): Promise<{ ok: boolean; reason?: string; mic?: boolean }> {
     if (running) return { ok: false, reason: "already_running" };
     if (process.platform !== "win32" && !options.testSource) return { ok: false, reason: "unsupported_platform" };
     running = true;
@@ -92,7 +105,11 @@ export function createLoopback(options: LoopbackOptions = {}): Loopback {
         if (video) callback({ video, audio: "loopback" });
         else callback({});
       });
+      // Our own page asks for the microphone (with `mic`); Windows' own microphone privacy setting still decides.
+      own.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === "media"));
+      own.setPermissionCheckHandler((_contents, permission) => permission === "media");
       ipcMain.on("loopback:frame", onFrame);
+      ipcMain.on("loopback:pair", onPair);
       ipcMain.on("loopback:ended", onEnded);
 
       window = new BrowserWindow({
@@ -110,8 +127,11 @@ export function createLoopback(options: LoopbackOptions = {}): Loopback {
       window.webContents.on("render-process-gone", () => lose("renderer_gone"));
       await window.loadFile(join(here, "loopback-page.html"));
       // `true` runs it as a user gesture, which getDisplayMedia requires.
-      await window.webContents.executeJavaScript(`window.__vocifyLoopback.start(${JSON.stringify({ test: options.testSource === true })})`, true);
-      return { ok: true };
+      const page = (await window.webContents.executeJavaScript(
+        `window.__vocifyLoopback.start(${JSON.stringify({ test: options.testSource === true, mic: startOptions?.mic === true })})`,
+        true,
+      )) as { mic?: boolean } | null;
+      return { ok: true, mic: page?.mic === true };
     } catch (error) {
       release();
       return { ok: false, reason: error instanceof Error && error.name ? `capture_failed:${error.name}` : "capture_failed" };
@@ -135,6 +155,10 @@ export function createLoopback(options: LoopbackOptions = {}): Loopback {
     onLost(cb) {
       lostListeners.add(cb);
       return () => void lostListeners.delete(cb);
+    },
+    onMicPcm(cb) {
+      micListeners.add(cb);
+      return () => void micListeners.delete(cb);
     },
   };
 }

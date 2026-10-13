@@ -79,13 +79,10 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
   let silence: ReturnType<typeof setInterval> | null = null;
 
   let unsubscribeMic: (() => void) | null = null;
-  let unsubscribeVoice: (() => void) | null = null;
   const stopListening = () => {
     unsubscribePcm?.();
     unsubscribeLost?.();
     unsubscribeMic?.();
-    unsubscribeVoice?.();
-    unsubscribeVoice = null;
     unsubscribePcm = null;
     unsubscribeLost = null;
     unsubscribeMic = null;
@@ -93,22 +90,23 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
     silence = null;
   };
 
-  async function startSystemAudio(): Promise<unknown> {
+  /** `mic`: the page asks for the microphone with the call (SystemAudio.start); the answer says whether it got it. */
+  async function startSystemAudio(mic: boolean): Promise<unknown> {
     stopListening();
     const running = deps.takeRunningLoopback?.() ?? false;
     if (!running) await deps.loopback.stop();
     unsubscribePcm = deps.loopback.onPcm((pcm) => deps.emit("system-audio:pcm", pcm));
     unsubscribeLost = deps.loopback.onLost((reason) => deps.emit("system-audio:lost", { reason }));
-    unsubscribeMic = deps.loopback.onMicPcm?.((pcm) => deps.emit("native-mic:pcm", pcm)) ?? null;
-    unsubscribeVoice = deps.loopback.onVoicePcm?.((pcm) => deps.emit("native-voice:pcm", pcm)) ?? null;
+    unsubscribeMic = deps.loopback.onMicPcm((pcm) => deps.emit("native-mic:pcm", pcm));
     if (running) {
+      // Started to hear a call on the phone, without the microphone: the page records its own.
       deps.log("system audio start: kept the capture that heard the call");
-      return { ok: true, backend: "wasapi-loopback" };
+      return { ok: true, backend: "wasapi-loopback", mic: false };
     }
     const startedAt = Date.now();
-    const started = await deps.loopback.start();
-    deps.log(`system audio start: ${started.ok ? "ok" : started.reason ?? "failed"} in ${Date.now() - startedAt} ms`);
-    if (started.ok) return { ok: true, backend: "wasapi-loopback" };
+    const started = await deps.loopback.start({ mic });
+    deps.log(`system audio start: ${started.ok ? "ok" : started.reason ?? "failed"}${started.mic ? " with the microphone" : ""} in ${Date.now() - startedAt} ms`);
+    if (started.ok) return { ok: true, backend: "wasapi-loopback", mic: started.mic === true };
     stopListening();
     // Where call audio cannot be captured (not Windows) the recording carries on with the microphone alone.
     // The call side then sends silence, as a quiet call would: a transcription stream that gets no audio at all for
@@ -179,7 +177,7 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
         return result;
       }
       case "system-audio:start":
-        return startSystemAudio();
+        return startSystemAudio(args.mic === true);
       case "system-audio:stop":
         stopListening();
         await deps.loopback.stop();

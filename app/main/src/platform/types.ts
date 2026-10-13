@@ -8,24 +8,19 @@ export type Status = "authorized" | "denied" | "never_requested";
 
 /** The call's audio (everything the computer plays), as mono 16 kHz signed 16-bit PCM in 3200-byte (100 ms) chunks. */
 export interface SystemAudio {
-  /** Starts capturing; says why not instead of throwing. */
-  start(): Promise<{ ok: boolean; reason?: string }>;
+  /**
+   * Starts capturing; says why not instead of throwing. With `mic`, the rep's microphone is captured with it where it
+   * can be (`mic: true` in the answer, then `onMicPcm` carries it): read alongside the call's audio, so the two stay
+   * lined up and the server can take the call's echo out of the mic. Otherwise the page records its own microphone.
+   */
+  start(options?: { mic?: boolean }): Promise<{ ok: boolean; reason?: string; mic?: boolean }>;
   stop(): Promise<void>;
   onPcm(cb: (pcm: ArrayBuffer) => void): () => void;
   /** Capture ended on its own (device gone, renderer gone…). */
   onLost(cb: (reason: string) => void): () => void;
-  /**
-   * Dev only, Mac: the microphone captured natively next to the call (`micMode`), in the same 100 ms mono frames.
-   * "shared": read through the call audio's own device, on its clock; "apple": through Apple's voice processing.
-   */
-  micMode?: NativeMicMode;
-  onMicPcm?(cb: (pcm: ArrayBuffer) => void): () => void;
-  /** Dev only, "all": the microphone through Apple's voice processing as well, recorded for comparison. */
-  onVoicePcm?(cb: (pcm: ArrayBuffer) => void): () => void;
+  /** The microphone captured with the call (see `start`), 100 ms mono frames, each just before the call's frame of the same moment. */
+  onMicPcm(cb: (pcm: ArrayBuffer) => void): () => void;
 }
-
-/** "all": "shared" for the call and the microphone, plus Apple's voice-processed microphone for comparison. */
-export type NativeMicMode = "shared" | "apple" | "all";
 
 /** A desktop app holding the microphone, i.e. a call that may be worth recording. */
 export type DetectedCaller = { name: string; appId: string; path: string | null; browser: boolean };

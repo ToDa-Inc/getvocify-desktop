@@ -23,7 +23,7 @@ if arguments.count >= 2, arguments[1].hasPrefix("chrome-extension://") {
 
 guard arguments.count >= 2 else {
     fputs("usage: vocify-mac-helper <command>\n", stderr)
-    fputs("commands: screen, mic, audio [--with-mic], voice, audio-permission, speakers\n", stderr)
+    fputs("commands: screen, mic, audio [--with-mic], audio-permission, speakers\n", stderr)
     exit(1)
 }
 
@@ -38,8 +38,6 @@ case "mic":
     commandMic()
 case "audio":
     commandAudio(withMic: arguments.contains("--with-mic"))
-case "voice":
-    commandVoice()
 case "audio-permission":
     commandAudioPermission()
 default:
@@ -206,30 +204,4 @@ func commandMeetHost() {
             )
         }
     }
-}
-
-
-// MARK: - Voice Command
-
-/// `vocify-mac-helper voice`: the microphone through Apple's voice processing (echo cancellation against what the Mac
-/// plays, noise suppression, gain), as 16 kHz mono PCM16 on stdout. Other audio is ducked as little as macOS allows.
-func commandVoice() {
-    signal(SIGTERM, handleSignal)
-    signal(SIGINT, handleSignal)
-    signal(SIGPIPE, SIG_IGN)
-    stopWhenStdinCloses()
-    let capture = VoiceCapture()
-    capture.onEnd = { event, reason in
-        DispatchQueue.main.async {
-            status(["event": event, "reason": reason])
-            isRunning = false
-        }
-    }
-    capture.start()
-    let runLoop = RunLoop.current
-    while isRunning {
-        runLoop.run(until: Date(timeIntervalSinceNow: 0.1))
-    }
-    capture.stop()
-    exit(0)
 }

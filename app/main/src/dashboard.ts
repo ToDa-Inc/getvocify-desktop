@@ -17,8 +17,6 @@ export type DashboardOptions = {
   reportedPlatform: "win32" | "darwin";
   /** Dev only: the page may hand its raw call audio to the app (`devTrace`), to replay real calls offline. */
   devTrace?: boolean;
-  /** Dev only: the page records the microphone the app captures natively (`nativeMic`), not its own. */
-  nativeMic?: "shared" | "apple" | "all";
   /** Hosts that may open inside the app without being trusted with the microphone (a preview's sign-in). */
   isSignInHost?(host: string): boolean;
   /** Local file pages (the demo's stand-in dashboard) count as the app. */
@@ -74,7 +72,7 @@ export class DashboardHost {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
-        additionalArguments: [`--vocify-platform=${this.options.reportedPlatform}`, ...(this.options.devTrace ? ["--vocify-dev-trace"] : []), ...(this.options.nativeMic ? [`--vocify-native-mic=${this.options.nativeMic}`] : [])],
+        additionalArguments: [`--vocify-platform=${this.options.reportedPlatform}`, ...(this.options.devTrace ? ["--vocify-dev-trace"] : [])],
         // The page records and times the call: it must not be slowed down when hidden or behind the call.
         backgroundThrottling: false,
       },

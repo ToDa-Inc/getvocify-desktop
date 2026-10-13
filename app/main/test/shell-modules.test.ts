@@ -223,7 +223,7 @@ test("a saved shortcut is restored on the next launch, and 'off' stays off", () 
 
 /* ---------- the bridge ---------- */
 
-function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | null; phoneFails?: "no_dialer" | "invalid_number" | "open_failed"; microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void>; systemAudioAccess?: () => string; askSystemAudio?: () => Promise<void> } = {}) {
+function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | null; phoneFails?: "no_dialer" | "invalid_number" | "open_failed"; microphone?: string; loopbackStart?: { ok: boolean; reason?: string; mic?: boolean }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void>; systemAudioAccess?: () => string; askSystemAudio?: () => Promise<void> } = {}) {
   const emitted: { channel: string; payload: unknown }[] = [];
   const opened: string[] = [];
   const logs: string[] = [];
@@ -231,13 +231,16 @@ function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | n
   let mainWindow = 0;
   const pcmListeners = new Set<(p: ArrayBuffer) => void>();
   const lostListeners = new Set<(r: string) => void>();
+  const micListeners = new Set<(p: ArrayBuffer) => void>();
+  const startOptions: ({ mic?: boolean } | undefined)[] = [];
   let loopbackStops = 0;
   let loopbackStarts = 0;
   const loopback: Loopback = {
-    start: async () => ((loopbackStarts += 1), options.loopbackStart ?? { ok: true }),
+    start: async (startWith) => ((loopbackStarts += 1), startOptions.push(startWith), options.loopbackStart ?? { ok: true }),
     stop: async () => void (loopbackStops += 1),
     onPcm: (cb) => (pcmListeners.add(cb), () => void pcmListeners.delete(cb)),
     onLost: (cb) => (lostListeners.add(cb), () => void lostListeners.delete(cb)),
+    onMicPcm: (cb) => (micListeners.add(cb), () => void micListeners.delete(cb)),
   };
   const controller = new IslandController(
     {
@@ -292,7 +295,7 @@ function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | n
     fetch: async () => ({ status: 200, text: async () => "{}" }),
     log: (line) => logs.push(line),
   };
-  return { loopbackStarts: () => loopbackStarts, call: createBridge(deps), dialed, calendarWatches, emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, loopbackStops: () => loopbackStops };
+  return { loopbackStarts: () => loopbackStarts, call: createBridge(deps), dialed, calendarWatches, emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, micListeners, startOptions, loopbackStops: () => loopbackStops };
 }
 
 test("bridge: the permission test shows both permissions as not asked until the dashboard asks for each", async () => {
@@ -384,7 +387,8 @@ test("bridge: a call's steps reach the app's log; other dashboard events do not"
 
 test("bridge: call audio starts, its frames and its loss go to the page, and stopping releases it", async () => {
   const t = bridgeSetup();
-  assert.deepEqual(await t.call("system-audio:start", {}), { ok: true, backend: "wasapi-loopback" });
+  assert.deepEqual(await t.call("system-audio:start", {}), { ok: true, backend: "wasapi-loopback", mic: false });
+  assert.deepEqual(t.startOptions, [{ mic: false }]);
   const frame = new ArrayBuffer(3200);
   for (const listener of t.pcmListeners) listener(frame);
   for (const listener of t.lostListeners) listener("track_ended");
@@ -392,7 +396,18 @@ test("bridge: call audio starts, its frames and its loss go to the page, and sto
   assert.equal(t.emitted[0].payload, frame);
   assert.deepEqual(t.emitted[1].payload, { reason: "track_ended" });
   await t.call("system-audio:stop", {});
-  assert.equal(t.pcmListeners.size + t.lostListeners.size, 0, "no listener is left behind");
+  assert.equal(t.pcmListeners.size + t.lostListeners.size + t.micListeners.size, 0, "no listener is left behind");
+});
+
+test("bridge: a page that asks for the microphone with the call gets it, its frames before the call's", async () => {
+  const t = bridgeSetup({ loopbackStart: { ok: true, mic: true } });
+  assert.deepEqual(await t.call("system-audio:start", { mic: true }), { ok: true, backend: "wasapi-loopback", mic: true });
+  assert.deepEqual(t.startOptions, [{ mic: true }]);
+  const mic = new ArrayBuffer(3200);
+  const call = new ArrayBuffer(3200);
+  for (const listener of t.micListeners) listener(mic);
+  for (const listener of t.pcmListeners) listener(call);
+  assert.deepEqual(t.emitted.map((e) => [e.channel, e.payload]), [["native-mic:pcm", mic], ["system-audio:pcm", call]]);
 });
 
 test("bridge: a call-audio start that fails reports why and leaves nothing subscribed; where it cannot exist the recording carries on with the microphone", async () => {
@@ -508,7 +523,7 @@ test("bridge: a phone that cannot open the call says why on the island", async (
 
 test("bridge: the recording keeps the capture that heard the call on the phone, without restarting it", async () => {
   const kept = bridgeSetup({ runningLoopback: true });
-  assert.deepEqual(await kept.call("system-audio:start", {}), { ok: true, backend: "wasapi-loopback" });
+  assert.deepEqual(await kept.call("system-audio:start", { mic: true }), { ok: true, backend: "wasapi-loopback", mic: false });
   assert.equal(kept.loopbackStarts(), 0);
   assert.equal(kept.loopbackStops(), 0);
   assert.equal(kept.pcmListeners.size, 1, "its sound now goes to the recording");

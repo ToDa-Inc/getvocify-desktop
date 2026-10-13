@@ -116,3 +116,39 @@ export function processAudioBlock(
 
   return frames;
 }
+
+export interface PcmPairState {
+  mic: Float32Array;
+  call: Float32Array;
+  filled: number;
+}
+
+export function createPairState(): PcmPairState {
+  return { mic: new Float32Array(1600), call: new Float32Array(1600), filled: 0 };
+}
+
+/**
+ * Two channels kept apart (left the microphone, right the call; no right channel: the call is silent), cut at the
+ * same samples into 3200-byte frames, one pair per 100 ms. Matches PcmPairProcessor in pcm-worklet.js.
+ */
+export function processPairBlock(channels: Float32Array[], state: PcmPairState): { mic: ArrayBuffer; call: ArrayBuffer }[] {
+  const FRAME_SIZE = 1600;
+  const mic = channels[0];
+  const call = channels[1];
+  const pairs: { mic: ArrayBuffer; call: ArrayBuffer }[] = [];
+  if (!mic) return pairs;
+  let at = 0;
+  while (at < mic.length) {
+    const take = Math.min(mic.length - at, FRAME_SIZE - state.filled);
+    state.mic.set(mic.subarray(at, at + take), state.filled);
+    if (call) state.call.set(call.subarray(at, at + take), state.filled);
+    else state.call.fill(0, state.filled, state.filled + take);
+    state.filled += take;
+    at += take;
+    if (state.filled === FRAME_SIZE) {
+      pairs.push({ mic: floatToInt16(state.mic).buffer as ArrayBuffer, call: floatToInt16(state.call).buffer as ArrayBuffer });
+      state.filled = 0;
+    }
+  }
+  return pairs;
+}

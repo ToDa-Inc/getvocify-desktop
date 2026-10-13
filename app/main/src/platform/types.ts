@@ -100,6 +100,13 @@ export interface PhoneDialer {
   micSettings(): Promise<void>;
 }
 
+/** The audio sessions playing sound on this computer, reported line by line (`SESSIONS [...]`, see
+ * windows/audio-sessions.ts) while started: what a call on the rep's phone plays in, and stops at its hang-up. */
+export interface AudioSessionReader {
+  start(onLine: (line: string) => void): void;
+  stop(): void;
+}
+
 /** One OS's implementations. `callDetector` is null on an OS that cannot detect calls yet; `speakers` where it can't name them. */
 export type Platform = {
   systemAudio: SystemAudio;
@@ -109,4 +116,6 @@ export type Platform = {
   island: IslandBehaviour;
   speakers: SpeakerReader | null;
   phone: PhoneDialer;
+  /** Windows: a call on the rep's phone is not on the mic, its audio session is. Null on the Mac (its call service is on the mic). */
+  audioSessions: AudioSessionReader | null;
 };

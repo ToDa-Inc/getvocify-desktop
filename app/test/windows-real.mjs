@@ -10,6 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { crmUrlsOf, encodePowerShell, parsePageOutput, READ_PAGES_SCRIPT } from "../main/src/windows/browser-pages.ts";
 import { MIC_CONSENT_KEY, parseMicConsent, pickCaller } from "../main/src/windows/mic-use.ts";
+import { AUDIO_SESSIONS_SCRIPT } from "../main/src/windows/audio-sessions.ts";
+import { parseSessionsLine } from "../main/src/call-audio-session.ts";
 
 if (process.platform !== "win32") {
   console.log("windows-real: skipped (not Windows)");
@@ -101,6 +103,26 @@ if (!browserPath) {
       // Already closed.
     }
     server.close();
+  }
+}
+
+/* ---------- 3. the audio sessions playing sound, through Core Audio ---------- */
+// The reader a call on the rep's phone is followed with: its C# must compile under Windows PowerShell and answer.
+{
+  const reader = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(AUDIO_SESSIONS_SCRIPT)], { windowsHide: true });
+  let out = "";
+  let err = "";
+  reader.stdout.on("data", (chunk) => (out += chunk));
+  reader.stderr.on("data", (chunk) => (err += chunk));
+  const started = Date.now();
+  while (!out.includes("\n") && Date.now() - started < 60000 && reader.exitCode === null) await sleep(250);
+  const first = out.split(/\r?\n/)[0] ?? "";
+  console.log(`      reader said: ${JSON.stringify(first.slice(0, 300))} in ${Date.now() - started} ms${err ? `, stderr: ${JSON.stringify(err.slice(0, 500))}` : ""}`);
+  check(parseSessionsLine(first) !== null, "the audio-session reader compiles under Windows PowerShell and lists the sessions playing now");
+  try {
+    execFileSync("taskkill", ["/PID", String(reader.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+  } catch {
+    // Already closed.
   }
 }
 

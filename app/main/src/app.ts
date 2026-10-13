@@ -1,12 +1,13 @@
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, screen, shell, systemPreferences, Tray } from "electron";
 import { existsSync } from "node:fs";
 import { CallSource } from "../../core/callSource.ts";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { islandSize, offerBriefLines, showsMeeting } from "../../island/src/geometry.ts";
 import type { Geometry, IslandAction, IslandState } from "../../island/src/types.ts";
 import { createBridge } from "./bridge.ts";
 import { CallSoundWatch } from "./call-sound.ts";
+import { CallAudioSession, parseSessionsLine } from "./call-audio-session.ts";
 import { signInHostsFor, type ReportedPlatform } from "./config.ts";
 import { IslandController, type Caller } from "./controller.ts";
 import { DashboardHost } from "./dashboard.ts";
@@ -212,8 +213,25 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       openExternal: (url) => void shell.openExternal(url),
       ...(callSound
         ? {
-            watchCallSound: (onSound: () => void) => void callSound.start(onSound),
-            stopCallSound: () => void callSound.stop(),
+            // Its sound starts the recording; its audio session stopping is the hang-up (the 15 s silence otherwise).
+            watchCallSound: (onSound: () => void) => {
+              const session = new CallAudioSession({ ownApp: basename(process.execPath, ".exe"), log });
+              session.onEnded(() => controller.callAudioEnded());
+              session.onBack(() => controller.callAudioBack());
+              os.audioSessions?.start((line) => {
+                const active = parseSessionsLine(line);
+                if (active) session.update(active);
+                else log(`audio sessions: ${line.slice(0, 300)}`);
+              });
+              void callSound.start(() => {
+                session.heard();
+                onSound();
+              });
+            },
+            stopCallSound: () => {
+              void callSound.stop();
+              os.audioSessions?.stop();
+            },
           }
         : {}),
       // A call was detected: name where it happens and send the CRM pages on screen, so the dashboard can name the contact.

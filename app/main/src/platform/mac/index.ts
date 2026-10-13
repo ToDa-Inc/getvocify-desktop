@@ -53,6 +53,7 @@ export function createMacPlatform(env: PlatformEnv): Platform {
     speakers: createMacSpeakerReader({
       spawn: (askAccessibility) => spawnMacHelper(helper, "speakers", askAccessibility ? ["--ask-accessibility"] : []),
     }),
+    audioSessions: null,
     phone: createMacPhone({
       open: (args) => runStrict("/usr/bin/open", args, 10_000),
       hasFaceTime: () => existsSync("/System/Applications/FaceTime.app"),

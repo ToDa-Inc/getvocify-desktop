@@ -1152,3 +1152,38 @@ test("a paused call on the phone never ends on silence", () => {
   t.advance(15.1);
   assert.equal(t.mode(), "stopped", "after the pause, silence counts again");
 });
+
+test("the call's audio session stopping is its hang-up, with the same grace as any call app", () => {
+  const t = dialOnPhoneHeard();
+  t.log.soundWatch?.();
+  t.controller.show();
+  t.controller.callAudioEnded();
+  t.advance(2);
+  t.controller.callAudioBack();
+  t.advance(10);
+  assert.equal(t.mode(), "recording", "back within the grace: the call goes on");
+  t.controller.callAudioEnded();
+  t.advance(3.1);
+  assert.equal(t.mode(), "stopped");
+  assert.equal(t.controller.state.mode.kind === "stopped" && t.controller.state.mode.title, "Call ended");
+});
+
+test("the end of the recording stops following the call's audio", () => {
+  const t = dialOnPhoneHeard();
+  t.log.soundWatch?.();
+  t.controller.show();
+  const before = t.log.soundStops;
+  t.controller.act({ name: "stop" });
+  t.advance(10);
+  assert.ok(t.log.soundStops > before);
+});
+
+test("an audio session stopping says nothing outside a call on the phone", () => {
+  const t = setup({ callSound: true });
+  t.controller.callChanged(zoom);
+  t.controller.act({ name: "record" });
+  t.controller.show();
+  t.controller.callAudioEnded();
+  t.advance(10);
+  assert.equal(t.mode(), "recording");
+});

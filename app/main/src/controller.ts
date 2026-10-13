@@ -636,6 +636,19 @@ export class IslandController {
     if (them === true || you === true) this.start("callSilence", CALL_SILENCE, () => this.callWentSilent());
   }
 
+  /** The call on the phone stopped playing in its audio session (Windows): its hang-up, with a call app's grace. */
+  callAudioEnded(): void {
+    if (!this.soundCall || this.mode !== "recording") return;
+    this.start("hangUp", HANG_UP_GRACE, () => {
+      if (this.soundCall && this.mode === "recording") this.stop(true);
+    });
+  }
+
+  /** It played again within the grace: a dropout, not a hang-up. */
+  callAudioBack(): void {
+    if (this.soundCall) this.stopTimer("hangUp");
+  }
+
   private callWentSilent(): void {
     if (!this.soundCall || this.mode !== "recording") return;
     // Paused, nothing is measured: the silence says nothing about the call.
@@ -734,6 +747,8 @@ export class IslandController {
       this.quiet = { appId: this.recordingCaller.appId, until: this.effects.now() + AFTER_CALL_QUIET * 1000 };
     }
     this.recordingCaller = null;
+    // The call on the phone is over: stop following its sound and audio session.
+    if (this.soundCall) this.effects.stopCallSound?.();
     this.soundCall = false;
     this.stopTimer("callSilence");
     this.set({ callContact: null });

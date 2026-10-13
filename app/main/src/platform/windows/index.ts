@@ -2,10 +2,11 @@ import { execFileSync, spawn } from "node:child_process";
 import { encodePowerShell, READER_LOOP_SCRIPT } from "../../windows/browser-pages.ts";
 import { MIC_CONSENT_KEY } from "../../windows/mic-use.ts";
 import { parsePhoneLinkCall, phoneLinkCallScript } from "../../windows/phone-link-call.ts";
+import { AUDIO_SESSIONS_SCRIPT } from "../../windows/audio-sessions.ts";
 import type { ReaderChild } from "../../windows/page-reader-process.ts";
 import type { PlatformEnv } from "../env.ts";
 import { every, runQuiet } from "../exec.ts";
-import type { Platform } from "../types.ts";
+import type { AudioSessionReader, Platform } from "../types.ts";
 import { createWindowsCallDetector } from "./call-detector.ts";
 import { createWindowsCrmScreenReader } from "./crm-screen-reader.ts";
 import { createWindowsPermissions } from "./permissions.ts";
@@ -37,6 +38,38 @@ function telAppIsPhoneLink(name: string): boolean {
   return /phone link|enlace m[oó]vil|yourphone/i.test(name);
 }
 
+/** One PowerShell reading Core Audio's sessions while a call on the phone is followed; its output split into lines. */
+function createAudioSessionReader(log: (line: string) => void): AudioSessionReader {
+  let child: ReturnType<typeof spawn> | null = null;
+  return {
+    start(onLine) {
+      if (child) return;
+      const started = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(AUDIO_SESSIONS_SCRIPT)], {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      child = started;
+      let pending = "";
+      started.stdout?.on("data", (chunk: Buffer) => {
+        pending += chunk.toString("utf8");
+        const lines = pending.split(/\r?\n/);
+        pending = lines.pop() ?? "";
+        for (const line of lines) if (line.trim()) onLine(line.trim());
+      });
+      started.stderr?.on("data", (chunk: Buffer) => log(`audio sessions: ${chunk.toString("utf8").trim().slice(0, 300)}`));
+      started.on("exit", (code) => {
+        if (child === started) child = null;
+        if (code) log(`audio sessions: reader exited ${code}`);
+      });
+    },
+    stop() {
+      const running = child;
+      child = null;
+      running?.kill();
+    },
+  };
+}
+
 /** Windows: Chromium's loopback, the microphone-use record in the registry, one long-lived PowerShell reader. */
 export function createWindowsPlatform(env: PlatformEnv): Platform {
   return {
@@ -65,6 +98,7 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
     }),
     // A window that cannot take focus (focusable: false) is created WS_EX_NOACTIVATE: a click never activates the app.
     island: { prepare: () => "non-activating (Windows: not focusable)" },
+    audioSessions: createAudioSessionReader(env.log),
     phone: createWindowsPhone({
       // Only a default Windows keeps for TEL links counts: without one, Electron names Windows' own app picker
       // ("Choose an app", in the system's language) as if it were an app.

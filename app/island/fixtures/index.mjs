@@ -11,6 +11,7 @@ const base = {
   paused: false,
   recorderReady: true,
   callAudioLost: false,
+  micSilent: false,
   callContact: null,
   clock: null,
   levels: { you: 0, them: 0, side: "them", at: NOW },

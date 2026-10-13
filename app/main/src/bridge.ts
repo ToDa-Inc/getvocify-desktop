@@ -1,7 +1,7 @@
 import type { IslandController } from "./controller.ts";
 import type { Drafts } from "./drafts.ts";
 import type { Loopback } from "./loopback/loopback.ts";
-import { APP_INFO, MAC_SYSTEM_AUDIO_SETTINGS_URL, microphoneSettingsUrl, permissionSnapshot } from "./permissions.ts";
+import { APP_INFO, MAC_SYSTEM_AUDIO_SETTINGS_URL, callAudioSettingsUrl, microphoneSettingsUrl, permissionSnapshot } from "./permissions.ts";
 import { saasRequest, type SaasResult } from "./saas.ts";
 import type { KeyEvent, ShortcutManager } from "./shortcut.ts";
 
@@ -173,6 +173,8 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
       case "permissions:open":
       case "permissions:guide":
         if (args.type === "microphone") deps.openExternal(microphoneSettingsUrl(deps.platform));
+        // The dashboard's "can't hear the other side": the page that fixes it on this OS.
+        else if (args.type === "systemAudio") deps.openExternal(callAudioSettingsUrl(deps.platform));
         return permissions();
       case "permissions:appInfo":
         return APP_INFO;

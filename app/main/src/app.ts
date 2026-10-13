@@ -11,6 +11,7 @@ import { IslandController, type Caller } from "./controller.ts";
 import { DashboardHost } from "./dashboard.ts";
 import { Drafts } from "./drafts.ts";
 import { createLogger } from "./logger.ts";
+import { createTranscriptTrace } from "./transcript-trace.ts";
 import { JsonSettings } from "./settings.ts";
 import { ShortcutManager } from "./shortcut.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
@@ -414,7 +415,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     }
   }
 
+  const trace = !app.isPackaged || process.env.VOCIFY_TRACE === "1" ? createTranscriptTrace(options.userDataDir) : null;
+
   function pushState(state: IslandState): void {
+    trace?.(state);
     followSpeakers(state);
     if (island.isDestroyed()) return;
     island.webContents.send("island:state", state);

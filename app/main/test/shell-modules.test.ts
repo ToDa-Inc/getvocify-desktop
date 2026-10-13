@@ -223,7 +223,7 @@ test("a saved shortcut is restored on the next launch, and 'off' stays off", () 
 
 /* ---------- the bridge ---------- */
 
-function bridgeSetup(options: { phoneApp?: string | null; phoneFails?: "no_dialer" | "invalid_number" | "open_failed"; microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void>; systemAudioAccess?: () => string; askSystemAudio?: () => Promise<void> } = {}) {
+function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | null; phoneFails?: "no_dialer" | "invalid_number" | "open_failed"; microphone?: string; loopbackStart?: { ok: boolean; reason?: string }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void>; systemAudioAccess?: () => string; askSystemAudio?: () => Promise<void> } = {}) {
   const emitted: { channel: string; payload: unknown }[] = [];
   const opened: string[] = [];
   const logs: string[] = [];
@@ -232,8 +232,9 @@ function bridgeSetup(options: { phoneApp?: string | null; phoneFails?: "no_diale
   const pcmListeners = new Set<(p: ArrayBuffer) => void>();
   const lostListeners = new Set<(r: string) => void>();
   let loopbackStops = 0;
+  let loopbackStarts = 0;
   const loopback: Loopback = {
-    start: async () => options.loopbackStart ?? { ok: true },
+    start: async () => ((loopbackStarts += 1), options.loopbackStart ?? { ok: true }),
     stop: async () => void (loopbackStops += 1),
     onPcm: (cb) => (pcmListeners.add(cb), () => void pcmListeners.delete(cb)),
     onLost: (cb) => (lostListeners.add(cb), () => void lostListeners.delete(cb)),
@@ -266,6 +267,7 @@ function bridgeSetup(options: { phoneApp?: string | null; phoneFails?: "no_diale
     },
   };
   const deps: BridgeDeps = {
+    takeRunningLoopback: () => options.runningLoopback === true,
     phone,
     callOnPhone: { get: () => store.get("callOnPhone") === true, set: (on) => void store.set("callOnPhone", on) },
     readCrmPages: async () => ({ urls: ["https://app.hubspot.com/contacts/1/contact/2"], browsers: [{ name: "chrome", bundleId: "chrome", access: "granted" }] }),
@@ -289,7 +291,7 @@ function bridgeSetup(options: { phoneApp?: string | null; phoneFails?: "no_diale
     fetch: async () => ({ status: 200, text: async () => "{}" }),
     log: (line) => logs.push(line),
   };
-  return { call: createBridge(deps), dialed, calendarWatches, emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, loopbackStops: () => loopbackStops };
+  return { loopbackStarts: () => loopbackStarts, call: createBridge(deps), dialed, calendarWatches, emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, loopbackStops: () => loopbackStops };
 }
 
 test("bridge: the permission test shows both permissions as not asked until the dashboard asks for each", async () => {
@@ -501,4 +503,15 @@ test("bridge: a phone that cannot open the call says why on the island", async (
   assert.deepEqual(await t.call("calling:phone", { number: "+34600111222" }), { ok: false, reason: "no_dialer" });
   assert.equal(t.controller.state.mode.kind, "dialing");
   assert.equal(t.controller.state.dial?.message, "No app on this computer makes phone calls");
+});
+
+test("bridge: the recording keeps the capture that heard the call on the phone, without restarting it", async () => {
+  const kept = bridgeSetup({ runningLoopback: true });
+  assert.deepEqual(await kept.call("system-audio:start", {}), { ok: true, backend: "wasapi-loopback" });
+  assert.equal(kept.loopbackStarts(), 0);
+  assert.equal(kept.loopbackStops(), 0);
+  assert.equal(kept.pcmListeners.size, 1, "its sound now goes to the recording");
+  const fresh = bridgeSetup();
+  await fresh.call("system-audio:start", {});
+  assert.equal(fresh.loopbackStarts(), 1);
 });

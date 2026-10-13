@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { islandSize, offerBriefLines, showsMeeting } from "../../island/src/geometry.ts";
 import type { Geometry, IslandAction, IslandState } from "../../island/src/types.ts";
 import { createBridge } from "./bridge.ts";
+import { CallSoundWatch } from "./call-sound.ts";
 import { signInHostsFor, type ReportedPlatform } from "./config.ts";
 import { IslandController, type Caller } from "./controller.ts";
 import { DashboardHost } from "./dashboard.ts";
@@ -191,6 +192,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   let reportedSize: { width: number; height: number } | null = null;
   let reportedKind: string | null = null;
+  // Windows hears a call on the rep's phone through what the PC plays (Phone Link plays it there); the Mac sees its
+  // call service on the mic instead.
+  const callSound = platform === "win32" ? new CallSoundWatch({ loopback: os.systemAudio, now: () => Date.now(), log }) : null;
   const controller = new IslandController(
     {
       now: () => Date.now(),
@@ -206,6 +210,12 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       },
       saveRecorderReady: (ready) => settings.set("recorderReady", ready),
       openExternal: (url) => void shell.openExternal(url),
+      ...(callSound
+        ? {
+            watchCallSound: (onSound: () => void) => void callSound.start(onSound),
+            stopCallSound: () => void callSound.stop(),
+          }
+        : {}),
       // A call was detected: name where it happens and send the CRM pages on screen, so the dashboard can name the contact.
       lookUpCallContact: (caller) => {
         if (platform === "win32") {
@@ -475,6 +485,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     drafts,
     shortcut,
     phone: os.phone,
+    takeRunningLoopback: () => callSound?.handOver() ?? false,
     callOnPhone: { get: () => settings.get("callOnPhone") === true, set: (on) => settings.set("callOnPhone", on) },
     emit: (channel, payload) => dashboard.emit(channel, payload),
     showMainWindow: () => dashboard.show(),

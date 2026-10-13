@@ -34,6 +34,8 @@ const PHONE_CONNECT_TIMEOUT = 45;
 /** How long the island says a call on the phone didn't connect, or that an ended recording was not kept. */
 const PHONE_FAILED_LINGER = 10;
 const SKIPPED_LINGER = 4;
+/** A call on the phone heard through the PC's sound ends after this long with no call sound and the rep not speaking. */
+const CALL_SILENCE = 15;
 /** What the island says when the dashboard never took a call, and for how long (s). */
 const DIAL_FAILED = "Couldn't start the call";
 const DIAL_FAILED_HOLD = 4;
@@ -63,9 +65,13 @@ export type Effects = {
   lookUpCallContact?(caller: Caller | null): void;
   /** Opens a web link in the default browser (a meeting's call link). */
   openExternal?(url: string): void;
+  /** Where a call on the phone is heard through the PC's sound, not seen on the mic (Windows): listen for it while the
+   * island waits; `onSound` once it plays. Absent where the mic shows the call (Mac). */
+  watchCallSound?(onSound: () => void): void;
+  stopCallSound?(): void;
 };
 
-type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout" | "dialFailedHold" | "phoneConnect";
+type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout" | "dialFailedHold" | "phoneConnect" | "callSilence";
 
 export class IslandController {
   private effects: Effects;
@@ -92,6 +98,8 @@ export class IslandController {
   private shownSide: "you" | "them" = "them";
   /** The Vocify call on show was answered: its end waits for the memo ("processing"), not back to rest. */
   private dialAnswered = false;
+  /** Recording a call on the phone that started on its sound: silence on both sides is its hang-up. */
+  private soundCall = false;
   /** Meetings already announced: each opens the island once. */
   private announcedMeetings = new Set<string>();
   /** One meeting at one time: a meeting moved to another time is announced (and can be closed) again. */
@@ -257,6 +265,7 @@ export class IslandController {
     const clock = parseClock(update.clock);
     if (clock && JSON.stringify(clock) !== JSON.stringify(this.current.clock)) patch.clock = clock;
     if (update.levels !== undefined) this.applyLevels(update.levels);
+    if (update.callActivity !== undefined) this.callActivity(update.callActivity);
     if (has("assist")) {
       const next = parseAssist(update.assist);
       if (JSON.stringify(next) !== JSON.stringify(this.current.assist)) {
@@ -431,8 +440,10 @@ export class IslandController {
     if (this.mode !== "dialing" || this.current.dial !== null) return;
     this.stopTimer("dialTimeout");
     this.transition({ kind: "phoneCall", name: this.current.onScreen?.name ?? null, failed: false }, true);
+    this.effects.watchCallSound?.(() => this.callSoundHeard());
     this.start("phoneConnect", PHONE_CONNECT_TIMEOUT, () => {
       if (this.current.mode.kind !== "phoneCall" || this.current.mode.failed) return;
+      this.effects.stopCallSound?.();
       // Never connected: the rep cancelled the OS's confirm, or calls from the phone aren't set up on this computer.
       this.effects.emit("call:ended", {});
       this.transition({ ...this.current.mode, failed: true }, true);
@@ -440,9 +451,19 @@ export class IslandController {
     });
   }
 
-  /** The call on the phone connected: its call service took the mic. It is recorded, and its letting go is the hang-up. */
-  private phoneConnected(caller: Caller): void {
+  /** The call on the phone played through the PC (its ring or the other side): it is recorded, and silence on both
+   * sides ends it (see `callActivity`). */
+  private callSoundHeard(): void {
+    if (this.current.mode.kind !== "phoneCall" || this.current.mode.failed) return;
+    this.soundCall = true;
+    this.phoneConnected(null);
+  }
+
+  /** The call on the phone connected: its call service took the mic (its letting go is the hang-up), or its sound played. */
+  private phoneConnected(caller: Caller | null): void {
     this.stopTimer("phoneConnect");
+    // Seen on the mic: the sound is not needed. Heard: its capture goes on as the recording's.
+    if (caller) this.effects.stopCallSound?.();
     this.recordingCaller = caller;
     this.transition({ kind: "starting" }, false);
     this.effects.emit("shell:command", "listen");
@@ -458,6 +479,7 @@ export class IslandController {
     if (this.current.mode.kind !== "phoneCall") return;
     const failed = this.current.mode.failed;
     this.stopTimer("phoneConnect");
+    if (!failed) this.effects.stopCallSound?.();
     if (!failed) this.effects.emit("call:ended", {});
     this.rest();
     if (setUp) this.effects.emit("shell:command", "open-phone-setup");
@@ -601,10 +623,26 @@ export class IslandController {
     });
   }
 
+  /** The dashboard's reading of the last second: the call side played sound, the rep spoke. Either keeps a call on the
+   * phone heard through the PC's sound going. */
+  private callActivity(raw: unknown): void {
+    if (!this.soundCall || this.mode !== "recording" || typeof raw !== "object" || raw === null) return;
+    const { them, you } = raw as { them?: unknown; you?: unknown };
+    if (them === true || you === true) this.start("callSilence", CALL_SILENCE, () => this.callWentSilent());
+  }
+
+  private callWentSilent(): void {
+    if (!this.soundCall || this.mode !== "recording") return;
+    // Paused, nothing is measured: the silence says nothing about the call.
+    if (this.current.paused) return this.start("callSilence", CALL_SILENCE, () => this.callWentSilent());
+    this.stop(true);
+  }
+
   /** Pauses, says so with Resume, and ends once the grace runs out (see StopGrace). */
   stop(byHangUp: boolean): void {
     if (this.mode !== "recording") return;
     this.stopTimer("hangUp");
+    this.stopTimer("callSilence");
     const grace = new StopGrace(byHangUp, this.current.paused);
     this.grace = grace;
     this.run(grace.onStop);
@@ -619,6 +657,7 @@ export class IslandController {
     this.grace = null;
     this.run(grace.onResume);
     this.transition({ kind: "recording" }, false);
+    if (this.soundCall) this.start("callSilence", CALL_SILENCE, () => this.callWentSilent());
   }
 
   /** Ending the recording hands it to the dashboard; the memo is written in the background. */
@@ -673,6 +712,7 @@ export class IslandController {
     // The call the rep placed from the island stays as open (or closed) as they had it when it is answered.
     const keepsShape = this.mode === "recording" || (this.mode === "dialing" && this.vocifyCallUp);
     this.transition({ kind: "recording" }, keepsShape && this.current.expanded);
+    if (this.soundCall) this.start("callSilence", CALL_SILENCE, () => this.callWentSilent());
   }
 
   /** Ends the stop grace now, without waiting for its line to run out. */
@@ -689,6 +729,8 @@ export class IslandController {
       this.quiet = { appId: this.recordingCaller.appId, until: this.effects.now() + AFTER_CALL_QUIET * 1000 };
     }
     this.recordingCaller = null;
+    this.soundCall = false;
+    this.stopTimer("callSilence");
     this.set({ callContact: null });
     if (finishing) this.finish();
     // The dashboard hides the island as it stops; a finishing one keeps waiting.

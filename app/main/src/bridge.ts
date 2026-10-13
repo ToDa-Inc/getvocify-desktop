@@ -21,6 +21,9 @@ export type BridgeDeps = {
   loopback: Loopback;
   drafts: Drafts;
   shortcut: ShortcutManager;
+  /** A capture already running that heard the call on the phone (Windows): the recording takes it instead of
+   * restarting one, so the call's start is not cut. True when it was handed over. */
+  takeRunningLoopback?(): boolean;
   /** The rep's own phone, for calls when Vocify calling is off. */
   phone: PhoneDialer;
   /** Whether the island's Call goes to the rep's phone on this computer (off: through Vocify), kept across launches. */
@@ -92,11 +95,16 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
 
   async function startSystemAudio(): Promise<unknown> {
     stopListening();
-    await deps.loopback.stop();
+    const running = deps.takeRunningLoopback?.() ?? false;
+    if (!running) await deps.loopback.stop();
     unsubscribePcm = deps.loopback.onPcm((pcm) => deps.emit("system-audio:pcm", pcm));
     unsubscribeLost = deps.loopback.onLost((reason) => deps.emit("system-audio:lost", { reason }));
     unsubscribeMic = deps.loopback.onMicPcm?.((pcm) => deps.emit("native-mic:pcm", pcm)) ?? null;
     unsubscribeVoice = deps.loopback.onVoicePcm?.((pcm) => deps.emit("native-voice:pcm", pcm)) ?? null;
+    if (running) {
+      deps.log("system audio start: kept the capture that heard the call");
+      return { ok: true, backend: "wasapi-loopback" };
+    }
     const startedAt = Date.now();
     const started = await deps.loopback.start();
     deps.log(`system audio start: ${started.ok ? "ok" : started.reason ?? "failed"} in ${Date.now() - startedAt} ms`);

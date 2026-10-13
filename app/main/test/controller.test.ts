@@ -4,11 +4,11 @@ import type { IslandState, Levels } from "../../island/src/types.ts";
 import { IslandController, type Caller, type Effects } from "../src/controller.ts";
 
 /** A clock and timer queue the tests move by hand, plus a record of everything the controller does outside itself. */
-function setup(options: { recorderReady?: boolean } = {}) {
+function setup(options: { recorderReady?: boolean; callSound?: boolean } = {}) {
   let now = 1_700_000_000_000;
   const timers: { at: number; fn: () => void; live: boolean }[] = [];
   const emitted: { channel: string; payload: unknown }[] = [];
-  const log = { mainWindow: 0, saved: [] as boolean[], states: [] as IslandState[], levels: [] as Levels[], contactLookups: 0, sourceLookups: 0 };
+  const log = { mainWindow: 0, saved: [] as boolean[], states: [] as IslandState[], levels: [] as Levels[], contactLookups: 0, sourceLookups: 0, soundWatch: null as (() => void) | null, soundStops: 0 };
   const effects: Effects = {
     now: () => now,
     after(ms, fn) {
@@ -25,6 +25,7 @@ function setup(options: { recorderReady?: boolean } = {}) {
     saveRecorderReady: (ready) => log.saved.push(ready),
     lookUpCallContact: () => void (log.contactLookups += 1),
     lookUpCallSource: () => void (log.sourceLookups += 1),
+    ...(options.callSound ? { watchCallSound: (onSound: () => void) => void (log.soundWatch = onSound), stopCallSound: () => void (log.soundStops += 1) } : {}),
   };
   const controller = new IslandController(effects, { notchWidth: 185, barHeight: 32, screenHeight: 982 }, { recorderReady: options.recorderReady ?? true, material: "opaque", reduceMotion: false });
   const advance = (seconds: number) => {
@@ -1071,4 +1072,83 @@ test("a recording the dashboard did not keep (an unanswered call) says why for a
   assert.equal(t.controller.state.finish?.message, "No answer. Nothing was saved.");
   t.advance(4.1);
   assert.equal(t.mode(), "idle");
+});
+
+/* ---------- a call on the phone heard through the PC's sound (Windows) ---------- */
+
+const dialOnPhoneHeard = () => {
+  const t = setup({ callSound: true });
+  t.controller.applyShellState({ onScreen: { ...ana, callerId: null } });
+  t.controller.act({ name: "openDialConfirm" });
+  t.controller.act({ name: "dial" });
+  t.controller.phoneDialed();
+  return t;
+};
+
+test("where the call is heard, not seen on the mic: its sound starts the recording", () => {
+  const t = dialOnPhoneHeard();
+  assert.ok(t.log.soundWatch, "listening while the island waits");
+  t.advance(6);
+  t.log.soundWatch?.();
+  assert.equal(t.mode(), "starting");
+  assert.deepEqual(t.commands(), ["dial", "listen"]);
+  t.controller.show();
+  assert.equal(t.mode(), "recording");
+});
+
+test("15 s with no call sound and the rep not speaking ends it, as a hang-up", () => {
+  const t = dialOnPhoneHeard();
+  t.log.soundWatch?.();
+  t.controller.show();
+  for (let i = 0; i < 60; i++) {
+    t.controller.applyShellState({ callActivity: { them: i % 2 === 0, you: false } });
+    t.advance(1);
+  }
+  assert.equal(t.mode(), "recording", "a call with sound keeps going");
+  for (let i = 0; i < 30; i++) {
+    t.controller.applyShellState({ callActivity: { them: false, you: true } });
+    t.advance(1);
+  }
+  assert.equal(t.mode(), "recording", "the rep talking alone is still the call");
+  // The last activity was the loop's last second: 15 s on from it, the call has gone quiet.
+  t.controller.applyShellState({ callActivity: { them: false, you: false } });
+  t.advance(13);
+  assert.equal(t.mode(), "recording");
+  t.advance(1.1);
+  assert.equal(t.mode(), "stopped");
+  assert.equal(t.controller.state.mode.kind === "stopped" && t.controller.state.mode.title, "Call ended");
+});
+
+test("other recordings never end on silence", () => {
+  const t = setup({ callSound: true });
+  t.controller.callChanged(zoom);
+  t.controller.act({ name: "record" });
+  t.controller.show();
+  t.controller.applyShellState({ callActivity: { them: false, you: false } });
+  t.advance(120);
+  assert.equal(t.mode(), "recording");
+});
+
+test("the listening stops once the call is heard, cancelled, or never connects", () => {
+  const heard = dialOnPhoneHeard();
+  heard.log.soundWatch?.();
+  assert.equal(heard.log.soundStops, 0, "heard: its capture is handed to the recording, not stopped here");
+  const cancelled = dialOnPhoneHeard();
+  cancelled.controller.act({ name: "cancelPhoneCall" });
+  assert.equal(cancelled.log.soundStops, 1);
+  const never = dialOnPhoneHeard();
+  never.advance(45.1);
+  assert.equal(never.log.soundStops, 1);
+});
+
+test("a paused call on the phone never ends on silence", () => {
+  const t = dialOnPhoneHeard();
+  t.log.soundWatch?.();
+  t.controller.show();
+  t.controller.applyShellState({ paused: true });
+  t.advance(120);
+  assert.equal(t.mode(), "recording");
+  t.controller.applyShellState({ paused: false });
+  t.advance(15.1);
+  assert.equal(t.mode(), "stopped", "after the pause, silence counts again");
 });

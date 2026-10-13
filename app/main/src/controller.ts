@@ -146,6 +146,11 @@ export class IslandController {
     return this.current;
   }
 
+  /** Recording a call on the phone that ends on silence (Windows): its per-second activity is worth the log. */
+  get endsOnSilence(): boolean {
+    return this.soundCall && (this.mode === "recording" || this.mode === "stopped");
+  }
+
   /** The app the call being recorded happens in (what Record was pressed on, else what holds the mic). */
   get recordingAppId(): string | null {
     return this.recordingCaller?.appId ?? this.currentCaller?.appId ?? null;

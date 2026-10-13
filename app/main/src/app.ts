@@ -526,6 +526,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     dashboard.markReady();
     // Voice levels alone say nothing about the page's work; anything else does.
     if (typeof state === "object" && state !== null && Object.keys(state).some((key) => key !== "levels")) touch();
+    // A call on the phone ends on silence: the log keeps what each second measured, to tell why one did or did not end.
+    const activity = typeof state === "object" && state !== null ? (state as { callActivity?: Record<string, unknown> }).callActivity : undefined;
+    if (activity && controller.endsOnSilence) log(`call activity: them=${activity.them} (peak ${activity.themPeak ?? "?"}) you=${activity.you} (peak ${activity.youPeak ?? "?"})`);
     void bridge("shell:state", { state });
   });
   // A message can still arrive from the island while the app quits and its window is already gone.

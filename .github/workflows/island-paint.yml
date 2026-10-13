@@ -29,6 +29,16 @@ jobs:
         run: npx electron test/paint-island.mjs --script=rally --report
       - name: The same call with hardware acceleration off
         run: npx electron test/paint-island.mjs --nogpu --report
+      - name: A display at 125%
+        run: npx electron test/paint-island.mjs --scale=1.25 --report
+      - name: A display at 150%
+        run: npx electron test/paint-island.mjs --scale=1.5 --report
+      - name: A display at 125%, the window resizing like the island
+        run: npx electron test/paint-island.mjs --scale=1.25 --resize --report
+      - name: A display at 150%, the window resizing like the island
+        run: npx electron test/paint-island.mjs --scale=1.5 --resize --report
+      - name: A display at 100%, the window resizing like the island
+        run: npx electron test/paint-island.mjs --resize --report
       - uses: actions/upload-artifact@v4
         if: always()
         with:

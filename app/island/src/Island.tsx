@@ -91,7 +91,7 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
         <div
           className="topbar"
           style={{ height: bar, padding: open ? "0 6px" : 0 }}
-          title={helpText({ kind, open, stage: state.postCall?.stage ?? null, crmName: state.postCall ? postCallCrmName(state.postCall) : null, pending: state.postCall ? postCallPending(state.postCall) : 0, finishLine: finishLine(state.finish), dialLine: dialLine(state.dial) })}
+          title={helpText({ kind, open, stage: state.postCall?.stage ?? null, crmName: state.postCall ? postCallCrmName(state.postCall) : null, pending: state.postCall ? postCallPending(state.postCall) : 0, finishLine: finishLine(state.finish), dialLine: state.mode.kind === "phoneCall" ? CallWording.onPhone(state.mode.name, state.mode.failed).title : dialLine(state.dial) })}
           onClick={() => act({ name: "toggle" })}
         >
           <div className="ear ear-left" style={{ width: ear, paddingLeft: !open && kind !== "recording" ? 12 : 14 }}>
@@ -181,6 +181,8 @@ function LeftEar({ state, open, lifted }: { state: IslandState; open: boolean; l
     case "dialConfirm":
     case "dialing":
       return <Phone size={11} style={{ color: state.dial?.phase === "ended" ? "var(--secondary)" : "var(--beige)" }} />;
+    case "phoneCall":
+      return <Phone size={11} style={{ color: mode.failed ? "var(--secondary)" : "var(--beige)" }} />;
     case "postCall": {
       if (open) return <VocifyMark />;
       const stage = state.postCall?.stage;
@@ -250,6 +252,8 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
     case "dialing":
       if (open) return <OpenArrow open />;
       return state.dial?.phase !== "ended" ? <HangUpDot onClick={() => act({ name: "hangup" })} /> : null;
+    case "phoneCall":
+      return open ? <OpenArrow open /> : null;
     case "postCall":
       if (open) return <OpenArrow open />;
       return state.postCall && postCallPending(state.postCall) > 0 ? <PendingBadge count={postCallPending(state.postCall)} /> : null;
@@ -274,6 +278,8 @@ function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onP
       return state.onScreen ? <DialConfirmMenu onScreen={state.onScreen} ready={state.recorderReady} act={act} /> : <IdleMenu ready={state.recorderReady} onScreen={null} act={act} />;
     case "dialing":
       return state.dial ? <DialingMenu dial={state.dial} act={act} /> : null;
+    case "phoneCall":
+      return <PhoneCallMenu name={mode.name} failed={mode.failed} act={act} />;
     default:
       return <IdleMenu ready={state.recorderReady} onScreen={state.onScreen} meeting={state.meeting} crmBlocked={state.crmBlocked} act={act} />;
   }
@@ -676,7 +682,7 @@ function OnScreenOffer({ onScreen, act }: { onScreen: OnScreenCall; act: Act }) 
             <ArrowUpRight size={9} />
           </PrimaryActionButton>
         ) : (
-          <PrimaryActionButton title={copy.button} help="Call through Vocify" onClick={() => act({ name: "dial" })}>
+          <PrimaryActionButton title={copy.button} help={CallWording.callHelp(onScreen)} onClick={() => act({ name: "dial" })}>
             <Phone size={9} />
           </PrimaryActionButton>
         ))}
@@ -713,6 +719,29 @@ function DialingMenu({ dial, act }: { dial: DialIslandState; act: Act }) {
       <div className="offer-brief">
         <BriefBody lines={dial.brief ?? []} company={dial.companyBrief} />
       </div>
+    </div>
+  );
+}
+
+/** A call opened on the rep's phone: who, until it connects (Cancel stops waiting); never connected, how to set it up. */
+function PhoneCallMenu({ name, failed, act }: { name: string | null; failed: boolean; act: Act }) {
+  const copy = CallWording.onPhone(name, failed);
+  return (
+    <div className="menu">
+      <div className="menu-stack">
+        <span className="menu-title" data-dim={failed}>{copy.title}</span>
+        <span className="menu-line">{copy.line}</span>
+      </div>
+      <div className="grow" />
+      {failed ? (
+        <PrimaryActionButton title="Set up" help="How to call from your phone" onClick={() => act({ name: "setUpPhone" })}>
+          <ArrowUpRight size={9} />
+        </PrimaryActionButton>
+      ) : (
+        <IconButton help="Stop waiting for the call" onClick={() => act({ name: "cancelPhoneCall" })}>
+          <Close size={11} />
+        </IconButton>
+      )}
     </div>
   );
 }

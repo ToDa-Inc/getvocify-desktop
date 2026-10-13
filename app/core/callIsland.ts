@@ -13,6 +13,8 @@ export type OnScreenCall = {
   phone: string | null;
   /** The verified number the call goes out from. */
   callerId: string | null;
+  /** Vocify calling is off: Call opens on the rep's own phone. */
+  onPhone?: boolean;
   state: OnScreenState;
   /** What happened with the contact lately (the dashboard's recent-activity summary): loading, or its lines. */
   brief?: OnScreenBrief | null;
@@ -160,7 +162,7 @@ export function decodeOnScreen(raw: unknown): OnScreenCall | null {
   const provider = text(r.provider);
   const crmLabel = text(r.crmLabel);
   if (!STATES.has(state) || !provider || !crmLabel) return null;
-  return { provider, crmLabel, name: text(r.name), phone: text(r.phone), callerId: text(r.callerId), state, brief: decodeBrief(r.brief) };
+  return { provider, crmLabel, name: text(r.name), phone: text(r.phone), callerId: text(r.callerId), onPhone: r.onPhone === true, state, brief: decodeBrief(r.brief) };
 }
 
 export function decodeDial(raw: unknown): DialIslandState | null {
@@ -230,6 +232,18 @@ export const CallWording = {
 
   ended(d: DialIslandState): string {
     return d.message ?? "Call ended";
+  },
+
+  /** What Call does, on hover. */
+  callHelp(s: OnScreenCall): string {
+    return s.onPhone ? "Call from your phone" : "Call through Vocify";
+  },
+
+  /** A call opened on the rep's own phone: waiting for it to connect, or it never did. */
+  onPhone(name: string | null, failed: boolean): { title: string; line: string } {
+    return failed
+      ? { title: "The call didn't connect", line: "Set up calls from your phone" }
+      : { title: name ? `Calling ${name} on your phone` : "Calling on your phone", line: "Recording starts when it connects" };
   },
 };
 

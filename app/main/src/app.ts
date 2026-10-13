@@ -581,6 +581,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     },
   });
   const report = (detected: DetectedCaller | null) => {
+    // Which app holds the mic is what starts and ends a detected call (and a call on the rep's phone): the log shows it.
+    log(`call app on the mic: ${detected ? `${detected.name} (${detected.appId})` : "none"}`);
     // In order, and with the app's icon ready before the island hears of the call.
     detection = detection.then(async () => {
       if (platform === "win32" && detected?.browser) {

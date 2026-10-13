@@ -257,6 +257,7 @@ function bridgeSetup(options: { phoneApp?: string | null; phoneFails?: "no_diale
   const dialed: string[] = [];
   const phone: PhoneDialer = {
     app: () => (options.phoneApp === undefined ? "Phone Link" : options.phoneApp),
+    setup: async () => void dialed.push("setup"),
     dial: async (number) => {
       if (options.phoneFails) return { ok: false, reason: options.phoneFails };
       dialed.push(number);
@@ -484,13 +485,13 @@ test("bridge: Vocify calling is on until the rep turns it off on this computer, 
   assert.deepEqual(await bridgeSetup({ phoneApp: null }).call("calling:get", {}), { onPhone: false, phoneApp: null });
 });
 
-test("bridge: a call on the phone opens it there and the island records it from then", async () => {
+test("bridge: a call on the phone opens it there, and the island waits for it to connect", async () => {
   const t = bridgeSetup();
   pressCall(t);
   assert.deepEqual(await t.call("calling:phone", { number: "+34600111222" }), { ok: true });
   assert.deepEqual(t.dialed, ["+34600111222"]);
-  assert.equal(t.controller.state.mode.kind, "starting");
-  assert.ok(t.emitted.some((e) => e.channel === "shell:command" && e.payload === "listen"));
+  assert.equal(t.controller.state.mode.kind, "phoneCall");
+  assert.ok(!t.emitted.some((e) => e.channel === "shell:command" && e.payload === "listen"), "nothing is recorded before the call connects");
 });
 
 test("bridge: a phone that cannot open the call says why on the island", async () => {

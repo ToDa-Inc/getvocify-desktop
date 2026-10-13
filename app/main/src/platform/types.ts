@@ -81,6 +81,9 @@ export interface PhoneDialer {
   app(): string | null;
   /** Opens a call to `number` (E.164; spaces and dashes are ignored) in that app; says why not instead of throwing. */
   dial(number: string): Promise<{ ok: true } | { ok: false; reason: PhoneDialFailure }>;
+  /** Opens where calls from the phone are set up on this computer (Mac: FaceTime, whose settings turn on Calls from
+   * iPhone; Windows: Default apps, where Phone Link becomes the app for TEL links). */
+  setup(): Promise<void>;
 }
 
 /** One OS's implementations. `callDetector` is null on an OS that cannot detect calls yet; `speakers` where it can't name them. */

@@ -135,6 +135,9 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
           deps.log(`calls go ${args.onPhone ? `to the rep's phone (${deps.phone.app() ?? "no app for calls"})` : "through Vocify"}`);
         }
         return calling();
+      case "calling:setup":
+        await deps.phone.setup();
+        return { ok: true };
       case "calling:phone": {
         // The island's Call with Vocify calling off: the call opens on the rep's phone, and the island records it.
         const dialed = await deps.phone.dial(String(args.number ?? ""));

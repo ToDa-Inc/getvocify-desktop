@@ -180,7 +180,7 @@ export function parseClock(raw: unknown): Clock | null {
   return { startedAt, pausedMs: num(raw.pausedMs) ?? 0, pausedAt: num(raw.pausedAt) ?? null };
 }
 
-const FINISH_STEPS = ["stopping", "uploading", "failed"] as const;
+const FINISH_STEPS = ["stopping", "uploading", "failed", "skipped"] as const;
 
 /** `{ step, message? }`: where the recording that just ended is. An unknown step is dropped. */
 export function parseFinish(raw: unknown): Finish | null {

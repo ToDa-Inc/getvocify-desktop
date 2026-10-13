@@ -1,6 +1,8 @@
 // The Windows implementations against the shared contracts, with Windows itself faked at its edge: the microphone-use
 // record `reg query` prints, the long-lived PowerShell reader, Electron's microphone status and the settings pages.
+import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { test } from "node:test";
 import { createWindowsCallDetector } from "../src/platform/windows/call-detector.ts";
 import { createWindowsCrmScreenReader } from "../src/platform/windows/crm-screen-reader.ts";
 import { createWindowsPermissions } from "../src/platform/windows/permissions.ts";
@@ -98,7 +100,17 @@ permissionsContract("Windows", () => {
 
 const windowsPhone = (telApp: string) => {
   const opened: string[] = [];
-  return { dialer: createWindowsPhone({ telApp: () => telApp, openExternal: (url) => void opened.push(url) }), opened: () => opened };
+  return {
+    dialer: createWindowsPhone({ telApp: () => telApp, openExternal: (url) => void opened.push(url) }),
+    opened: () => opened.filter((url) => url.startsWith("tel:")),
+    setupOpened: () => opened.filter((url) => !url.startsWith("tel:")),
+  };
 };
 
 phoneDialerContract("Windows", () => windowsPhone("Phone Link"), () => windowsPhone(""));
+
+test("Windows phone: setting up opens Default apps, where Phone Link becomes the app for TEL links", async () => {
+  const h = windowsPhone("");
+  await h.dialer.setup();
+  assert.deepEqual(h.setupOpened(), ["ms-settings:defaultapps"]);
+});

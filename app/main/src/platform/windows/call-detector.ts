@@ -9,6 +9,7 @@ export function createWindowsCallDetector(deps: {
   every(ms: number, fn: () => void): () => void;
   ownExePath: string | null;
   onError?(error: unknown): void;
+  onActive?(apps: string[]): void;
 }): CallDetector {
   let watcher: MicWatcher | null = null;
   return {

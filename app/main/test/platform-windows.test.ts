@@ -101,7 +101,7 @@ permissionsContract("Windows", () => {
 const windowsPhone = (telApp: string) => {
   const opened: string[] = [];
   return {
-    dialer: createWindowsPhone({ telApp: () => telApp, openExternal: (url) => void opened.push(url) }),
+    dialer: createWindowsPhone({ telApp: () => telApp, openExternal: (url) => void opened.push(url), openSoundRecording: () => void opened.push("sound:recording") }),
     opened: () => opened.filter((url) => url.startsWith("tel:")),
     setupOpened: () => opened.filter((url) => !url.startsWith("tel:")),
   };
@@ -113,4 +113,10 @@ test("Windows phone: setting up opens Default apps, where Phone Link becomes the
   const h = windowsPhone("");
   await h.dialer.setup();
   assert.deepEqual(h.setupOpened(), ["ms-settings:defaultapps"]);
+});
+
+test("Windows phone: 'they can't hear me' opens the Sound dialog on its Recording tab", async () => {
+  const h = windowsPhone("Phone Link");
+  await h.dialer.micSettings();
+  assert.deepEqual(h.setupOpened(), ["sound:recording"]);
 });

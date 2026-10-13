@@ -356,3 +356,9 @@ test("Mac phone: setting up opens FaceTime (its settings turn on Calls from iPho
   await h.dialer.setup();
   assert.deepEqual(h.runs, [["-b", "com.apple.FaceTime"]]);
 });
+
+test("Mac phone: 'they can't hear me' opens FaceTime, which chooses its own microphone", async () => {
+  const h = macPhone(true);
+  await h.dialer.micSettings();
+  assert.deepEqual(h.runs, [["-b", "com.apple.FaceTime"]]);
+});

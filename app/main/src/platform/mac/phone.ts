@@ -16,6 +16,9 @@ export function createMacPhone(deps: {
     async setup() {
       await deps.open(["-b", "com.apple.FaceTime"]).catch(() => {});
     },
+    async micSettings() {
+      await deps.open(["-b", "com.apple.FaceTime"]).catch(() => {});
+    },
     async dial(raw) {
       if (!deps.hasFaceTime()) return { ok: false, reason: "no_dialer" };
       const number = dialableNumber(raw);

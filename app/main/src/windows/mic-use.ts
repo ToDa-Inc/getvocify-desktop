@@ -138,6 +138,9 @@ export type MicWatcherDeps = {
   ownExePath: string | null;
   onCaller(caller: DetectedCaller | null): void;
   onError?(error: unknown): void;
+  /** Every app holding the mic (path or package), call app or not, when that set changes: for the log, to see what a
+   * call no detection knows (a Phone Link call) holds. */
+  onActive?(apps: string[]): void;
 };
 
 const POLL_MS = 1000;
@@ -150,6 +153,7 @@ export class MicWatcher {
   private busy = false;
   private lastOutput: string | null = null;
   private reported: string | null | undefined = undefined;
+  private lastActive: string | null = null;
 
   constructor(deps: MicWatcherDeps) {
     this.deps = deps;
@@ -175,6 +179,11 @@ export class MicWatcher {
       if (output === this.lastOutput && this.reported !== undefined && !this.hasUnsettled) return;
       this.lastOutput = output;
       const uses = parseMicConsent(output);
+      const active = uses.filter((u) => u.active).map((u) => u.id).sort();
+      if (active.join("\n") !== this.lastActive) {
+        this.lastActive = active.join("\n");
+        this.deps.onActive?.(active);
+      }
       const now = this.deps.now();
       const caller = pickCaller(uses, { now, settleMs: SETTLE_MS, ownExePath: this.deps.ownExePath });
       this.hasUnsettled = uses.some((u) => u.active && now - u.started < SETTLE_MS);

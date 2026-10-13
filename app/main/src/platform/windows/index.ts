@@ -23,6 +23,7 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
       every,
       ownExePath: process.execPath,
       onError: (error) => env.log(`call detection read failed: ${String(error)}`),
+      onActive: (apps) => env.log(`mic in use (Windows record): ${apps.length ? apps.join(", ") : "none"}`),
     }),
     crmScreenReader: createWindowsCrmScreenReader({
       spawn: () =>
@@ -38,6 +39,10 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
     }),
     // A window that cannot take focus (focusable: false) is created WS_EX_NOACTIVATE: a click never activates the app.
     island: { prepare: () => "non-activating (Windows: not focusable)" },
-    phone: createWindowsPhone({ telApp: () => env.protocolApp("tel:"), openExternal: env.openExternal }),
+    phone: createWindowsPhone({
+      telApp: () => env.protocolApp("tel:"),
+      openExternal: env.openExternal,
+      openSoundRecording: () => void runQuiet("control.exe", ["mmsys.cpl,,1"], 10_000).catch((error) => env.log(`sound settings did not open: ${String(error)}`)),
+    }),
   };
 }

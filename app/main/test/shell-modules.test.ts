@@ -258,6 +258,7 @@ function bridgeSetup(options: { phoneApp?: string | null; phoneFails?: "no_diale
   const phone: PhoneDialer = {
     app: () => (options.phoneApp === undefined ? "Phone Link" : options.phoneApp),
     setup: async () => void dialed.push("setup"),
+    micSettings: async () => void dialed.push("mic-settings"),
     dial: async (number) => {
       if (options.phoneFails) return { ok: false, reason: options.phoneFails };
       dialed.push(number);

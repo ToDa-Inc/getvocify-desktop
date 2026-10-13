@@ -84,6 +84,9 @@ export interface PhoneDialer {
   /** Opens where calls from the phone are set up on this computer (Mac: FaceTime, whose settings turn on Calls from
    * iPhone; Windows: Default apps, where Phone Link becomes the app for TEL links). */
   setup(): Promise<void>;
+  /** Opens where the call's microphone is chosen, for "they can't hear me" (Mac: FaceTime, which picks its own mic;
+   * Windows: Sound › Recording, where Phone Link users set the default and default communication device). */
+  micSettings(): Promise<void>;
 }
 
 /** One OS's implementations. `callDetector` is null on an OS that cannot detect calls yet; `speakers` where it can't name them. */

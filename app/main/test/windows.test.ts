@@ -89,6 +89,7 @@ function watcherSetup(outputs: (() => string | Error)[]) {
   let tick: (() => void) | null = null;
   let stopped = false;
   const errors: unknown[] = [];
+  const active: string[][] = [];
   const watcher = new MicWatcher({
     read: async () => {
       const next = outputs[Math.min(polls, outputs.length - 1)]();
@@ -104,13 +105,14 @@ function watcherSetup(outputs: (() => string | Error)[]) {
     ownExePath: null,
     onCaller: (caller) => callers.push(caller),
     onError: (error) => errors.push(error),
+    onActive: (apps) => active.push(apps),
   });
   const advance = async (ms: number) => {
     now += ms;
     tick?.();
     await new Promise((resolve) => setImmediate(resolve));
   };
-  return { watcher, callers, advance, polls: () => polls, isStopped: () => stopped, errors };
+  return { watcher, callers, advance, polls: () => polls, isStopped: () => stopped, errors, active };
 }
 
 test("the watcher reports a call when it starts and when it ends, and nothing in between", async () => {
@@ -153,6 +155,19 @@ test("a failing read is reported and the next poll still works; halting stops th
   assert.equal(t.callers.at(-1)?.name, "Zoom");
   t.watcher.halt();
   assert.equal(t.isStopped(), true);
+});
+
+test("every app holding the mic is reported when the set changes, call app or not (what a Phone Link call holds is unknown)", async () => {
+  const quiet = () => "";
+  const unknown = () => app("C:\\Windows\\System32\\SomeCallHost.exe", NOW - 10_000, 0);
+  const t = watcherSetup([quiet, unknown, unknown, quiet]);
+  t.watcher.start();
+  await new Promise((resolve) => setImmediate(resolve));
+  await t.advance(1000);
+  await t.advance(1000);
+  await t.advance(1000);
+  assert.deepEqual(t.active, [[], ["C:\\Windows\\System32\\SomeCallHost.exe"], []]);
+  assert.deepEqual(t.callers, [null], "not a known call app: not a call");
 });
 
 /* ---------- browser pages ---------- */

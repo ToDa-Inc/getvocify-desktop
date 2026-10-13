@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
     set: (onPhone: boolean) => call("calling:set", { onPhone }),
     dialOnPhone: (number: string) => call("calling:phone", { number }),
     setup: () => call("calling:setup"),
+    micSettings: () => call("calling:mic-settings"),
   },
   saas: { request: (payload: Record<string, unknown>) => call("saas:request", { payload }) },
   crm: {

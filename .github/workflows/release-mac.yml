@@ -1,20 +1,9 @@
 name: Release Mac
 
+# The Swift Mac app is retired: the Mac app is the Electron one, built and released by desktop-app.yml. This workflow
+# is kept for a manual build only (it used to run daily and on every push to apps/macos).
 on:
   workflow_dispatch:
-  # Once a day: rebuilds only if the dashboard's staging or this repo's main moved since the last build.
-  schedule:
-    - cron: "17 5 * * *"
-  push:
-    branches:
-      - main
-    tags:
-      - "v*"
-    paths:
-      - "apps/macos/**"
-      - "brand/**"
-      - "scripts/**"
-      - ".github/workflows/release-mac.yml"
 
 permissions:
   contents: write

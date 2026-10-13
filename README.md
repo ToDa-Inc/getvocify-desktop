@@ -9,7 +9,7 @@
 > killed at launch, "different Team IDs".)
 > How builds reach installed apps (and what is still missing): [docs/BUILD-AND-RELEASE.md](docs/BUILD-AND-RELEASE.md).
 
-Native macOS app with the Vocify dashboard embedded — records Zoom, Meet, and Teams without a bot. Your mic is **You**, system audio is **Them**. Talks to **https://getvocify-staging.up.railway.app/api/v1** (staging).
+Native macOS app with the Vocify dashboard embedded — records Zoom, Meet, and Teams without a bot. Your mic is **You**, system audio is **Them**. Opens the live dashboard (**https://app.getvocify.com**); `--dashboard=<url>` points it elsewhere, e.g. staging.
 
 **Requires macOS 14+.**
 

@@ -16,10 +16,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const demo = process.argv.includes("--demo");
 /** `--smoke-test`: start, check the island is on screen, quit with code 0 (1 if it is not). For installers and CI. */
 const smoke = process.argv.includes("--smoke-test");
-/** The live site. It does not carry the island's bridge code yet, so it is only used when asked for (it still gets the Mac identity). */
+/** The live site. It carries the island's bridge code (same calls as staging); it still gets the Mac identity. */
 const PRODUCTION_DASHBOARD = "https://app.getvocify.com";
-/** What an installed build opens: the staging site, which has the bridge. Change to PRODUCTION_DASHBOARD once the live site has it. */
-const DEFAULT_DASHBOARD = "https://staging.getvocify.com";
+/** What an installed build opens. The staging site is still reachable with `--dashboard=https://staging.getvocify.com`. */
+const DEFAULT_DASHBOARD = PRODUCTION_DASHBOARD;
 
 // Windows: the island is a see-through window, and drawn by the graphics card it left old words and black patches
 // inside bubbles whenever the transcript moved smoothly. Drawn in software it is clean (test/paint-island.mjs, on a

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { EventEmitter } from "node:events";
 
-export type HelperCommand = "audio" | "audio-permission" | "mic" | "screen" | "speakers";
+export type HelperCommand = "audio" | "audio-permission" | "mic" | "screen" | "speakers" | "voice";
 
 /** A running `vocify-mac-helper` (see native/mac-helper/PROTOCOL.md), as much of a child process as the Mac code uses. */
 export type HelperChild = {

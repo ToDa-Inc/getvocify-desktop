@@ -14,7 +14,15 @@ export interface SystemAudio {
   onPcm(cb: (pcm: ArrayBuffer) => void): () => void;
   /** Capture ended on its own (device gone, renderer gone…). */
   onLost(cb: (reason: string) => void): () => void;
+  /**
+   * Dev only, Mac: the microphone captured natively next to the call (`micMode`), in the same 100 ms mono frames.
+   * "shared": read through the call audio's own device, on its clock; "apple": through Apple's voice processing.
+   */
+  micMode?: NativeMicMode;
+  onMicPcm?(cb: (pcm: ArrayBuffer) => void): () => void;
 }
+
+export type NativeMicMode = "shared" | "apple";
 
 /** A desktop app holding the microphone, i.e. a call that may be worth recording. */
 export type DetectedCaller = { name: string; appId: string; path: string | null; browser: boolean };

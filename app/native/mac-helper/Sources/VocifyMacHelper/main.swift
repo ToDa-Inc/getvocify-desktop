@@ -23,7 +23,7 @@ if arguments.count >= 2, arguments[1].hasPrefix("chrome-extension://") {
 
 guard arguments.count >= 2 else {
     fputs("usage: vocify-mac-helper <command>\n", stderr)
-    fputs("commands: screen, mic, audio, audio-permission, speakers\n", stderr)
+    fputs("commands: screen, mic, audio [--with-mic], voice, audio-permission, speakers\n", stderr)
     exit(1)
 }
 
@@ -37,7 +37,9 @@ case "screen":
 case "mic":
     commandMic()
 case "audio":
-    commandAudio()
+    commandAudio(withMic: arguments.contains("--with-mic"))
+case "voice":
+    commandVoice()
 case "audio-permission":
     commandAudioPermission()
 default:
@@ -100,7 +102,7 @@ func commandMic() {
 
 // MARK: - Audio Command
 
-func commandAudio() {
+func commandAudio(withMic: Bool = false) {
     signal(SIGTERM, handleSignal)
     signal(SIGINT, handleSignal)
     // Writing to the app after it went away must end the helper, not kill it with SIGPIPE mid-write.
@@ -109,7 +111,10 @@ func commandAudio() {
     // A process tap hears every process, system call services included (an iPhone call on the Mac); ScreenCaptureKit
     // only apps. Taps exist from macOS 14.2.
     let capture: AudioCapture
-    if #available(macOS 14.2, *) { capture = TapAudioCapture() } else { capture = SystemAudioCapture() }
+    if #available(macOS 14.2, *) { capture = TapAudioCapture(withMic: withMic) } else if withMic {
+        status(["event": "error", "reason": "unsupported_os"])
+        exit(1)
+    } else { capture = SystemAudioCapture() }
     var ended: (event: String, reason: String)?
     capture.onEnd = { event, reason in
         DispatchQueue.main.async {
@@ -201,4 +206,30 @@ func commandMeetHost() {
             )
         }
     }
+}
+
+
+// MARK: - Voice Command
+
+/// `vocify-mac-helper voice`: the microphone through Apple's voice processing (echo cancellation against what the Mac
+/// plays, noise suppression, gain), as 16 kHz mono PCM16 on stdout. Other audio is ducked as little as macOS allows.
+func commandVoice() {
+    signal(SIGTERM, handleSignal)
+    signal(SIGINT, handleSignal)
+    signal(SIGPIPE, SIG_IGN)
+    stopWhenStdinCloses()
+    let capture = VoiceCapture()
+    capture.onEnd = { event, reason in
+        DispatchQueue.main.async {
+            status(["event": event, "reason": reason])
+            isRunning = false
+        }
+    }
+    capture.start()
+    let runLoop = RunLoop.current
+    while isRunning {
+        runLoop.run(until: Date(timeIntervalSinceNow: 0.1))
+    }
+    capture.stop()
+    exit(0)
 }

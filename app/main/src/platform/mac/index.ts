@@ -23,7 +23,7 @@ export function createMacPlatform(env: PlatformEnv): Platform {
   if (!helper) throw new Error("The Mac platform needs the path to vocify-mac-helper");
   const access = createAudioAccess({
     spawn: (command) => spawnMacHelper(helper, command),
-    capture: createMacSystemAudio({ spawn: (command) => spawnMacHelper(helper, command) }),
+    capture: createMacSystemAudio({ spawn: (command, args) => spawnMacHelper(helper, command, args), micMode: env.nativeMic }),
     started: env.systemAudioStarted,
   });
   void access.refresh();

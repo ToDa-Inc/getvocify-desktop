@@ -158,6 +158,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     log,
     nativeHelperPath: macHelper,
     nativePanelPath: macPanel,
+    // Dev only: the microphone captured natively, to compare with the page's own capture (see SystemAudio.micMode).
+    nativeMic: !app.isPackaged && (process.env.VOCIFY_CAPTURE === "shared" || process.env.VOCIFY_CAPTURE === "apple") ? process.env.VOCIFY_CAPTURE : undefined,
   });
 
   /* ---------- who is on the call ---------- */
@@ -297,6 +299,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     reportedPlatform: options.reportedPlatform ?? (platform === "win32" ? "win32" : "darwin"),
     trustFiles: options.trustFiles === true,
     devTrace: traceOn,
+    nativeMic: os.systemAudio.micMode,
     canDestroy,
     log,
   });

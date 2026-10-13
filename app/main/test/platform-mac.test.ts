@@ -14,6 +14,9 @@ import { callDetectorContract } from "./contracts/call-detector.contract.ts";
 import { crmScreenReaderContract } from "./contracts/crm-screen-reader.contract.ts";
 import { permissionsContract } from "./contracts/permissions.contract.ts";
 import { systemAudioContract } from "./contracts/system-audio.contract.ts";
+import { phoneDialerContract } from "./contracts/phone-dialer.contract.ts";
+import { createMacPhone } from "../src/platform/mac/phone.ts";
+import { createAudioAccess } from "../src/platform/mac/audio-access.ts";
 
 const FRONT_APP = "id of application (path to frontmost application as text)";
 
@@ -255,4 +258,90 @@ test("Mac call detector: Chrome's helper holding the microphone is reported as C
   report();
   await tick();
   assert.deepEqual([seen.at(-1)?.name, seen.at(-1)?.appId, seen.at(-1)?.browser], ["Safari", "com.apple.Safari", true]);
+});
+
+const macPhone = (hasFaceTime: boolean, fails = false) => {
+  const runs: string[][] = [];
+  const dialer = createMacPhone({
+    open: async (args) => {
+      runs.push(args);
+      if (fails) throw new Error("open failed");
+    },
+    hasFaceTime: () => hasFaceTime,
+  });
+  return { dialer, runs, opened: () => runs.map((args) => args.at(-1) ?? "") };
+};
+
+phoneDialerContract("Mac", () => macPhone(true), () => macPhone(false));
+
+test("Mac phone: the call opens in FaceTime by its bundle id, whatever app is the default for tel:", async () => {
+  const h = macPhone(true);
+  await h.dialer.dial("+34600111222");
+  assert.deepEqual(h.runs, [["-b", "com.apple.FaceTime", "tel:+34600111222"]]);
+});
+
+test("Mac phone: FaceTime failing to open is reported, not thrown", async () => {
+  assert.deepEqual(await macPhone(true, true).dialer.dial("+34600111222"), { ok: false, reason: "open_failed" });
+});
+
+test("Mac call detector: a call in FaceTime or from the iPhone, whose audio runs in the system's call service, is reported as FaceTime", async () => {
+  let helper: ReturnType<typeof fakeHelper> | null = null;
+  let apps: { bundleId: string; name: string; pid: number; path: string }[] = [];
+  const report = () => helper && !helper.killed && line(helper.stdout, { event: "mic", apps });
+  const detector = createMacCallDetector({
+    spawn: () => {
+      helper = fakeHelper();
+      setImmediate(report);
+      return helper as unknown as HelperChild;
+    },
+    ownBundleId: "com.vocify.app",
+  });
+  const seen: (import("../src/platform/types.ts").DetectedCaller | null)[] = [];
+  detector.start((caller) => seen.push(caller));
+  await tick();
+  // A daemon has no app: the helper names it by its bundle id and gives no path.
+  apps = [{ bundleId: "com.apple.avconferenced", name: "com.apple.avconferenced", pid: 610, path: "" }];
+  report();
+  await tick();
+  assert.deepEqual(seen.at(-1), { name: "FaceTime", appId: "com.apple.avconferenced", path: null, browser: false });
+  detector.stop();
+});
+
+/** Call audio access on a Mac whose helper answers `audio-permission` with `answer`, and whose captures end in `start`. */
+const audioAccess = (answer: string, start: { ok: boolean; reason?: string }, remembered: { started: boolean }) => {
+  const access = createAudioAccess({
+    spawn: () => {
+      const helper = fakeHelper();
+      setImmediate(() => {
+        line(helper.stdout, { status: answer });
+        helper.kill();
+      });
+      return helper as unknown as HelperChild;
+    },
+    capture: { start: async () => start, stop: async () => {}, onPcm: () => () => {}, onLost: () => () => {} },
+    started: { get: () => remembered.started, set: () => void (remembered.started = true) },
+  });
+  return access;
+};
+
+test("Mac call audio: on a tap Mac (no way to read the permission) it is not asked until a capture has started once", async () => {
+  const remembered = { started: false };
+  const access = audioAccess("unknown", { ok: true }, remembered);
+  await access.refresh();
+  assert.equal(access.status(), "never_requested");
+  await access.ask();
+  assert.equal(access.status(), "authorized");
+  assert.equal(remembered.started, true);
+  const nextLaunch = audioAccess("unknown", { ok: true }, remembered);
+  await nextLaunch.refresh();
+  assert.equal(nextLaunch.status(), "authorized", "remembered across launches");
+});
+
+test("Mac call audio: the ScreenCaptureKit Mac's own check still decides, and a refused capture reads denied", async () => {
+  const allowed = audioAccess("authorized", { ok: true }, { started: false });
+  await allowed.refresh();
+  assert.equal(allowed.status(), "authorized");
+  const refused = audioAccess("never_requested", { ok: false, reason: "permission_denied" }, { started: false });
+  await refused.systemAudio.start();
+  assert.equal(refused.status(), "denied");
 });

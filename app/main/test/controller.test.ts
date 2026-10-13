@@ -962,3 +962,78 @@ test("a refused browser shows on the island, and Fix opens Vocify on how to allo
   t.controller.setCrmBlocked(null);
   assert.equal(t.controller.state.crmBlocked, null);
 });
+
+/* ---------- a call on the rep's own phone (Vocify calling off) ---------- */
+
+const phoneCall: Caller = { name: "iPhone", appId: "com.apple.avconferenced" };
+
+const dialOnPhone = () => {
+  const t = setup();
+  t.controller.applyShellState({ onScreen: { ...ana, callerId: null } });
+  t.controller.act({ name: "openDialConfirm" });
+  t.controller.act({ name: "dial" });
+  t.controller.phoneDialed();
+  return t;
+};
+
+test("a call opened on the phone is recorded from that moment, without an offer to press", () => {
+  const t = dialOnPhone();
+  assert.equal(t.mode(), "starting");
+  assert.deepEqual(t.commands(), ["dial", "listen"]);
+  t.controller.show();
+  assert.equal(t.mode(), "recording");
+  t.advance(8.1);
+  assert.equal(t.controller.state.dial, null, "no 'Couldn't start the call' once the phone has it");
+});
+
+test("the phone's call service taking the mic is that call: its letting go is the hang-up", () => {
+  const t = dialOnPhone();
+  t.controller.show();
+  t.controller.callChanged(phoneCall);
+  t.advance(30);
+  assert.equal(t.mode(), "recording");
+  t.controller.callChanged(null);
+  t.advance(3.1);
+  assert.equal(t.mode(), "stopped");
+  assert.equal(t.controller.state.mode.kind === "stopped" && t.controller.state.mode.title, "Call ended");
+});
+
+test("the call service already holding the mic when recording starts is that call too", () => {
+  const t = dialOnPhone();
+  t.controller.callChanged(phoneCall);
+  t.controller.show();
+  t.controller.callChanged(null);
+  t.advance(3.1);
+  assert.equal(t.mode(), "stopped");
+});
+
+test("a phone call the OS never shows on the mic is ended by the rep's Stop", () => {
+  const t = dialOnPhone();
+  t.controller.show();
+  t.advance(600);
+  assert.equal(t.mode(), "recording");
+  t.controller.act({ name: "stop" });
+  assert.equal(t.mode(), "stopped");
+});
+
+test("a phone that could not open the call says so on the island, and records nothing", () => {
+  const t = setup();
+  t.controller.applyShellState({ onScreen: { ...ana, callerId: null } });
+  t.controller.act({ name: "openDialConfirm" });
+  t.controller.act({ name: "dial" });
+  t.controller.phoneDialFailed("No app on this computer makes phone calls");
+  assert.equal(t.mode(), "dialing");
+  assert.deepEqual([t.controller.state.dial?.phase, t.controller.state.dial?.message], ["ended", "No app on this computer makes phone calls"]);
+  assert.deepEqual(t.commands(), ["dial"]);
+  t.advance(4.1);
+  assert.equal(t.mode(), "idle");
+  assert.equal(t.log.mainWindow, 0);
+});
+
+test("a phone call reported after the island moved on is ignored", () => {
+  const t = setup();
+  t.controller.phoneDialed();
+  t.controller.phoneDialFailed("x");
+  assert.equal(t.mode(), "idle");
+  assert.deepEqual(t.commands(), []);
+});

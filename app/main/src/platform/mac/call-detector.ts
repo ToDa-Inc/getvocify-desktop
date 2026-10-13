@@ -89,6 +89,8 @@ const CALL_APPS = [
   "com.microsoft.teams",
   "com.tinyspeck.slackmacgap",
   "com.apple.FaceTime",
+  // FaceTime calls and iPhone calls answered or placed on the Mac run their audio in this system service, not in FaceTime.
+  "com.apple.avconferenced",
   "net.whatsapp.WhatsApp",
   "ru.keepcoder.Telegram",
   "com.hnc.Discord",

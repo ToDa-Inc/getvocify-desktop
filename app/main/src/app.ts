@@ -145,6 +145,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const os = createPlatform(platform, {
     systemPreferences,
     openExternal: (url) => void shell.openExternal(url),
+    protocolApp: (scheme) => app.getApplicationNameForProtocol(scheme),
+    systemAudioStarted: { get: () => settings.get("systemAudioStarted") === true, set: () => settings.set("systemAudioStarted", true) },
     crmTabsAnswer: {
       get: () => {
         const stored = settings.get("crmTabs");
@@ -458,6 +460,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     loopback: os.systemAudio,
     drafts,
     shortcut,
+    phone: os.phone,
+    callOnPhone: { get: () => settings.get("callOnPhone") === true, set: (on) => settings.set("callOnPhone", on) },
     emit: (channel, payload) => dashboard.emit(channel, payload),
     showMainWindow: () => dashboard.show(),
     microphoneAccess: () => systemPreferences.getMediaAccessStatus("microphone"),

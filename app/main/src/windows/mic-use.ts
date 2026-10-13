@@ -85,6 +85,9 @@ const CALL_APPS: Record<string, CallApp> = {
   "telegram.exe": { name: "Telegram", browser: false },
   "discord.exe": { name: "Discord", browser: false },
   "webex.exe": { name: "Webex", browser: false },
+  // Calls on the rep's own phone (Android or iPhone), placed and heard on the PC.
+  "phoneexperiencehost.exe": { name: "Phone Link", browser: false },
+  "microsoft.yourphone_8wekyb3d8bbwe": { name: "Phone Link", browser: false },
   "ciscocollabhost.exe": { name: "Webex", browser: false },
   "chrome.exe": { name: "Google Chrome", browser: true },
   "msedge.exe": { name: "Microsoft Edge", browser: true },

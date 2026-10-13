@@ -9,24 +9,29 @@ Status and events are one JSON object per line. Nothing else is written to the c
 
 ## `vocify-mac-helper audio`
 
-The call's audio: everything the Mac plays, except the Vocify app (the helper's parent) and the helper itself, through
-ScreenCaptureKit, the same capture and recovery as the Swift app's MeetingCapture (permission: Screen & System Audio
-Recording).
+The call's audio: everything the Mac plays, except the Vocify app (the helper's parent, its helpers) and the helper
+itself. On macOS 14.2+ through a Core Audio process tap read by a private aggregate device on the default output
+(permission: System Audio Recording, the app's `NSAudioCaptureUsageDescription`), which also hears system call services
+such as an iPhone or FaceTime call on the Mac (`com.apple.avconferenced`). Before 14.2 through ScreenCaptureKit, as the
+Swift app's MeetingCapture (permission: Screen & System Audio Recording). macOS asks on the tap's first start and
+reports no refusal: the tap then hears silence.
 
 - **stdout**: raw PCM, signed 16-bit little-endian, mono, 16 000 Hz, continuous, in chunks of any size. The app cuts it
   into 3200-byte (100 ms) frames. When nothing plays, silence is written, so the stream never stalls.
 - **stderr**, JSON lines:
   - `{"event":"started"}` once capture runs.
-  - `{"event":"error","reason":"<code>"}` then exit 1, when capture cannot start: `permission_denied` (Screen & System
-    Audio Recording is off), `capture_failed`.
+  - `{"event":"error","reason":"<code>"}` then exit 1, when capture cannot start: `capture_failed`, and before
+    macOS 14.2 `permission_denied` (Screen & System Audio Recording is off).
   - `{"event":"lost","reason":"<code>"}` then exit 0, when capture ends on its own and a restart did not bring it back.
-- A change of audio output, or 10 s without samples, restarts the capture (at most once per 30 s unless forced).
+- A change of audio output rebuilds the tap's device (ScreenCaptureKit: a change of audio output, or 10 s without
+  samples, restarts the capture, at most once per 30 s unless forced).
 - Exit 0 on SIGTERM or stdin closed.
 
 ## `vocify-mac-helper audio-permission`
 
-- **stdout**: one line `{"status":"authorized"|"never_requested"}` then exit 0. Never shows a prompt
-  (`CGPreflightScreenCaptureAccess`, as the Swift app). macOS does not tell a refusal from "never asked" here.
+- **stdout**: one line `{"status":"authorized"|"never_requested"|"unknown"}` then exit 0. Never shows a prompt.
+  macOS 14.2+: `unknown` (a process tap's permission cannot be read). Before: `CGPreflightScreenCaptureAccess`, as the
+  Swift app; macOS does not tell a refusal from "never asked" there.
 
 ## `vocify-mac-helper mic`
 

@@ -1,6 +1,7 @@
 import type { IslandController } from "./controller.ts";
 import type { Drafts } from "./drafts.ts";
 import type { Loopback } from "./loopback/loopback.ts";
+import type { PhoneDialer, PhoneDialFailure } from "./platform/types.ts";
 import { APP_INFO, MAC_SYSTEM_AUDIO_SETTINGS_URL, callAudioSettingsUrl, microphoneSettingsUrl, permissionSnapshot } from "./permissions.ts";
 import { saasRequest, type SaasResult } from "./saas.ts";
 import type { KeyEvent, ShortcutManager } from "./shortcut.ts";
@@ -20,6 +21,10 @@ export type BridgeDeps = {
   loopback: Loopback;
   drafts: Drafts;
   shortcut: ShortcutManager;
+  /** The rep's own phone, for calls when Vocify calling is off. */
+  phone: PhoneDialer;
+  /** Whether the island's Call goes to the rep's phone on this computer (off: through Vocify), kept across launches. */
+  callOnPhone: { get(): boolean; set(on: boolean): void };
   /** To the dashboard page (`__vocifyEmit`). */
   emit(channel: string, payload: unknown): void;
   showMainWindow(): void;
@@ -56,6 +61,12 @@ type Args = Record<string, unknown>;
 const SILENT_FRAME_BYTES = 3200;
 const OPEN_URL = /^(https?:\/\/|mailto:)/i;
 const MAC_AUTOMATION_SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation";
+/** What the island says when the rep's phone could not open the call. */
+const PHONE_FAILED: Record<PhoneDialFailure, string> = {
+  no_dialer: "No app on this computer makes phone calls",
+  invalid_number: "This number can't be dialed",
+  open_failed: "Couldn't open the call",
+};
 
 export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Promise<unknown> {
   /** The last session state the dashboard reported (undefined until it first does), so the log shows it once per change. */
@@ -112,8 +123,26 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
     };
   };
 
+  const calling = () => ({ onPhone: deps.callOnPhone.get(), phoneApp: deps.phone.app() });
+
   return async (op, args) => {
     switch (op) {
+      case "calling:get":
+        return calling();
+      case "calling:set":
+        if (typeof args.onPhone === "boolean") {
+          deps.callOnPhone.set(args.onPhone);
+          deps.log(`calls go ${args.onPhone ? `to the rep's phone (${deps.phone.app() ?? "no app for calls"})` : "through Vocify"}`);
+        }
+        return calling();
+      case "calling:phone": {
+        // The island's Call with Vocify calling off: the call opens on the rep's phone, and the island records it.
+        const dialed = await deps.phone.dial(String(args.number ?? ""));
+        deps.log(`phone call: ${dialed.ok ? `opened in ${deps.phone.app()}` : dialed.reason}`);
+        if (dialed.ok) deps.controller.phoneDialed();
+        else deps.controller.phoneDialFailed(PHONE_FAILED[dialed.reason]);
+        return dialed;
+      }
       case "log:error":
         deps.log(`dashboard ${String(args.kind ?? "error")} at ${String(args.path ?? "")}: ${String(args.text ?? "")}`);
         return null;

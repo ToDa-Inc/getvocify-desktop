@@ -174,3 +174,12 @@ test("when a brief line happened, in the rep's own calendar days; a task's date 
   assert.equal(briefWhen({ type: "company", at: null }, now), null);
   assert.equal(briefWhen({ type: null, at: "junk" }, now), null);
 });
+
+test("a call on the rep's own phone", () => {
+  const onPhone = decodeOnScreen({ provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", phone: "+34600111222", onPhone: true, state: "callable" })!;
+  assert.equal(onPhone.onPhone, true);
+  assert.equal(CallWording.callHelp(onPhone), "Call from your phone");
+  assert.equal(CallWording.callHelp({ ...onPhone, onPhone: false }), "Call through Vocify");
+  assert.deepEqual(CallWording.onPhone("Ana Ruiz", false), { title: "Calling Ana Ruiz on your phone", line: "Recording starts when it connects" });
+  assert.deepEqual(CallWording.onPhone(null, true), { title: "The call didn't connect", line: "Set up calls from your phone" });
+});

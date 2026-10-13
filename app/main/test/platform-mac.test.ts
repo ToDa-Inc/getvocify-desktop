@@ -269,7 +269,12 @@ const macPhone = (hasFaceTime: boolean, fails = false) => {
     },
     hasFaceTime: () => hasFaceTime,
   });
-  return { dialer, runs, opened: () => runs.map((args) => args.at(-1) ?? "") };
+  return {
+    dialer,
+    runs,
+    opened: () => runs.filter((args) => args.at(-1)?.startsWith("tel:")).map((args) => args.at(-1) ?? ""),
+    setupOpened: () => runs.filter((args) => !args.at(-1)?.startsWith("tel:")).map((args) => args.join(" ")),
+  };
 };
 
 phoneDialerContract("Mac", () => macPhone(true), () => macPhone(false));
@@ -344,4 +349,10 @@ test("Mac call audio: the ScreenCaptureKit Mac's own check still decides, and a 
   const refused = audioAccess("never_requested", { ok: false, reason: "permission_denied" }, { started: false });
   await refused.systemAudio.start();
   assert.equal(refused.status(), "denied");
+});
+
+test("Mac phone: setting up opens FaceTime (its settings turn on Calls from iPhone)", async () => {
+  const h = macPhone(true);
+  await h.dialer.setup();
+  assert.deepEqual(h.runs, [["-b", "com.apple.FaceTime"]]);
 });

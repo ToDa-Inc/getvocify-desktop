@@ -13,6 +13,9 @@ export function createMacPhone(deps: {
 }): PhoneDialer {
   return {
     app: () => (deps.hasFaceTime() ? "FaceTime" : null),
+    async setup() {
+      await deps.open(["-b", "com.apple.FaceTime"]).catch(() => {});
+    },
     async dial(raw) {
       if (!deps.hasFaceTime()) return { ok: false, reason: "no_dialer" };
       const number = dialableNumber(raw);

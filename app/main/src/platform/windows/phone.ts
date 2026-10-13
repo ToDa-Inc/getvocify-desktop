@@ -10,6 +10,9 @@ export function createWindowsPhone(deps: {
   const app = () => deps.telApp().trim() || null;
   return {
     app,
+    async setup() {
+      deps.openExternal("ms-settings:defaultapps");
+    },
     async dial(raw) {
       if (!app()) return { ok: false, reason: "no_dialer" };
       const number = dialableNumber(raw);

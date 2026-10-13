@@ -18,7 +18,10 @@ export type Mode =
   /** The CRM contact on screen, its number and the caller ID, one click from calling. */
   | { kind: "dialConfirm" }
   /** A Vocify call is connecting or ringing, or just ended unanswered. Answered, it is `recording` with the call bar. */
-  | { kind: "dialing" };
+  | { kind: "dialing" }
+  /** A call opened on the rep's own phone (Vocify calling off), until it connects and is recorded; `failed`: it never
+   * did, and the island offers to set calls from the phone up. */
+  | { kind: "phoneCall"; name: string | null; failed: boolean };
 
 export type Turn = { id: string; you: boolean; label: string | null; text: string; pending: string };
 
@@ -39,7 +42,7 @@ export type ChannelMenuView = { title: string; rows: { key: "call" | "meeting"; 
 export type TypeMenuView = { title: string; placeholder: boolean; proposed: boolean; rows: TypeMenuRow[]; channel?: ChannelMenuView | null };
 
 /** Where the recording that just ended is, as the dashboard reports it. */
-export type Finish = { step: "stopping" | "uploading" | "failed"; message: string | null };
+export type Finish = { step: "stopping" | "uploading" | "failed" | "skipped"; message: string | null };
 
 export type Clock = { startedAt: number; pausedMs: number; pausedAt: number | null };
 
@@ -173,6 +176,9 @@ export type IslandAction =
   | { name: "keypad"; open: boolean }
   | { name: "digit"; digit: string }
   | { name: "openCalling" }
+  /** A call opened on the rep's phone: stop waiting for it, or set calls from the phone up (it never connected). */
+  | { name: "cancelPhoneCall" }
+  | { name: "setUpPhone" }
   | { name: "joinMeeting" }
   | { name: "dismissMeeting" }
   | { name: "fixCrmAccess" }

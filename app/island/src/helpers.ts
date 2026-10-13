@@ -61,6 +61,8 @@ export function finishLine(finish: Finish | null): string {
       return "Sending the call to Vocify";
     case "failed":
       return finish.message ?? "Couldn't send the call";
+    case "skipped":
+      return finish.message ?? "Nothing was saved";
     default:
       return "Saving the call";
   }
@@ -89,6 +91,7 @@ export function helpText(args: {
     case "dialConfirm":
       return "Close";
     case "dialing":
+    case "phoneCall":
       return args.dialLine ?? "";
     case "postCall":
       if (stage === "writing") return "Writing the update";

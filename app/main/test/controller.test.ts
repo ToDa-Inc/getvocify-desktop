@@ -965,8 +965,9 @@ test("a refused browser shows on the island, and Fix opens Vocify on how to allo
 
 /* ---------- a call on the rep's own phone (Vocify calling off) ---------- */
 
-const phoneCall: Caller = { name: "iPhone", appId: "com.apple.avconferenced" };
+const phoneCall: Caller = { name: "FaceTime", appId: "com.apple.avconferenced" };
 
+/** Call pressed on the contact on screen, and the phone opened it (the OS's own confirm is still to be clicked). */
 const dialOnPhone = () => {
   const t = setup();
   t.controller.applyShellState({ onScreen: { ...ana, callerId: null } });
@@ -976,44 +977,61 @@ const dialOnPhone = () => {
   return t;
 };
 
-test("a call opened on the phone is recorded from that moment, without an offer to press", () => {
+test("a call opened on the phone waits for it to connect, and records nothing yet", () => {
   const t = dialOnPhone();
+  assert.equal(t.mode(), "phoneCall");
+  assert.equal(t.controller.state.mode.kind === "phoneCall" && t.controller.state.mode.name, "Ana Ruiz");
+  assert.equal(t.controller.state.expanded, true);
+  assert.deepEqual(t.commands(), ["dial"]);
+  t.advance(8.1);
+  assert.equal(t.mode(), "phoneCall", "no 'Couldn't start the call' once the phone has it");
+});
+
+test("the call connecting (its call service takes the mic) starts the recording, and the hang-up ends it", () => {
+  const t = dialOnPhone();
+  t.advance(10);
+  t.controller.callChanged(phoneCall);
   assert.equal(t.mode(), "starting");
   assert.deepEqual(t.commands(), ["dial", "listen"]);
   t.controller.show();
   assert.equal(t.mode(), "recording");
-  t.advance(8.1);
-  assert.equal(t.controller.state.dial, null, "no 'Couldn't start the call' once the phone has it");
-});
-
-test("the phone's call service taking the mic is that call: its letting go is the hang-up", () => {
-  const t = dialOnPhone();
-  t.controller.show();
-  t.controller.callChanged(phoneCall);
-  t.advance(30);
-  assert.equal(t.mode(), "recording");
+  t.advance(120);
   t.controller.callChanged(null);
   t.advance(3.1);
   assert.equal(t.mode(), "stopped");
   assert.equal(t.controller.state.mode.kind === "stopped" && t.controller.state.mode.title, "Call ended");
 });
 
-test("the call service already holding the mic when recording starts is that call too", () => {
+test("a call that never connects says so with a way to set it up, and lets the contact go", () => {
   const t = dialOnPhone();
+  t.advance(45.1);
+  assert.equal(t.mode(), "phoneCall");
+  assert.equal(t.controller.state.mode.kind === "phoneCall" && t.controller.state.mode.failed, true);
+  assert.ok(t.emitted.some((e) => e.channel === "call:ended"), "the dashboard forgets the contact it was holding");
+  assert.ok(!t.commands().includes("listen"));
   t.controller.callChanged(phoneCall);
-  t.controller.show();
-  t.controller.callChanged(null);
-  t.advance(3.1);
-  assert.equal(t.mode(), "stopped");
+  assert.equal(t.mode(), "phoneCall", "too late: it is not taken for this call");
+  t.controller.act({ name: "setUpPhone" });
+  assert.equal(t.mode(), "idle");
+  assert.deepEqual(t.commands().slice(-1), ["open-phone-setup"]);
 });
 
-test("a phone call the OS never shows on the mic is ended by the rep's Stop", () => {
+test("the 'didn't connect' card closes by itself", () => {
   const t = dialOnPhone();
-  t.controller.show();
-  t.advance(600);
-  assert.equal(t.mode(), "recording");
-  t.controller.act({ name: "stop" });
-  assert.equal(t.mode(), "stopped");
+  t.advance(45.1);
+  t.advance(10.1);
+  assert.equal(t.mode(), "idle");
+});
+
+test("Cancel stops waiting for the call", () => {
+  const t = dialOnPhone();
+  t.controller.act({ name: "cancelPhoneCall" });
+  assert.equal(t.mode(), "idle");
+  assert.ok(t.emitted.some((e) => e.channel === "call:ended"));
+  t.advance(60);
+  assert.equal(t.mode(), "idle");
+  t.controller.callChanged(phoneCall);
+  assert.equal(t.mode(), "call", "a call after that is offered like any other");
 });
 
 test("a phone that could not open the call says so on the island, and records nothing", () => {
@@ -1036,4 +1054,21 @@ test("a phone call reported after the island moved on is ignored", () => {
   t.controller.phoneDialFailed("x");
   assert.equal(t.mode(), "idle");
   assert.deepEqual(t.commands(), []);
+});
+
+/* ---------- a recording that ends with nothing to keep ---------- */
+
+test("a recording the dashboard did not keep (an unanswered call) says why for a moment, then rests", () => {
+  const t = setup();
+  t.controller.callChanged(zoom);
+  t.controller.act({ name: "record" });
+  t.controller.show();
+  t.controller.act({ name: "stop" });
+  t.controller.finishRecording();
+  assert.equal(t.mode(), "finishing");
+  t.controller.applyShellState({ finish: { step: "skipped", message: "No answer. Nothing was saved." } });
+  assert.equal(t.controller.state.expanded, true);
+  assert.equal(t.controller.state.finish?.message, "No answer. Nothing was saved.");
+  t.advance(4.1);
+  assert.equal(t.mode(), "idle");
 });

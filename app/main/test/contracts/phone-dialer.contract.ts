@@ -8,6 +8,8 @@ export type PhoneDialerHarness = {
   dialer: PhoneDialer;
   /** The `tel:` links opened so far. */
   opened(): string[];
+  /** What setting up opened (the OS's own app or settings page), in the harness's words. */
+  setupOpened(): string[];
 };
 
 export function phoneDialerContract(name: string, withApp: () => PhoneDialerHarness, withoutApp: () => PhoneDialerHarness): void {
@@ -34,6 +36,13 @@ export function phoneDialerContract(name: string, withApp: () => PhoneDialerHarn
     const h = withoutApp();
     assert.equal(h.dialer.app(), null);
     assert.deepEqual(await h.dialer.dial("+34600111222"), { ok: false, reason: "no_dialer" });
+    assert.deepEqual(h.opened(), []);
+  });
+
+  test(`${name} phone: setting up opens the OS's own place for it, and calls nobody`, async () => {
+    const h = withoutApp();
+    await h.dialer.setup();
+    assert.equal(h.setupOpened().length, 1);
     assert.deepEqual(h.opened(), []);
   });
 }

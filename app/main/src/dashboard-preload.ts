@@ -23,8 +23,14 @@ const call = (op: string, args: Record<string, unknown> = {}): Promise<unknown> 
 const told = process.argv.find((a) => a.startsWith("--vocify-platform="))?.slice("--vocify-platform=".length);
 const platform = told === "win32" || told === "darwin" ? told : process.platform === "win32" ? "win32" : "darwin";
 
+// Dev only (the app run from source): the page's raw audio of a recording, per side, kept to replay real calls offline.
+const devTrace = process.argv.includes("--vocify-dev-trace")
+  ? { audio: (side: string, pcm: ArrayBuffer, at: number, recording: number) => ipcRenderer.send("vocify:trace-audio", side, pcm, at, recording) }
+  : undefined;
+
 contextBridge.exposeInMainWorld("vocifyDesktop", {
   platform,
+  ...(devTrace ? { devTrace } : {}),
   systemAudio: {
     start: () => call("system-audio:start"),
     stop: () => call("system-audio:stop"),

@@ -78,7 +78,9 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
     await deps.loopback.stop();
     unsubscribePcm = deps.loopback.onPcm((pcm) => deps.emit("system-audio:pcm", pcm));
     unsubscribeLost = deps.loopback.onLost((reason) => deps.emit("system-audio:lost", { reason }));
+    const startedAt = Date.now();
     const started = await deps.loopback.start();
+    deps.log(`system audio start: ${started.ok ? "ok" : started.reason ?? "failed"} in ${Date.now() - startedAt} ms`);
     if (started.ok) return { ok: true, backend: "wasapi-loopback" };
     stopListening();
     // Where call audio cannot be captured (not Windows) the recording carries on with the microphone alone.

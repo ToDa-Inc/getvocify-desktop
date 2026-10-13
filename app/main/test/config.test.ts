@@ -44,19 +44,18 @@ test("a Vercel preview may sign in on vercel.com inside the app; no other dashbo
   assert.equal(signInHostsFor("garbage")("vercel.com"), false);
 });
 
-test("the production dashboard is told the identity it already understands, anything else is told Windows", () => {
-  const base = { argv: [], config: null, production: "https://app.getvocify.com" };
-  assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "https://app.getvocify.com/" }), "darwin");
-  assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "https://staging.getvocify.com/" }), "darwin", "staging does not know Windows yet either");
-  assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "https://getvocify-abc.vercel.app" }), "win32");
-  assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "http://localhost:8080" }), "win32");
-  assert.equal(resolveReportedPlatform({ ...base, dashboardUrl: "nonsense" }), "win32");
+test("the dashboard is told the real system, whichever dashboard it is", () => {
+  const base = { argv: [], config: null };
+  for (const dashboardUrl of ["https://app.getvocify.com/", "https://staging.getvocify.com/", "http://localhost:8080", "nonsense"]) {
+    assert.equal(resolveReportedPlatform({ ...base, dashboardUrl, actual: "win32" }), "win32", dashboardUrl);
+    assert.equal(resolveReportedPlatform({ ...base, dashboardUrl, actual: "darwin" }), "darwin", dashboardUrl);
+  }
 });
 
-test("an explicit platform wins, from the command line first, so the compatibility can be turned off", () => {
-  const base = { production: "https://app.getvocify.com", dashboardUrl: "https://app.getvocify.com" };
-  assert.equal(resolveReportedPlatform({ ...base, argv: ["--platform=win32"], config: null }), "win32");
-  assert.equal(resolveReportedPlatform({ ...base, argv: [], config: { platform: "win32" } }), "win32");
-  assert.equal(resolveReportedPlatform({ ...base, argv: ["--platform=darwin"], config: { platform: "win32" } }), "darwin");
-  assert.equal(resolveReportedPlatform({ ...base, argv: ["--platform=linux"], config: { platform: 5 } }), "darwin", "an unknown value is ignored");
+test("an explicit platform wins, from the command line first", () => {
+  const base = { dashboardUrl: "https://app.getvocify.com", actual: "win32" as const };
+  assert.equal(resolveReportedPlatform({ ...base, argv: ["--platform=darwin"], config: null }), "darwin");
+  assert.equal(resolveReportedPlatform({ ...base, argv: [], config: { platform: "darwin" } }), "darwin");
+  assert.equal(resolveReportedPlatform({ ...base, argv: ["--platform=win32"], config: { platform: "darwin" } }), "win32");
+  assert.equal(resolveReportedPlatform({ ...base, argv: ["--platform=linux"], config: { platform: 5 } }), "win32", "an unknown value is ignored");
 });

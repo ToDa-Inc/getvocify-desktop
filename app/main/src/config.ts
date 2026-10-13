@@ -55,20 +55,14 @@ export function signInHostsFor(dashboardUrl: string): (host: string) => boolean 
 export type ReportedPlatform = "win32" | "darwin";
 
 /**
- * What platform the dashboard is told this is. A dashboard that already knows Windows is told "win32". The production
- * dashboard does not yet (it accepts only the Mac app), so while it is the configured one the app presents itself with
- * the identity the dashboard already understands ("darwin"): everything works, only a few permission messages use
- * Mac wording. `--platform=win32|darwin` or `"platform"` in config.json decides explicitly, and turns the compatibility
- * off once the Windows-aware dashboard is deployed.
+ * What platform the dashboard is told this is: the real one. Every dashboard knows Windows now (its permissions,
+ * wording and calling settings branch on it); telling the production dashboard "darwin" from Windows, as an older
+ * dashboard needed, showed Mac wording (FaceTime, macOS permissions) on Windows. `--platform=win32|darwin` or
+ * `"platform"` in config.json still decide explicitly, for testing one system's wording on the other.
  */
-export function resolveReportedPlatform(input: { argv: string[]; config: unknown; dashboardUrl: string; production: string }): ReportedPlatform {
+export function resolveReportedPlatform(input: { argv: string[]; config: unknown; dashboardUrl: string; actual: NodeJS.Platform }): ReportedPlatform {
   const explicit = input.argv.find((a) => a.startsWith("--platform="))?.slice("--platform=".length);
   const fromConfig = typeof input.config === "object" && input.config !== null ? (input.config as { platform?: unknown }).platform : undefined;
   for (const value of [explicit, fromConfig]) if (value === "win32" || value === "darwin") return value;
-  try {
-    const host = new URL(input.dashboardUrl).hostname;
-    return host === new URL(input.production).hostname || host === STAGING_HOST ? "darwin" : "win32";
-  } catch {
-    return "win32";
-  }
+  return input.actual === "win32" ? "win32" : "darwin";
 }

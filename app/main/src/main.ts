@@ -48,7 +48,7 @@ if (!app.requestSingleInstanceLock()) {
         : resolveDashboardUrl({ argv: process.argv, env: process.env, config, fallback: DEFAULT_DASHBOARD });
       handle = await startApp({
         dashboardUrl,
-        reportedPlatform: demo ? undefined : resolveReportedPlatform({ argv: process.argv, config, dashboardUrl, production: PRODUCTION_DASHBOARD }),
+        reportedPlatform: demo ? undefined : resolveReportedPlatform({ argv: process.argv, config, dashboardUrl, actual: process.platform }),
         trustFiles: demo,
         userDataDir: demo ? join(app.getPath("userData"), "demo") : app.getPath("userData"),
         islandOffsetY: Number(process.env.ISLAND_OFFSET_Y ?? 0) || 0,

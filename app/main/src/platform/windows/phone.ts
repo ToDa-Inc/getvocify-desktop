@@ -8,6 +8,8 @@ export function createWindowsPhone(deps: {
   openExternal(url: string): void;
   /** `control.exe mmsys.cpl,,1`: the Sound dialog on its Recording tab. */
   openSoundRecording(): void;
+  /** Presses Phone Link's Call once its dialer shows exactly this number (see windows/phone-link-call.ts). */
+  pressCall?(number: string): void;
 }): PhoneDialer {
   const app = () => deps.telApp().trim() || null;
   return {
@@ -23,6 +25,8 @@ export function createWindowsPhone(deps: {
       const number = dialableNumber(raw);
       if (!number) return { ok: false, reason: "invalid_number" };
       deps.openExternal(`tel:${number}`);
+      // The link only loads the number into Phone Link's dialer: Call is pressed for the rep when it shows this number.
+      deps.pressCall?.(number);
       return { ok: true };
     },
   };

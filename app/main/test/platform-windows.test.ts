@@ -120,3 +120,12 @@ test("Windows phone: 'they can't hear me' opens the Sound dialog on its Recordin
   await h.dialer.micSettings();
   assert.deepEqual(h.setupOpened(), ["sound:recording"]);
 });
+
+test("Windows phone: after the link, Phone Link's Call is pressed for that same number", async () => {
+  const pressed: string[] = [];
+  const dialer = createWindowsPhone({ telApp: () => "Enlace Móvil", openExternal: () => {}, openSoundRecording: () => {}, pressCall: (number) => void pressed.push(number) });
+  await dialer.dial("+34 600-111 222");
+  assert.deepEqual(pressed, ["+34600111222"]);
+  await dialer.dial("abc");
+  assert.deepEqual(pressed, ["+34600111222"], "nothing is pressed for a number that was not opened");
+});

@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { encodePowerShell, READER_LOOP_SCRIPT } from "../../windows/browser-pages.ts";
 import { MIC_CONSENT_KEY } from "../../windows/mic-use.ts";
+import { parsePhoneLinkCall, phoneLinkCallScript } from "../../windows/phone-link-call.ts";
 import type { ReaderChild } from "../../windows/page-reader-process.ts";
 import type { PlatformEnv } from "../env.ts";
 import { every, runQuiet } from "../exec.ts";
@@ -11,15 +12,29 @@ import { createWindowsPermissions } from "./permissions.ts";
 import { createWindowsPhone } from "./phone.ts";
 import { createWindowsSystemAudio } from "./system-audio.ts";
 
-/** The rep chose an app for TEL links (Settings › Default apps): Windows keeps it as the UserChoice ProgId. */
-function hasDefaultTelApp(): boolean {
+const reg = (args: string[]) => execFileSync("reg.exe", ["query", ...args], { encoding: "utf8", timeout: 5000, windowsHide: true });
+
+/** The app the rep chose for TEL links (Settings › Default apps), as the UserChoice ProgId Windows keeps; null for none. */
+function telProgId(): string | null {
   try {
-    return /ProgId\s+REG_SZ\s+\S/.test(
-      execFileSync("reg.exe", ["query", "HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\tel\\UserChoice", "/v", "ProgId"], { encoding: "utf8", timeout: 5000, windowsHide: true }),
-    );
+    return /ProgId\s+REG_SZ\s+(\S+)/.exec(reg(["HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\tel\\UserChoice", "/v", "ProgId"]))?.[1] ?? null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+const hasDefaultTelApp = () => telProgId() !== null;
+
+/** That app is Phone Link: its package (Microsoft.YourPhone), whatever the language shows as its name. */
+function telAppIsPhoneLink(name: string): boolean {
+  const progId = telProgId();
+  if (!progId) return false;
+  try {
+    if (/Microsoft\.YourPhone/i.test(reg([`HKCR\\${progId}\\Application`, "/v", "AppUserModelID"]))) return true;
+  } catch {
+    // No package details for this ProgId: the name decides.
+  }
+  return /phone link|enlace m[oó]vil|yourphone/i.test(name);
 }
 
 /** Windows: Chromium's loopback, the microphone-use record in the registry, one long-lived PowerShell reader. */
@@ -56,6 +71,13 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
       telApp: () => (hasDefaultTelApp() ? env.protocolApp("tel:") : ""),
       openExternal: env.openExternal,
       openSoundRecording: () => void runQuiet("control.exe", ["mmsys.cpl,,1"], 10_000).catch((error) => env.log(`sound settings did not open: ${String(error)}`)),
+      // Only Phone Link has a Call button Vocify knows; another app for TEL links is left to the rep.
+      pressCall: (number) => {
+        if (!telAppIsPhoneLink(env.protocolApp("tel:"))) return;
+        void runQuiet("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(phoneLinkCallScript(number))], 20_000)
+          .then((output) => env.log(`phone link call button: ${parsePhoneLinkCall(output)}`))
+          .catch((error) => env.log(`phone link call button: failed (${String(error)})`));
+      },
     }),
   };
 }

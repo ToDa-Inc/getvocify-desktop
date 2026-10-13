@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { crmUrlsOf, createPageReader, encodePowerShell, normalizeAddress, parsePageOutput, READ_PAGES_SCRIPT } from "../src/windows/browser-pages.ts";
+import { dialedDigits, parsePhoneLinkCall, phoneLinkCallScript } from "../src/windows/phone-link-call.ts";
 import { callAppFor, filetimeToMs, MicWatcher, parseMicConsent, pickCaller, type DetectedCaller, type MicUse } from "../src/windows/mic-use.ts";
 
 /* ---------- microphone use ---------- */
@@ -221,4 +222,25 @@ test("the page reader shares one run, reuses a recent answer, and never throws",
     throw new Error("powershell missing");
   }, () => 0);
   assert.deepEqual(await broken.read(), []);
+});
+
+/* ---------- pressing Phone Link's Call ---------- */
+
+test("Phone Link's Call is pressed only for the exact digits Vocify sent", () => {
+  const script = phoneLinkCallScript("+34 600-111 222");
+  assert.match(script, /\$want='34600111222'/);
+  assert.match(script, /AutomationIdProperty,\$id/);
+  assert.match(script, /'ButtonCall'/);
+  assert.match(script, /'AccumulatorTextBlock'/);
+  assert.match(script, /-ne \$want\)\{ continue \}/, "a different number in the dialer is never called");
+  assert.ok(!/SendKeys|SetFocus/.test(script), "nothing is typed into whatever window is in front");
+  assert.equal(dialedDigits("+34 612 34 56 78"), "34612345678");
+  assert.throws(() => phoneLinkCallScript("abc"));
+});
+
+test("Phone Link's Call script answers called, not ready, or failed", () => {
+  assert.equal(parsePhoneLinkCall("called\r\n"), "called");
+  assert.equal(parsePhoneLinkCall("not_ready"), "not_ready");
+  assert.equal(parsePhoneLinkCall(""), "failed");
+  assert.equal(parsePhoneLinkCall("Exception: ..."), "failed");
 });

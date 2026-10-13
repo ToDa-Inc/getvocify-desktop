@@ -10,8 +10,9 @@
   "scripts": {
     "build": "node island/build.mjs && node main/build.mjs",
     "typecheck": "tsc -p island/tsconfig.json && tsc -p main/tsconfig.json",
-    "start": "npm run build && electron main/dist/main.mjs",
-    "start:demo": "npm run build && electron main/dist/main.mjs --demo",
+    "start": "npm run build && electron .",
+    "dev": "node dev.mjs",
+    "start:demo": "npm run build && electron . --demo",
     "test:logic": "node --test core/*.test.ts main/test/*.test.ts test/*.test.ts",
     "test:island": "node island/build.mjs && electron test/island-shots.mjs",
     "test:loopback": "node test/build-loopback-test.mjs && electron test/loopback-e2e.mjs",

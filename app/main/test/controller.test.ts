@@ -204,6 +204,21 @@ test("the dashboard's account of the ended recording: sending shows a line, a fa
   assert.equal(t.mode(), "idle", "closing the failure ends the wait");
 });
 
+test("the failure card's Dismiss closes it and frees the island for the next call", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  t.controller.applyShellState({ finish: { step: "failed", message: "Couldn't send the meeting. It's saved on this computer." } });
+  assert.equal(t.controller.state.expanded, true);
+  t.controller.act({ name: "dismissFinish" });
+  assert.equal(t.mode(), "idle");
+  assert.equal(t.controller.state.expanded, false);
+  t.controller.callChanged(null);
+  t.controller.callChanged(zoom);
+  t.advance(1);
+  assert.equal(t.mode(), "call", "the next call is offered");
+});
+
 test("a recording whose memo never comes stops waiting after 30 s", () => {
   const t = recording();
   t.controller.act({ name: "stop" });
@@ -588,6 +603,23 @@ test("a finished update with nothing pending dismisses itself after 3 s", () => 
   assert.equal(t.controller.state.countdown?.total, 3);
   t.advance(3.1);
   assert.deepEqual(t.last("postcall:action"), { type: "dismiss" });
+});
+
+test("Done closes the after-call card even when the dashboard never answers (signed out, reloaded or closed)", () => {
+  const t = setup();
+  t.controller.applyShellState({ postCall: postCall("ready") });
+  assert.equal(t.mode(), "postCall");
+  assert.equal(t.controller.state.expanded, true);
+  t.controller.act({ name: "postCall", type: "dismiss" });
+  assert.deepEqual(t.last("postcall:action"), { type: "dismiss" }, "the dashboard is still told");
+  assert.equal(t.mode(), "idle");
+  assert.equal(t.controller.state.expanded, false);
+  assert.equal(t.controller.state.postCall, null);
+  // The dashboard's own clearing, if it comes, changes nothing; a new call's card still shows.
+  t.controller.applyShellState({ postCall: null });
+  assert.equal(t.mode(), "idle");
+  t.controller.applyShellState({ postCall: { ...postCall("ready"), memoId: "m2" } });
+  assert.equal(t.mode(), "postCall");
 });
 
 test("the dashboard clearing the call's update returns the island to idle", () => {

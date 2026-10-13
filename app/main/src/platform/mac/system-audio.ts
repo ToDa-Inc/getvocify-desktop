@@ -3,8 +3,9 @@ import { jsonLines, type HelperChild } from "./helper.ts";
 
 /** 100 ms of mono 16 kHz signed 16-bit audio. */
 const FRAME_BYTES = 3200;
-/** The helper says `started` as soon as the tap runs; longer means something is wrong. */
-const START_TIMEOUT_MS = 5000;
+/** The helper says `started` as soon as capture runs. ScreenCaptureKit's first start after launch can take several
+ * seconds (it lists the displays first), so this only catches a helper that is stuck. */
+const START_TIMEOUT_MS = 12000;
 
 /**
  * The call's audio on a Mac: `vocify-mac-helper audio` (a Core Audio process tap, see native/mac-helper/PROTOCOL.md)

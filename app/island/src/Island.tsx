@@ -981,6 +981,11 @@ function TranscriptScroll({ turns, reduceMotion }: { turns: Turn[]; reduceMotion
   useEffect(() => {
     opened.current = true;
   }, []);
+  // A bubble drawn again (its turn came back after the dashboard redrew the list) never comes in a second time.
+  const drawn = useRef(new Set<string>());
+  useLayoutEffect(() => {
+    for (const turn of turns) drawn.current.add(turn.id);
+  }, [turns]);
 
   const stopGlide = useCallback(() => {
     if (!glide.current) return;
@@ -1080,7 +1085,12 @@ function TranscriptScroll({ turns, reduceMotion }: { turns: Turn[]; reduceMotion
           {turns.length === 0 && <div className="listening">Listening…</div>}
           <div className="bubbles">
             {turns.map((turn) => (
-              <TurnBubble key={turn.id} turn={turn} arrives={opened.current && !reduceMotion} />
+              <TurnBubble
+                key={turn.id}
+                turn={turn}
+                arrives={opened.current && !reduceMotion && !drawn.current.has(turn.id)}
+                reduceMotion={reduceMotion}
+              />
             ))}
           </div>
           <div style={{ height: 12 }} />
@@ -1135,12 +1145,15 @@ function CopyButton({ text, help, className }: { text: string; help: string; cla
   );
 }
 
+/** How long a settled bubble takes to ease from the size it grew to down to its words' own. */
+const SETTLE_MS = 160;
+
 /**
  * One turn. While its words are still arriving the bubble only ever grows: the live transcription rewrites its last
  * words several times a second, and a bubble that followed every rewrite would shrink and stretch under the reader.
- * It takes its real size again once the turn has settled.
+ * It eases to its real size once the turn has settled.
  */
-function TurnBubble({ turn, arrives }: { turn: Turn; arrives: boolean }) {
+function TurnBubble({ turn, arrives, reduceMotion }: { turn: Turn; arrives: boolean; reduceMotion: boolean }) {
   const parts = turnParts(turn);
   const bubble = useRef<HTMLDivElement>(null);
   const floor = useRef({ width: 0, height: 0 });
@@ -1149,17 +1162,35 @@ function TurnBubble({ turn, arrives }: { turn: Turn; arrives: boolean }) {
   useLayoutEffect(() => {
     const el = bubble.current;
     if (!el) return;
+    el.style.transition = "";
+    if (!parts.dots) {
+      const { width, height } = floor.current;
+      floor.current = { width: 0, height: 0 };
+      el.style.minWidth = "";
+      el.style.minHeight = "";
+      const box = el.getBoundingClientRect();
+      // Settled smaller than it had grown: it eases down instead of snapping (tests pin the clock: no easing).
+      if (reduceMotion || window.__fixedNow !== undefined || (box.width >= width - 0.5 && box.height >= height - 0.5)) return;
+      el.style.minWidth = `${width}px`;
+      el.style.minHeight = `${height}px`;
+      void el.offsetWidth;
+      el.style.transition = `min-width ${SETTLE_MS}ms var(--ease), min-height ${SETTLE_MS}ms var(--ease)`;
+      el.style.minWidth = "0px";
+      el.style.minHeight = "0px";
+      const timer = setTimeout(() => {
+        el.style.transition = "";
+        el.style.minWidth = "";
+        el.style.minHeight = "";
+      }, SETTLE_MS + 40);
+      return () => clearTimeout(timer);
+    }
     el.style.minWidth = "";
     el.style.minHeight = "";
-    if (!parts.dots) {
-      floor.current = { width: 0, height: 0 };
-      return;
-    }
     const box = el.getBoundingClientRect();
     floor.current = { width: Math.max(floor.current.width, box.width), height: Math.max(floor.current.height, box.height) };
     el.style.minWidth = `${floor.current.width}px`;
     el.style.minHeight = `${floor.current.height}px`;
-  }, [parts.text, parts.tail, parts.dots]);
+  }, [parts.text, parts.tail, parts.dots, reduceMotion]);
   return (
     <div className="turn" data-you={turn.you} data-entering={entering}>
       {!turn.you && turn.label && <div className="turn-label">{turn.label}</div>}

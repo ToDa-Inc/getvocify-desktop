@@ -1,5 +1,15 @@
 # Working in this repo
 
+## Branches and pull requests: commit to `main`
+
+- **No pull requests.** Don't open one, even to merge your own work.
+- **No new branch or worktree** unless Dani asks for one. Work in the main checkout on `main`, commit, `git pull --rebase`,
+  run the checks, and `git push`.
+- Several sessions work in this folder at once. Commit only your own files (`git add <paths>`, never `git add -A`).
+  Never commit, revert or stash another session's changes (the stash is shared by every session).
+- If you were asked for a branch: when the work is done, merge it into `main` yourself (`git merge`, then push),
+  delete the branch locally and on GitHub, and remove its worktree. Nothing is left behind.
+
 **The desktop app is the Electron app in `app/`** (Mac and Windows). Build every desktop or island feature there:
 
 - Island UI: `app/island/src`, its logic: `app/main/src/controller.ts`, shared rules: `app/core`.

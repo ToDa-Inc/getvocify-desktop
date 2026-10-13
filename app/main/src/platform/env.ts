@@ -19,5 +19,5 @@ export type PlatformEnv = {
   /** The Mac's in-process native module (native/mac-panel); null where there is none. */
   nativePanelPath: string | null;
   /** Dev only (VOCIFY_CAPTURE): capture the microphone natively on a Mac, "shared" or "apple" (SystemAudio.micMode). */
-  nativeMic?: "shared" | "apple";
+  nativeMic?: "shared" | "apple" | "all";
 };

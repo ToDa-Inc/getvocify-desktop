@@ -409,3 +409,26 @@ test("Mac, dev 'apple' capture: a voice helper next to the call audio, its micro
   await audio.stop();
   assert.equal(helpers.voice.killed, true);
 });
+
+test("Mac, dev 'all' capture: the shared stereo for the recording, Apple's microphone kept apart for comparison", async () => {
+  const helpers = { audio: fakeHelper(), voice: fakeHelper() };
+  const spawned: Array<{ command: string; args?: string[] }> = [];
+  const audio = createMacSystemAudio({
+    spawn: (command, args) => {
+      spawned.push({ command, args });
+      return helpers[command as "audio" | "voice"] as unknown as HelperChild;
+    },
+    micMode: "all",
+  });
+  const mic: number[] = [];
+  const voice: number[] = [];
+  audio.onMicPcm!((pcm) => mic.push(new Int16Array(pcm).length));
+  audio.onVoicePcm!((pcm) => voice.push(new Int16Array(pcm).length));
+  const started = audio.start();
+  line(helpers.audio.stderr, { event: "started" });
+  assert.deepEqual(await started, { ok: true });
+  assert.deepEqual(spawned, [{ command: "audio", args: ["--with-mic"] }, { command: "voice", args: undefined }]);
+  helpers.audio.stdout.emit("data", Buffer.alloc(6400));
+  helpers.voice.stdout.emit("data", Buffer.alloc(3200));
+  assert.deepEqual([mic, voice], [[1600], [1600]]);
+});

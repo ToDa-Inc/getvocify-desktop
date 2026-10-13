@@ -23,6 +23,7 @@ export type Loopback = {
   onLost(cb: (reason: string) => void): () => void;
   /** Dev only (a Mac capturing the microphone natively): see SystemAudio.onMicPcm. */
   onMicPcm?(cb: (pcm: ArrayBuffer) => void): () => void;
+  onVoicePcm?(cb: (pcm: ArrayBuffer) => void): () => void;
 };
 
 export function createLoopback(options: LoopbackOptions = {}): Loopback {

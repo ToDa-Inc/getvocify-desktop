@@ -20,9 +20,12 @@ export interface SystemAudio {
    */
   micMode?: NativeMicMode;
   onMicPcm?(cb: (pcm: ArrayBuffer) => void): () => void;
+  /** Dev only, "all": the microphone through Apple's voice processing as well, recorded for comparison. */
+  onVoicePcm?(cb: (pcm: ArrayBuffer) => void): () => void;
 }
 
-export type NativeMicMode = "shared" | "apple";
+/** "all": "shared" for the call and the microphone, plus Apple's voice-processed microphone for comparison. */
+export type NativeMicMode = "shared" | "apple" | "all";
 
 /** A desktop app holding the microphone, i.e. a call that may be worth recording. */
 export type DetectedCaller = { name: string; appId: string; path: string | null; browser: boolean };

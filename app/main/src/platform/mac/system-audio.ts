@@ -18,8 +18,11 @@ export function createMacSystemAudio(deps: {
 }): SystemAudio {
   const pcmListeners = new Set<(pcm: ArrayBuffer) => void>();
   const micListeners = new Set<(pcm: ArrayBuffer) => void>();
-  /** "shared": the helper writes stereo, the microphone left and the call right, sample for sample. */
-  const shared = deps.micMode === "shared";
+  const voiceListeners = new Set<(pcm: ArrayBuffer) => void>();
+  /** "shared" (and "all"): the helper writes stereo, the microphone left and the call right, sample for sample. */
+  const shared = deps.micMode === "shared" || deps.micMode === "all";
+  /** Where the voice helper's microphone goes: the recording's own ("apple"), or a comparison ("all"). */
+  const voiceTo = deps.micMode === "apple" ? micListeners : deps.micMode === "all" ? voiceListeners : null;
   /** "apple": a second helper captures the microphone through voice processing. */
   let voice: HelperChild | null = null;
   const frames = (onFrame: (frame: Buffer) => void, size: number) => {
@@ -104,9 +107,9 @@ export function createMacSystemAudio(deps: {
       starting = true;
       try {
         const result = await capture(shared ? deps.spawn("audio", ["--with-mic"]) : deps.spawn("audio"));
-        if (result.ok && deps.micMode === "apple") {
+        if (result.ok && voiceTo) {
           voice = deps.spawn("voice");
-          voice.stdout.on("data", frames((frame) => emitTo(micListeners, frame), FRAME_BYTES));
+          voice.stdout.on("data", frames((frame) => emitTo(voiceTo, frame), FRAME_BYTES));
         }
         return result;
       } catch (error) {
@@ -144,6 +147,10 @@ export function createMacSystemAudio(deps: {
           onMicPcm(cb: (pcm: ArrayBuffer) => void) {
             micListeners.add(cb);
             return () => void micListeners.delete(cb);
+          },
+          onVoicePcm(cb: (pcm: ArrayBuffer) => void) {
+            voiceListeners.add(cb);
+            return () => void voiceListeners.delete(cb);
           },
         }
       : {}),

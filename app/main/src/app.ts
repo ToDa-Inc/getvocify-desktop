@@ -392,6 +392,56 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   island.setAlwaysOnTop(true, "screen-saver");
   island.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
+  type Frame = { x: number; y: number; width: number; height: number };
+  /**
+   * Windows never makes a window smaller than its minimum window size (39px tall at 100%), and since Electron 42 a
+   * transparent window is no longer enlarged and trimmed behind the scenes to hide that. So a closed island (one bar,
+   * 30px) gets a bigger window, whose transparent rest would still take the clicks meant for the app under it. On
+   * Windows the window is therefore kept centred where the island belongs and clipped to the island the page draws
+   * (at the top, centred). Elsewhere the window is simply the island.
+   */
+  let requested = { width: initial.width, height: initial.height };
+  let windowsMinimum = { width: 0, height: 0 }; // learned the first time Windows enlarges the window
+  let clipped = false;
+  const centred = (frame: Frame, size: { width: number; height: number }): Frame => ({
+    x: Math.round(frame.x - (size.width - frame.width) / 2),
+    y: frame.y,
+    width: size.width,
+    height: size.height,
+  });
+  const place = (frame: Frame) => {
+    requested = { width: frame.width, height: frame.height };
+    if (platform !== "win32") return island.setBounds(frame);
+    let size = { width: Math.max(frame.width, windowsMinimum.width), height: Math.max(frame.height, windowsMinimum.height) };
+    // Growing out of the clip: lift it first, or the new area would show (and take clicks) only after a frame.
+    if (clipped && size.width === frame.width && size.height === frame.height) {
+      island.setShape([]);
+      clipped = false;
+    }
+    island.setBounds(centred(frame, size));
+    let got = island.getBounds();
+    if (got.width > size.width || got.height > size.height) {
+      // Windows enlarged it: remember its minimum, so the next small island goes straight to a centred window.
+      windowsMinimum = {
+        width: got.width > frame.width ? Math.max(windowsMinimum.width, got.width) : windowsMinimum.width,
+        height: got.height > frame.height ? Math.max(windowsMinimum.height, got.height) : windowsMinimum.height,
+      };
+      log(`island: Windows made the window ${got.width}x${got.height} for a ${frame.width}x${frame.height} island, clipping it to the island`);
+      size = { width: Math.max(frame.width, windowsMinimum.width), height: Math.max(frame.height, windowsMinimum.height) };
+      island.setBounds(centred(frame, size));
+      got = island.getBounds();
+    }
+    if (got.width < frame.width || got.height < frame.height || (got.width === frame.width && got.height === frame.height)) {
+      if (clipped) island.setShape([]);
+      clipped = false;
+      return;
+    }
+    const left = (got.width - frame.width) / 2;
+    island.setShape([{ x: Math.floor(left), y: 0, width: Math.ceil(left + frame.width) - Math.floor(left), height: frame.height }]);
+    clipped = true;
+  };
+  if (platform === "win32") place(frameFor(initial.width, initial.height));
+
   /**
    * The window first covers both the old and the new shape, the shape animates inside it, then the window fits the new
    * shape: the frame and the page never animate against each other (the Swift island's approach).
@@ -403,12 +453,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (!force && key === lastKey) return;
     lastKey = key;
     if (island.isDestroyed()) return;
-    const current = island.getBounds();
+    // From the island last asked for, not the window: on Windows a window enlarged past a small island would make
+    // the cover step between two small islands drop the clip.
+    const current = platform === "win32" ? requested : island.getBounds();
     const cover = { width: Math.max(current.width, target.width), height: Math.max(current.height, target.height) };
-    island.setBounds(frameFor(cover.width, cover.height));
+    place(frameFor(cover.width, cover.height));
     if (fitTimer) clearTimeout(fitTimer);
     fitTimer = setTimeout(() => {
-      if (!island.isDestroyed()) island.setBounds(frameFor(target.width, target.height));
+      if (!island.isDestroyed()) place(frameFor(target.width, target.height));
     }, 420);
   };
 

@@ -8,6 +8,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { islandClickArea } from "./window-at.mjs";
 
 if (process.platform !== "win32") {
   console.log("focus-windows: skipped (not Windows)");
@@ -58,6 +59,16 @@ app.whenReady().then(async () => {
     const ours = new Set(app.getAppMetrics().map((p) => p.pid).concat(process.pid));
     console.log(`      foreground before the click: window ${before.hwnd}, process ${before.pid}`);
     check(!ours.has(before.pid), "the window in front is not the island's app");
+
+    // Windows keeps the island's window at least its minimum height, taller than the bar: the window must be clipped,
+    // so clicks just under the bar or beside the island reach whatever is below it.
+    const bar = handle.controller.state.geometry.barHeight;
+    const drawn = await handle.island.webContents.executeJavaScript("(({ x, width }) => ({ x, width }))(document.querySelector('.island').getBoundingClientRect())");
+    const area = islandClickArea(screen, handle.island, bar, drawn);
+    const where = `window ${area.window.width}x${area.window.height}, island ${Math.round(drawn.width)}x${bar}`;
+    check(area.centre, `Windows sends a click on the island's centre to the island (${where})`);
+    check(!area.below, `a click just under the bar does not reach the island (${where})`);
+    check(!area.left, `a click just left of the island does not reach it (${where})`);
 
     const bounds = handle.islandBounds();
     const point = screen.dipToScreenPoint({ x: Math.round(bounds.x + bounds.width / 2), y: Math.round(bounds.y + handle.controller.state.geometry.barHeight / 2) });

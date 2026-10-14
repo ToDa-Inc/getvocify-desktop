@@ -1,10 +1,11 @@
 // The real shell in real windows, from a click on Record to the call's update being dismissed.
 // The dashboard is the demo page, which speaks the real bridge. Run: node test/build-shell-test.mjs && electron test/shell-e2e.mjs
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, screen } from "electron";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { islandClickArea } from "./window-at.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const failures = [];
@@ -52,7 +53,18 @@ app.whenReady().then(async () => {
     check(!dashboard.exists, "no dashboard window exists while idle (nothing to pay for)");
     check(island.isAlwaysOnTop() && !island.isFocusable(), "the island is always on top and cannot take focus");
     const idleBounds = handle.islandBounds();
-    check(idleBounds.height === controller.state.geometry.barHeight, `the idle island is one bar high (${idleBounds.height}px)`);
+    const bar = controller.state.geometry.barHeight;
+    if (process.platform === "win32") {
+      // Windows keeps a window at least its minimum height (39px), so the shell clips the window to the island: what
+      // counts is where a click lands, asked of Windows itself.
+      const drawn = await island.webContents.executeJavaScript("(({ x, width }) => ({ x, width }))(document.querySelector('.island').getBoundingClientRect())");
+      const area = islandClickArea(screen, island, bar, drawn);
+      const where = `window ${area.window.width}x${area.window.height}`;
+      check(area.centre, `a click on the idle island reaches it (${where})`);
+      check(!area.below && !area.left, `a click just under its bar or beside it reaches the app below (${where})`);
+    } else {
+      check(idleBounds.height === bar, `the idle island is one bar high (${idleBounds.height}px)`);
+    }
 
     // --- Record from the island: the dashboard starts hidden and the call starts
     controller.act({ name: "record" });

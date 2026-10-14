@@ -4,9 +4,9 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
 
-const logger = fileURLToPath(new URL("../src/logger.ts", import.meta.url));
+// A file URL, not a path: on Windows the import would read a "D:" path as a URL scheme and fail.
+const logger = new URL("../src/logger.ts", import.meta.url).href;
 
 test("logging keeps going to the file when whoever read the app's output and errors has gone away", async () => {
   const file = join(mkdtempSync(join(tmpdir(), "vocify-logger-")), "vocify.log");

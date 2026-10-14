@@ -30,11 +30,15 @@ export class CallSource {
   }
 
   static page(urls: string[]): CallSource | null {
+    // A HubSpot page names a call only when no other page does: a Meet or a dialer tab beside a contact is the call.
+    let hubspot: CallSource | null = null;
     for (const url of urls) {
       const result = this.pageImpl(url);
-      if (result) return result;
+      if (!result) continue;
+      if (result.name !== "HubSpot") return result;
+      hubspot ??= result;
     }
-    return null;
+    return hubspot;
   }
 
   static pageImpl(url: string): CallSource | null {
@@ -58,10 +62,10 @@ export class CallSource {
       return new CallSource("Zoom", "meeting");
     if (on("webex.com")) return new CallSource("Webex", "meeting");
     if (on("whereby.com")) return new CallSource("Whereby", "meeting");
-    if (on("hubspot.com") && host.startsWith("app") && path.includes("calling-integration-popup"))
-      return new CallSource("HubSpot", "call");
-    if (host === "phone.aircall.io") return new CallSource("Aircall", "call");
-    if (host === "app.ringover.com") return new CallSource("Ringover", "call");
+    // HubSpot's own calling widget on a contact page: the mic held on a HubSpot page is the call.
+    if (on("hubspot.com")) return new CallSource("HubSpot", "call");
+    if (on("aircall.io")) return new CallSource("Aircall", "call");
+    if (on("ringover.com")) return new CallSource("Ringover", "call");
     if (on("dialpad.com")) return new CallSource("Dialpad", "call");
     if (host === "app.justcall.io") return new CallSource("JustCall", "call");
     if (host === "web.whatsapp.com") return new CallSource("WhatsApp", "call");

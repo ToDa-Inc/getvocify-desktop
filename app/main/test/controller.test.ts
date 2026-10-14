@@ -1187,3 +1187,28 @@ test("an audio session stopping says nothing outside a call on the phone", () =>
   t.advance(10);
   assert.equal(t.mode(), "recording");
 });
+
+test("a browser call named by its page is withdrawn when the mic lets go, and offered again on the next call", () => {
+  const hubspot: Caller = { name: "HubSpot", appId: "chrome.exe", icon: null };
+  const t = setup();
+  t.controller.callChanged(hubspot);
+  assert.equal(t.mode(), "call");
+  t.controller.callChanged(null);
+  assert.equal(t.mode(), "idle", "the rep never pressed Record: the offer goes with the audio");
+  assert.notEqual(t.last("call:ended"), undefined);
+  t.controller.callChanged(hubspot);
+  assert.equal(t.mode(), "call", "the second call is offered");
+});
+
+test("a browser call that ends while the rep records stops the recording after the hang-up grace", () => {
+  const hubspot: Caller = { name: "HubSpot", appId: "chrome.exe", icon: null };
+  const t = setup();
+  t.controller.callChanged(hubspot);
+  t.controller.act({ name: "record" });
+  t.controller.show();
+  t.controller.callChanged(null);
+  t.advance(2);
+  assert.equal(t.mode(), "recording", "a brief drop of the mic is not the end of the call");
+  t.advance(2);
+  assert.equal(t.mode(), "stopped", "the mic released for the grace period ends the recording, as for Zoom");
+});

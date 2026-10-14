@@ -27,7 +27,7 @@ import { runQuiet } from "./platform/exec.ts";
 import { createPlatform } from "./platform/index.ts";
 import { spawnMacHelper } from "./platform/mac/helper.ts";
 import type { DetectedCaller } from "./platform/types.ts";
-import { createPageReader, crmUrlsOf, encodePowerShell, type BrowserPage } from "./windows/browser-pages.ts";
+import { createPageReader, crmUrlsOf, encodePowerShell, hostnamesOf, type BrowserPage } from "./windows/browser-pages.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** The app's icon (the Vocify mark): the dock on a Mac, the taskbar and title bar and the tray on Windows. */
@@ -666,8 +666,19 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   let told: "none" | "app" | "browser" = "none";
   // On Windows a browser holding the microphone is only a call once a page says so, and is then named by it
   // ("Google Meet call"), never "Google Chrome call" (see windows/browser-call.ts).
+  // The hosts of the pages last logged as naming no call, so the log says why no island appeared, once per change.
+  let unnamedPages: string | null = null;
   const browserCalls = createBrowserCallWatch({
-    readSource: async () => CallSource.page((await pageReader.read()).map((page) => page.url)),
+    readSource: async () => {
+      const pages = await pageReader.read();
+      const source = CallSource.page(pages.map((page) => page.url));
+      const hosts = hostnamesOf(pages).join(", ");
+      if (!source && hosts !== unnamedPages) {
+        unnamedPages = hosts;
+        log(`a browser holds the microphone and no page names a call; pages on: ${hosts || "none read"}`);
+      }
+      return source;
+    },
     announce: (caller) => {
       told = "browser";
       controller.callChanged(caller);
@@ -692,6 +703,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
         return;
       }
       browserCalls.released();
+      unnamedPages = null;
       told = detected ? "app" : "none";
       // A browser that reaches here (the Mac cannot read which page is the call) is not named: "Google Chrome call"
       // is a guess, and the island says "Call in progress" instead.

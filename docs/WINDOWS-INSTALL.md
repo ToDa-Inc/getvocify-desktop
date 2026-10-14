@@ -37,7 +37,7 @@ Other addresses: `--dashboard=<url>`, `{ "dashboardUrl": "..." }` in `%APPDATA%\
 | Check | Expected |
 |---|---|
 | Microphone | If Windows Settings > Privacy & security > Microphone > "Let desktop apps access your microphone" is off, the dashboard says so and offers to open that page. |
-| Call detection | Start a Zoom, Teams, Meet (in Chrome or Edge) or HubSpot call: within about a second the island drops down with that app's own icon and Record. |
+| Call detection | Start a Zoom, Teams or WhatsApp call, or a Chrome or Edge call (Meet, Teams on the web, Zoom on the web, Webex, Whereby, Aircall, Ringover, Dialpad, JustCall, or any HubSpot page such as the calling widget on a contact): within about a second the island drops down with that app's name and icon (a browser call is named by its page, e.g. "HubSpot call") and Record. The offer goes when the microphone lets go. A browser with no such page is not offered. Only the active tab of each window is read. |
 | CRM contact | With the HubSpot or Pipedrive contact open in a browser window (the active tab), the island shows the contact's name. A CRM tab hidden behind another tab of the same window is not read. |
 | Recording | Record from the island: your mic is "You", the call's audio is "Them", the transcript streams into the island. |
 | After the call | Stop (5 s to undo), then the CRM update card: Save, Review in Vocify, Email, Notes. |
@@ -57,7 +57,7 @@ Same layout, sizes, colours, copy and behaviour, ported from the Swift code and 
 
 Proven on a real Windows runner (see the workflow): a real mouse click on the island acts on the first press and leaves the foreground window unchanged; the installer builds, installs and starts; the island layout (58 checks); the call-audio pipeline with a synthetic tone; a whole call through the shell; the microphone-use record is read and parsed from the real registry; a real Chrome's address bar is read through UI Automation.
 
-Not proven: capturing a real call's audio from a real Windows audio device, real microphone use by Zoom/Teams being picked up by the registry record, the island over a fullscreen call window, 200% display scaling and several monitors, the open states side by side with the Swift app, and anything on a company-managed PC. Those need your test.
+Not proven: capturing a real call's audio from a real Windows audio device, real microphone use by Zoom/Teams being picked up by the registry record, a HubSpot or web-dialer call in Chrome or Edge being offered (the page naming is unit-tested; the HubSpot widget may also hold the microphone when no call is up, so the island can offer a call that never happens), the desktop Aircall and Ringover apps (their executable names are not confirmed, so they are not detected), the island over a fullscreen call window, 200% display scaling and several monitors, the open states side by side with the Swift app, and anything on a company-managed PC. Those need your test.
 
 ## Trying it on a Mac (developer run)
 

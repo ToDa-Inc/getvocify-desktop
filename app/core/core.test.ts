@@ -244,8 +244,34 @@ test("CallSource more pages", async (t) => {
   await t.test("hubspot calling window", () => {
     assert.strictEqual(CallSource.pageImpl("https://app-eu1.hubspot.com/calling-integration-popup-ui/147506535")?.kind, "call");
   });
-  await t.test("a contact page is not a call", () => {
-    assert.strictEqual(CallSource.pageImpl("https://app-eu1.hubspot.com/contacts/147506535/record/0-1/1"), null);
+  await t.test("a HubSpot contact page is a HubSpot call (the mic held is what says so)", () => {
+    const source = CallSource.pageImpl("https://app-eu1.hubspot.com/contacts/147506535/record/0-1/1");
+    assert.strictEqual(source?.name, "HubSpot");
+    assert.strictEqual(source?.kind, "call");
+  });
+  await t.test("any HubSpot host is HubSpot, but a lookalike host is not", () => {
+    assert.strictEqual(CallSource.pageImpl("https://app.hubspot.com/contacts/1/record/0-1/2")?.name, "HubSpot");
+    assert.strictEqual(CallSource.pageImpl("https://hubspot.com/x")?.name, "HubSpot");
+    assert.strictEqual(CallSource.pageImpl("https://hubspot.com.example.net/x"), null);
+  });
+  await t.test("web dialers: Aircall, Ringover, Dialpad, JustCall", () => {
+    assert.strictEqual(CallSource.pageImpl("https://phone.aircall.io/")?.kind, "call");
+    assert.strictEqual(CallSource.pageImpl("https://app.aircall.io/calls")?.name, "Aircall");
+    assert.strictEqual(CallSource.pageImpl("https://app.ringover.com/dialer")?.name, "Ringover");
+    assert.strictEqual(CallSource.pageImpl("https://dialpad.com/app")?.name, "Dialpad");
+    assert.strictEqual(CallSource.pageImpl("https://app.justcall.io/")?.name, "JustCall");
+    assert.strictEqual(CallSource.pageImpl("https://aircall.io.example.net/x"), null);
+    assert.strictEqual(CallSource.pageImpl("https://ringover.com.evil.example/x"), null);
+  });
+  await t.test("an unknown page is not a call", () => {
+    assert.strictEqual(CallSource.pageImpl("https://www.example.com/calls"), null);
+  });
+  await t.test("a named call beats a HubSpot page, whichever tab comes first", () => {
+    const hubspot = "https://app.hubspot.com/contacts/1/record/0-1/2";
+    const meet = "https://meet.google.com/abc-defg-hij";
+    assert.strictEqual(CallSource.page([hubspot, meet])?.name, "Google Meet");
+    assert.strictEqual(CallSource.page([meet, hubspot])?.name, "Google Meet");
+    assert.strictEqual(CallSource.page([hubspot])?.name, "HubSpot");
   });
   await t.test("zoom web client", () => {
     assert.strictEqual(CallSource.pageImpl("https://us02web.zoom.us/wc/123/join")?.kind, "meeting");

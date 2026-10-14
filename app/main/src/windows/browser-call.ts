@@ -2,11 +2,11 @@ import type { CallSource } from "../../../core/callSource.ts";
 import type { Caller } from "../controller.ts";
 
 /**
- * A browser holding the microphone says nothing about a call: a page can hold it for its own reasons (a CRM's phone
- * widget on a contact page), and "Google Chrome call" helps nobody. So a browser is offered as a call only once its
- * pages say what the call is (Google Meet, Teams on the web, a web dialer), and it is then named by that: "Google Meet
- * call". The pages are looked at every few seconds while the browser holds the microphone, since the rep may join the
- * meeting after the browser started holding it.
+ * A browser holding the microphone says nothing about a call by itself, and "Google Chrome call" helps nobody. So a
+ * browser is offered as a call only once its pages say what the call is (Google Meet, Teams on the web, a web dialer,
+ * HubSpot's calling widget on a contact page), and it is then named by that: "Google Meet call". A page that names no
+ * call is not offered. The pages are looked at every few seconds while the browser holds the microphone, since the rep
+ * may join the meeting after the browser started holding it.
  */
 export type BrowserCallDeps = {
   /** What the browsers' pages show this to be; null when none is a call. */

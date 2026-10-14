@@ -103,3 +103,14 @@ test("another browser takes over the watch", async () => {
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(t.offered.map((c) => c.appId), ["chrome.exe", "msedge.exe"]);
 });
+
+test("the same browser holding the microphone again, after it let go, is offered again", async () => {
+  const t = setup();
+  t.showing(meet);
+  t.watch.held(chrome);
+  await new Promise((resolve) => setImmediate(resolve));
+  t.watch.released();
+  t.watch.held(chrome);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(t.offered.length, 2, "the second call is announced, the watch reset when the first one ended");
+});

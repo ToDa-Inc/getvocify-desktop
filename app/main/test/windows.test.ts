@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { crmUrlsOf, createPageReader, encodePowerShell, normalizeAddress, parsePageOutput, READ_PAGES_SCRIPT } from "../src/windows/browser-pages.ts";
+import { crmUrlsOf, createPageReader, encodePowerShell, hostnamesOf, normalizeAddress, parsePageOutput, READ_PAGES_SCRIPT } from "../src/windows/browser-pages.ts";
 import { dialedDigits, parsePhoneLinkCall, phoneLinkCallScript } from "../src/windows/phone-link-call.ts";
 import { callAppFor, filetimeToMs, MicWatcher, parseMicConsent, pickCaller, type DetectedCaller, type MicUse } from "../src/windows/mic-use.ts";
 
@@ -243,4 +243,15 @@ test("Phone Link's Call script answers called, not ready, or failed", () => {
   assert.equal(parsePhoneLinkCall("not_ready"), "not_ready");
   assert.equal(parsePhoneLinkCall(""), "failed");
   assert.equal(parsePhoneLinkCall("Exception: ..."), "failed");
+});
+
+test("the pages a browser shows, as hostnames only for the log: no path, no query, each host once", () => {
+  const pages = [
+    { browser: "chrome", url: "https://app.hubspot.com/contacts/1/record/0-1/2?secret=1" },
+    { browser: "msedge", url: "https://meet.google.com/abc-defg-hij" },
+    { browser: "chrome", url: "https://app.hubspot.com/contacts/1/record/0-1/3" },
+    { browser: "chrome", url: "not a url" },
+  ];
+  assert.deepEqual(hostnamesOf(pages), ["app.hubspot.com", "meet.google.com"]);
+  assert.deepEqual(hostnamesOf([]), []);
 });

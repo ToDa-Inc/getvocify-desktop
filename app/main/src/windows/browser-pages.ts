@@ -91,6 +91,20 @@ export function parsePageOutput(output: string): BrowserPage[] {
   return pages;
 }
 
+/** The hostnames of the pages, each once: all the log may say about a page (never its path or query). */
+export function hostnamesOf(pages: BrowserPage[]): string[] {
+  const hosts: string[] = [];
+  for (const page of pages) {
+    try {
+      const host = new URL(page.url).hostname.toLowerCase();
+      if (host && !hosts.includes(host)) hosts.push(host);
+    } catch {
+      // Not a URL, so no host to name.
+    }
+  }
+  return hosts;
+}
+
 /** Only the CRM links, as the dashboard expects them (`call:pages`). */
 export function crmUrlsOf(pages: BrowserPage[]): string[] {
   return CrmPages.crmURLs(pages.map((p) => p.url).join("\n"));

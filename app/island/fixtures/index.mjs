@@ -113,6 +113,11 @@ const postCall = (stage, extra = {}) => ({
   email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, crmUrl: null, ...extra,
 });
 
+const postCallTasks = [
+  { key: "task:next_step_task_0", label: "Next Step (Task)", object: "other", from: null, to: "Llamada con Marta: confirmar el presupuesto", value: "Llamada con Marta: confirmar el presupuesto", options: [], multiple: false, editable: false, check: false, when: "Tue 20 Oct, 18:30", whenSuggested: false },
+  { key: "task:next_step_task_1", label: "Next Step 2 (Task)", object: "other", from: null, to: "Enviar la propuesta", value: "Enviar la propuesta", options: [], multiple: false, editable: false, check: false, when: "Sat 17 Oct, 09:00", whenSuggested: true },
+];
+
 const postCallChanges = [
   {
     key: "contact:title",
@@ -240,6 +245,7 @@ export const fixtures = [
   // post-call open
   { name: "postcall-open-writing", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("writing") }, expect: { width: 420, height: 200 }, fit: true },
   { name: "postcall-open-ready", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 4), canApprove: true }) }, expect: { width: 420, height: 380 }, fit: true },
+  { name: "postcall-open-tasks", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallTasks, canApprove: true }) }, expect: { width: 420 }, fit: true },
   { name: "postcall-open-ready-all-changes", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges, canApprove: true }) }, expect: { width: 420, height: 450 }, fit: true },
   { name: "postcall-open-applying", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("applying", { undoUntil: NOW + 3500 }) }, expect: { width: 420, height: 200 }, fit: true },
   { name: "postcall-open-done", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("done", { applied: 4 }) }, expect: { width: 420, height: 200 }, fit: true },

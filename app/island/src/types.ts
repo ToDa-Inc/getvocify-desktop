@@ -74,6 +74,10 @@ export type PostCallChange = {
   editable: boolean;
   /** Scored under "needs review": ticked like the rest, with a mark saying Vocify was less sure. */
   check: boolean;
+  /** A task's day and hour as the rep reads them ("Tue 20 Oct, 09:00"); null for anything that is not a task. */
+  when: string | null;
+  /** The call gave the task no day: `when` is only the default it will be written with. */
+  whenSuggested: boolean;
 };
 
 export type PostCallEmail = { state: "writing" | "ready" | "skipped" | "sent"; to: string | null; subject: string | null; preview: string | null };

@@ -669,6 +669,21 @@ test("malformed post-call data is dropped, not guessed", () => {
   assert.equal(t.controller.state.postCall?.changes[0].label, "deal:amount", "label falls back to the key");
 });
 
+test("a task's day and hour reach the island, and a change that is not a task has none", () => {
+  const t = setup();
+  t.controller.applyShellState({
+    postCall: postCall("ready", {
+      changes: [
+        { key: "task:next_step_task_0", to: "Llamar a Ana", when: "Tue 20 Oct, 18:30", whenSuggested: false },
+        { key: "task:next_step_task_1", to: "Enviar la propuesta", when: "Sat 17 Oct, 09:00", whenSuggested: true },
+        { key: "deal:amount", to: "5000" },
+      ],
+    }),
+  });
+  const changes = t.controller.state.postCall?.changes ?? [];
+  assert.deepEqual(changes.map((c) => [c.when, c.whenSuggested]), [["Tue 20 Oct, 18:30", false], ["Sat 17 Oct, 09:00", true], [null, false]]);
+});
+
 /* ---------- calling the CRM contact on screen ---------- */
 
 const ana = { provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", phone: "+34600111222", callerId: "+34910000000", state: "callable" };

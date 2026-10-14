@@ -421,9 +421,13 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable,
             if (text !== null && text.trim() !== "" && text !== shown) onEdit(text.trim());
           }} />
         ) : (
-          <span className="value-text">
-            <span data-kept={kept}>{shown}</span>
-            {before !== null && <span className="was-text">{"  was "}{before}</span>}
+          <span className="value-body">
+            <span className="value-text">
+              <span data-kept={kept}>{shown}</span>
+              {before !== null && <span className="was-text">{"  was "}{before}</span>}
+            </span>
+            {/* Outside the clamped text, so a long task never cuts its day and hour off. */}
+            {change.when !== null && <span className="when-text">{change.when}{change.whenSuggested ? " · suggested" : ""}</span>}
           </span>
         )}
         <span className="value-chevron" style={{ opacity: hasOptions ? 1 : 0 }}><ChevronDown size={8} stroke={3.6} /></span>

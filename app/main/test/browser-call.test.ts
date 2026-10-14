@@ -31,33 +31,37 @@ function setup() {
 const chrome = { appId: "chrome.exe", icon: "data:icon" };
 const meet = new CallSource("Google Meet", "meeting");
 
-test("a browser holding the microphone is not a call by itself: nothing is offered", async () => {
+test("a browser holding the microphone is a call at once, even when no page names it", async () => {
   const t = setup();
   t.watch.held(chrome);
+  assert.deepEqual(t.offered, [{ name: null, appId: "chrome.exe", icon: "data:icon" }]);
   await t.tick();
   await t.tick();
-  assert.deepEqual(t.offered, []);
+  assert.equal(t.offered.length, 1, "nothing more is offered while no page names it");
 });
 
-test("once a page says it is Google Meet, the call is offered under that name, once", async () => {
+test("once a page says it is Google Meet, the call is offered again under that name, once", async () => {
   const t = setup();
   t.watch.held(chrome);
   await t.tick();
   t.showing(meet);
   await t.tick();
-  assert.deepEqual(t.offered, [{ name: "Google Meet", appId: "chrome.exe", icon: "data:icon" }]);
+  assert.deepEqual(t.offered, [
+    { name: null, appId: "chrome.exe", icon: "data:icon" },
+    { name: "Google Meet", appId: "chrome.exe", icon: "data:icon" },
+  ]);
   await t.tick();
   t.watch.held(chrome);
   await t.tick();
-  assert.equal(t.offered.length, 1);
+  assert.equal(t.offered.length, 2);
 });
 
-test("a meeting that is already open when the browser starts holding the microphone is offered at once", async () => {
+test("a meeting that is already open when the browser starts holding the microphone is named at once", async () => {
   const t = setup();
   t.showing(meet);
   t.watch.held(chrome);
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(t.offered.length, 1);
+  assert.deepEqual(t.offered.map((c) => c.name), [null, "Google Meet"]);
 });
 
 test("it stops looking once offered, and when the browser lets go", async () => {
@@ -75,7 +79,7 @@ test("it stops looking once offered, and when the browser lets go", async () => 
   t2.showing(meet);
   await t2.tick();
   assert.equal(t2.reads(), before);
-  assert.deepEqual(t2.offered, []);
+  assert.deepEqual(t2.offered.map((c) => c.name), [null], "only the offer made when the audio started");
 });
 
 test("a page that is read after the browser let go does not offer a call", async () => {
@@ -90,7 +94,7 @@ test("a page that is read after the browser let go does not offer a call", async
   watch.released();
   release(meet);
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(offered, []);
+  assert.deepEqual(offered.map((c) => c.name), [null], "no name arrives after the audio stopped");
 });
 
 test("another browser takes over the watch", async () => {
@@ -101,7 +105,7 @@ test("another browser takes over the watch", async () => {
   t.watch.released();
   t.watch.held({ appId: "msedge.exe", icon: null });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(t.offered.map((c) => c.appId), ["chrome.exe", "msedge.exe"]);
+  assert.deepEqual(t.offered.map((c) => c.appId), ["chrome.exe", "chrome.exe", "msedge.exe", "msedge.exe"]);
 });
 
 test("the same browser holding the microphone again, after it let go, is offered again", async () => {
@@ -112,5 +116,5 @@ test("the same browser holding the microphone again, after it let go, is offered
   t.watch.released();
   t.watch.held(chrome);
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(t.offered.length, 2, "the second call is announced, the watch reset when the first one ended");
+  assert.equal(t.offered.length, 4, "the second call is announced, the watch reset when the first one ended");
 });

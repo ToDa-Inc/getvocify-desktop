@@ -2,11 +2,10 @@ import type { CallSource } from "../../../core/callSource.ts";
 import type { Caller } from "../controller.ts";
 
 /**
- * A browser holding the microphone says nothing about a call by itself, and "Google Chrome call" helps nobody. So a
- * browser is offered as a call only once its pages say what the call is (Google Meet, Teams on the web, a web dialer,
- * HubSpot's calling widget on a contact page), and it is then named by that: "Google Meet call". A page that names no
- * call is not offered. The pages are looked at every few seconds while the browser holds the microphone, since the rep
- * may join the meeting after the browser started holding it.
+ * A browser holding the microphone is audio starting: the call is offered at once, as "Call in progress", and the
+ * moment a page says what the call is (Google Meet, HubSpot's calling widget, a web dialer) it is offered again under
+ * that name ("HubSpot call"). The pages are looked at every few seconds while the browser holds the microphone, since
+ * the rep may join the meeting after the browser started holding it. The audio stopping ends the offer (`released`).
  */
 export type BrowserCallDeps = {
   /** What the browsers' pages show this to be; null when none is a call. */
@@ -49,6 +48,8 @@ export function createBrowserCallWatch(deps: BrowserCallDeps) {
           looking = false;
         }
       };
+      // The microphone is the signal, so the offer does not wait for a page to be read.
+      deps.announce({ name: null, appId: browser.appId, icon: browser.icon });
       watch.stop = deps.every(LOOK_EVERY_MS, () => void look());
       void look();
     },

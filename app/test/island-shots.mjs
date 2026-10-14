@@ -27,8 +27,8 @@ async function open(fixture) {
   // A hidden window produces no frames on Windows, so nothing that waits for a frame (a resize observer) would run.
   if (process.platform === "win32") win.showInactive();
   const errors = [];
-  win.webContents.on("console-message", (_event, level, message) => {
-    if (level >= 3) errors.push(message);
+  win.webContents.on("console-message", ({ level, message }) => {
+    if (level === "error") errors.push(message);
   });
   win.webContents.on("render-process-gone", (_e, details) => errors.push(`renderer gone: ${details.reason}`));
   await win.loadFile(dist);

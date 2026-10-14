@@ -594,9 +594,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     return true;
   });
   // The island never takes the keyboard, so Ctrl+C / Cmd+C cannot copy from it: its Copy buttons ask for the clipboard here.
-  ipcMain.handle("island:copy", (event, text: unknown) => {
+  ipcMain.handle("island:copy", async (event, text: unknown) => {
     if (!fromIsland(event.sender) || typeof text !== "string" || text.length === 0 || text.length > 1_000_000) return false;
-    clipboard.writeText(text);
+    await clipboard.writeText(text);
     return true;
   });
   ipcMain.on("island:resize", (event, size: { width: number; height: number }) => {

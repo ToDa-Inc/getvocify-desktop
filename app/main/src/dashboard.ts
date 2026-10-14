@@ -92,8 +92,8 @@ export class DashboardHost {
     });
     // Like the Mac app's window: always "Vocify", not the web page's title.
     win.on("page-title-updated", (event) => event.preventDefault());
-    win.webContents.on("console-message", (_event, level, message, line, source) => {
-      if (level >= 3) this.options.log(`dashboard console error: ${message} (${source}:${line})`);
+    win.webContents.on("console-message", ({ level, message, lineNumber, sourceId }) => {
+      if (level === "error") this.options.log(`dashboard console error: ${message} (${sourceId}:${lineNumber})`);
     });
     win.webContents.on("render-process-gone", (_event, details) => this.options.log(`dashboard renderer gone: ${details.reason}`));
     win.on("close", (event) => {

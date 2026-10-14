@@ -6,7 +6,7 @@ import type { SystemAudio } from "../platform/types.ts";
 /**
  * The call's audio on Windows: everything the PC plays, captured by Electron's loopback source in a hidden window
  * and delivered as mono 16 kHz signed 16-bit little-endian PCM in exact 3200-byte (100 ms) chunks.
- * Electron 33 supports `audio: 'loopback'` on Windows only; elsewhere `start()` reports `unsupported_platform`.
+ * Electron supports `audio: 'loopback'` on Windows only; elsewhere `start()` reports `unsupported_platform`.
  * With `mic`, the window also opens the default microphone, raw (the server takes the call's echo out and sets its
  * level), into the same audio context: both are cut into frames from the same audio blocks and sent as a pair, so they
  * stay together. What is left between them (each device's own latency) the server measures and lines up.

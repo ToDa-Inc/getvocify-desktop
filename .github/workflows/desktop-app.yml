@@ -88,6 +88,9 @@ jobs:
         run: npm run test:loopback
       - name: A whole call through the shell
         run: npm run test:shell
+      # The rep's mic can cancel everything the PC plays (Zoom, a video): Chromium's echoCancellation "all".
+      - name: The microphone cancels everything the computer plays
+        run: npm run test:echo-all
 
       - name: Build the installer
         run: npm run dist:win
@@ -147,6 +150,10 @@ jobs:
 
       - name: Logic tests
         run: npm run test:logic
+
+      # The rep's mic can cancel everything the Mac plays (Zoom, a video): Chromium's echoCancellation "all".
+      - name: The microphone cancels everything the computer plays
+        run: npm run test:echo-all
 
       # The native macOS helper (call audio, call detection, notch).
       - name: Build native helper

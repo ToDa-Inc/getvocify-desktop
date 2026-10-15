@@ -510,7 +510,7 @@ function IdleMenu({
         </>
       ) : (
         <>
-          <QuietRecordButton title="Record meeting" ready={ready} onClick={() => act({ name: "record" })} />
+          <QuietRecordButton title="Record" ready={ready} onClick={() => act({ name: "record" })} />
           <div className="grow" />
         </>
       )}
@@ -571,6 +571,11 @@ function CallMenu({ state, caller, act }: { state: IslandState; caller: { name: 
       <span className="menu-title" data-dim={state.callContact === null}>{label}</span>
       <div className="grow" />
       <QuietRecordButton title="Record" ready={state.recorderReady} onClick={() => act({ name: "record" })} />
+      {state.onScreen && (
+        <IconButton help={CallWording.glyphHelp(state.onScreen)} onClick={() => act({ name: "openDialConfirm" })}>
+          <Phone size={11} />
+        </IconButton>
+      )}
       <IconButton help="Skip this call" onClick={() => act({ name: "dismissCall" })}>
         <Close size={11} />
       </IconButton>

@@ -26,6 +26,30 @@ function telProgId(): string | null {
 
 const hasDefaultTelApp = () => telProgId() !== null;
 
+/**
+ * Phone Link is installed (its package, Microsoft.YourPhone) even when the rep never made it the default for TEL links,
+ * or Windows dropped that choice (an update, a reset). Asked of Windows' package list, so it takes a moment: the answer is
+ * kept (longer when yes) instead of asking at every look.
+ */
+let phoneLinkSeen: { installed: boolean; at: number } | null = null;
+function phoneLinkInstalled(): boolean {
+  const now = Date.now();
+  if (phoneLinkSeen && now - phoneLinkSeen.at < (phoneLinkSeen.installed ? 10 * 60_000 : 30_000)) return phoneLinkSeen.installed;
+  let installed = false;
+  try {
+    const out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "(Get-AppxPackage -Name Microsoft.YourPhone | Measure-Object).Count"], {
+      encoding: "utf8",
+      timeout: 8000,
+      windowsHide: true,
+    });
+    installed = Number(out.trim()) > 0;
+  } catch {
+    installed = false;
+  }
+  phoneLinkSeen = { installed, at: now };
+  return installed;
+}
+
 /** That app is Phone Link: its package (Microsoft.YourPhone), whatever the language shows as its name. */
 function telAppIsPhoneLink(name: string): boolean {
   const progId = telProgId();
@@ -108,7 +132,8 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
     phone: createWindowsPhone({
       // Only a default Windows keeps for TEL links counts: without one, Electron names Windows' own app picker
       // ("Choose an app", in the system's language) as if it were an app.
-      telApp: () => (hasDefaultTelApp() ? env.protocolApp("tel:") : ""),
+      // With none chosen, an installed Phone Link still counts: the link opens Windows' own picker, where it is one click.
+      telApp: () => (hasDefaultTelApp() ? env.protocolApp("tel:") : phoneLinkInstalled() ? "Phone Link" : ""),
       openExternal: env.openExternal,
       openSoundRecording: () => void runQuiet("control.exe", ["mmsys.cpl,,1"], 10_000).catch((error) => env.log(`sound settings did not open: ${String(error)}`)),
       // Only Phone Link has a Call button Vocify knows; another app for TEL links is left to the rep.

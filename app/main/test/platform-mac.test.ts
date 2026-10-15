@@ -235,7 +235,7 @@ test("Mac call detector: Chrome's helper holding the microphone is reported as C
   apps = [{ bundleId: "com.google.Chrome.helper", name: "Google Chrome Helper", pid: 700, path: helperPath }];
   report();
   await tick();
-  assert.deepEqual(seen.at(-1), { name: "Google Chrome", appId: "com.google.Chrome", path: chromePath, browser: true });
+  assert.deepEqual(seen.at(-1), { name: "Google Chrome", appId: "com.google.Chrome", path: chromePath, browser: true, holding: ["com.google.Chrome"] });
 
   // A renderer helper is the same app, so the same call: nothing new is reported.
   apps = [{ bundleId: "com.google.Chrome.helper.Renderer", name: "Google Chrome Helper (Renderer)", pid: 701, path: helperPath }];
@@ -308,7 +308,7 @@ test("Mac call detector: a call in FaceTime or from the iPhone, whose audio runs
   apps = [{ bundleId: "com.apple.avconferenced", name: "com.apple.avconferenced", pid: 610, path: "" }];
   report();
   await tick();
-  assert.deepEqual(seen.at(-1), { name: "FaceTime", appId: "com.apple.avconferenced", path: null, browser: false });
+  assert.deepEqual(seen.at(-1), { name: "FaceTime", appId: "com.apple.avconferenced", path: null, browser: false, holding: ["com.apple.avconferenced"] });
   detector.stop();
 });
 

@@ -148,6 +148,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const placement = (macHelper ? await measureMac(macHelper) : null) ?? measureElectron();
   const offsetY = options.islandOffsetY ?? 0;
   const dashboardHolder: { host: DashboardHost | null } = { host: null };
+  // The CRM record last on screen in a browser and when it was last seen there. A call app in front (Zoom, Teams) hides
+  // the browser, but the record the rep came from is still the call's contact.
+  const CRM_SEEN_FOR_MS = 10 * 60_000;
+  let lastCrm: { urls: string[]; at: number } | null = null;
+  const freshCrm = () => (lastCrm && Date.now() - lastCrm.at < CRM_SEEN_FOR_MS ? lastCrm.urls : []);
 
   // The OS's own services (call audio, call detection, the CRM tab, permissions), built for this OS in one place.
   const os = createPlatform(platform, {
@@ -251,18 +256,16 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
             if (urls.length > 0) dashboard.emit("call:pages", { urls });
           });
         } else if (platform === "darwin") {
-          // On Mac, use the CRM screen reader to get the browser's CRM pages
-          void os.crmScreenReader.front().then((app) => {
-            if (!app) return;
-            return os.crmScreenReader.read(app as string).then((urls) => {
-              // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
-              if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
-              const pageSource = urls && urls.length > 0 ? CallSource.page(urls as string[]) : null;
-              const appId = caller?.appId ?? undefined;
-              const source = CallSource.app(appId) ?? pageSource;
-              dashboard.emit("call:source", source?.json ?? null);
-              if (urls && urls.length > 0) dashboard.emit("call:pages", { urls });
-            });
+          // The browser in front is read now; with a call app in front, the record last seen in a browser is the contact.
+          void os.crmScreenReader.front().then(async (app) => {
+            const read = app && os.crmScreenReader.isBrowser(app) ? await os.crmScreenReader.read(app) : null;
+            const urls = read && read.length > 0 ? read : freshCrm();
+            // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
+            if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
+            const pageSource = urls.length > 0 ? CallSource.page(urls) : null;
+            const source = CallSource.app(caller?.appId ?? undefined) ?? pageSource;
+            dashboard.emit("call:source", source?.json ?? null);
+            if (urls.length > 0) dashboard.emit("call:pages", { urls });
           });
         }
       },
@@ -343,8 +346,19 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const crmScreen = createCrmScreenWatcher({
     front: () => os.crmScreenReader.front(),
     isBrowser: (app) => os.crmScreenReader.isBrowser(app),
-    read: (app) => os.crmScreenReader.read(app),
-    emit: (urls) => dashboard.emit("crm:screen", { urls }),
+    read: async (app) => {
+      const urls = await os.crmScreenReader.read(app);
+      // The same record still there: seen again now.
+      if (urls && lastCrm && urls.length === lastCrm.urls.length && urls.every((url, i) => url === lastCrm?.urls[i])) lastCrm.at = Date.now();
+      return urls;
+    },
+    emit: (urls) => {
+      lastCrm = urls.length > 0 ? { urls: [...urls], at: Date.now() } : null;
+      dashboard.emit("crm:screen", { urls });
+      // A call is on offer and the rep moves to another contact before pressing Record: the offer names the new one.
+      // Once recording, the contact is the one it started with (the dashboard keeps it), so nothing is sent.
+      if (urls.length > 0 && controller.state.mode.kind === "call") dashboard.emit("call:pages", { urls });
+    },
     refused: (app) => os.crmScreenReader.refused?.(app) ?? false,
     onBlocked: (app) => {
       controller.setCrmBlocked(app ? CrmPages.browser(app)?.name ?? "your browser" : null);
@@ -546,6 +560,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     }
   }
 
+  // Put away from the tray: it stays away at rest, and shows itself for a call, a recording or a card.
+  let islandHidden = settings.get("islandHidden") === true;
+  const applyIslandVisibility = (state: IslandState) => {
+    if (island.isDestroyed()) return;
+    const show = !islandHidden || state.mode.kind !== "idle" || state.postCall !== null;
+    if (show && !island.isVisible()) island.showInactive();
+    else if (!show && island.isVisible()) island.hide();
+  };
   const trace = traceOn ? createTranscriptTrace(options.userDataDir) : null;
 
   function pushState(state: IslandState): void {
@@ -556,6 +578,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     fit(targetSize(state), false);
     island.webContents.send("island:state", state);
     tray?.setContextMenu(buildTrayMenu(state));
+    applyIslandVisibility(state);
     dashboard.releaseIfIdle();
   }
 
@@ -613,7 +636,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   heartbeat.unref();
   // Before it is ever shown: a click on the island must never activate Vocify (that brings the dashboard forward).
   log(`island: ${os.island.prepare(island)}`);
-  island.showInactive();
+  if (!islandHidden) island.showInactive();
   // The meeting heads-up lives in the dashboard page: start it, hidden, for a rep whose calendar is connected, and for a
   // signed-in rep not yet asked (the grace below keeps it until it has answered).
   if (startsPageAtLaunch({ calendarWatch: settings.get("calendarWatch"), recorderReady: settings.get("recorderReady") })) {
@@ -800,7 +823,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       told = detected ? "app" : "none";
       // A browser that reaches here (the Mac cannot read which page is the call) is not named: "Google Chrome call"
       // is a guess, and the island says "Call in progress" instead.
-      controller.callChanged(detected ? { name: detected.browser ? null : detected.name, appId: detected.appId, icon: await iconFor(detected.path) } : null);
+      controller.callChanged(detected ? { name: detected.browser ? null : detected.name, appId: detected.appId, holding: detected.holding, icon: await iconFor(detected.path) } : null);
     });
   };
   os.callDetector?.start(report);
@@ -924,14 +947,19 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   function buildTrayMenu(state: IslandState): Menu {
     return Menu.buildFromTemplate(
-      trayItems(state, `Vocify ${app.getVersion()} · ${dashboardHost}`, microphoneLabel(systemPreferences.getMediaAccessStatus("microphone"))).map((item) => {
+      trayItems(state, `Vocify ${app.getVersion()} · ${dashboardHost}`, microphoneLabel(systemPreferences.getMediaAccessStatus("microphone")), islandHidden).map((item) => {
         if (item.id === "separator") return { type: "separator" as const };
         const click = () => {
           if (item.id === "open") dashboard.show();
           else if (item.id === "record") controller.shortcutPressed();
           else if (item.id === "stop") controller.act({ name: "stop" });
           else if (item.id === "update") checkForUpdates?.();
-          else if (item.id === "permissions") void shell.openExternal(microphoneSettingsUrl(platform));
+          else if (item.id === "island") {
+            islandHidden = !islandHidden;
+            settings.set("islandHidden", islandHidden);
+            applyIslandVisibility(controller.state);
+            tray?.setContextMenu(buildTrayMenu(controller.state));
+          } else if (item.id === "permissions") void shell.openExternal(microphoneSettingsUrl(platform));
           else app.quit();
         };
         return { label: item.label, enabled: item.enabled, click };

@@ -23,7 +23,14 @@ export interface SystemAudio {
 }
 
 /** A desktop app holding the microphone, i.e. a call that may be worth recording. */
-export type DetectedCaller = { name: string; appId: string; path: string | null; browser: boolean };
+export type DetectedCaller = {
+  name: string;
+  appId: string;
+  path: string | null;
+  browser: boolean;
+  /** Every call app on the mic, when more than one holds it (the others do not hide a call that is only in one of them). */
+  holding?: string[];
+};
 
 /** Which app started or stopped a call: reports a caller when one starts, null when it ends, and nothing in between. */
 export interface CallDetector {

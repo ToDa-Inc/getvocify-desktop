@@ -144,12 +144,21 @@ export class DashboardHost {
     if (win.isMinimized()) win.restore();
     if (process.platform === "win32") {
       // Windows refuses to give focus to an app the user did not just click: a brief topmost flash gets it through.
-      win.setAlwaysOnTop(true);
+      // Dropped again only once Windows has reordered the windows: set back at once, the raise could be cancelled and
+      // the dashboard stayed behind the other windows.
+      win.setAlwaysOnTop(true, "floating");
       win.show();
-      win.setAlwaysOnTop(false);
-    } else {
-      win.show();
+      win.moveTop();
+      win.focus();
+      setTimeout(() => {
+        if (!win.isDestroyed()) {
+          win.setAlwaysOnTop(false);
+          win.focus();
+        }
+      }, 150).unref();
+      return;
     }
+    win.show();
     win.moveTop();
     win.focus();
     if (process.platform === "darwin") app.focus({ steal: true });

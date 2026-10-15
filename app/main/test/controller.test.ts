@@ -1132,6 +1132,34 @@ test("the call connecting (its call service takes the mic) starts the recording,
   assert.equal(t.controller.state.mode.kind === "stopped" && t.controller.state.mode.title, "Call ended");
 });
 
+test("a detected call does not stop the rep calling the contact on screen, and backing out returns to the call offer", () => {
+  const t = setup();
+  t.controller.applyShellState({ onScreen: { ...ana, callerId: null } });
+  t.controller.callChanged({ name: "Zoom", appId: "us.zoom.xos", holding: ["us.zoom.xos"] });
+  assert.equal(t.mode(), "call");
+  t.controller.act({ name: "openDialConfirm" });
+  assert.equal(t.mode(), "dialConfirm");
+  t.controller.act({ name: "toggle" });
+  assert.equal(t.mode(), "call", "the offer to record Zoom is still there");
+  assert.equal(t.controller.state.expanded, false);
+});
+
+test("another app already on the mic (WhatsApp) is not the call: recording waits for the call service, and only its letting go hangs up", () => {
+  const t = dialOnPhone();
+  t.advance(2);
+  t.controller.callChanged({ name: "WhatsApp", appId: "net.whatsapp.WhatsApp", holding: ["net.whatsapp.WhatsApp"] });
+  assert.equal(t.mode(), "phoneCall", "WhatsApp sitting on the mic is not the call");
+  t.advance(5);
+  t.controller.callChanged({ name: "WhatsApp", appId: "net.whatsapp.WhatsApp", holding: ["com.apple.avconferenced", "net.whatsapp.WhatsApp"] });
+  assert.equal(t.mode(), "starting", "the call service joined the mic: connected");
+  t.controller.show();
+  assert.equal(t.mode(), "recording");
+  // The call ends: FaceTime lets go, WhatsApp still holds the mic.
+  t.controller.callChanged({ name: "WhatsApp", appId: "net.whatsapp.WhatsApp", holding: ["net.whatsapp.WhatsApp"] });
+  t.advance(3.1);
+  assert.equal(t.mode(), "stopped");
+});
+
 test("a call that never connects says so with a way to set it up, and lets the contact go", () => {
   const t = dialOnPhone();
   t.advance(45.1);

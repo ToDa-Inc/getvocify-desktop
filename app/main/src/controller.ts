@@ -47,7 +47,16 @@ const DIGIT = /^[0-9*#]$/;
 const FINISH_GIVE_UP = 30;
 
 /** The app holding the mic, as detection reports it. */
-export type Caller = { name: string | null; appId: string | null; icon?: string | null };
+export type Caller = { name: string | null; appId: string | null; icon?: string | null; /** Every call app on the mic (absent: just `appId`). */ holding?: string[] };
+
+/** The services a call on the rep's iPhone runs its audio in (FaceTime places and answers them on the Mac). */
+const PHONE_CALL_SERVICES = ["com.apple.avconferenced", "com.apple.FaceTime"];
+
+/** Whether `appId` is among the apps on the mic. A platform that does not list them all (Windows) says "yes" for any app. */
+function holds(caller: Caller | null, appId: string | null): boolean {
+  if (caller === null || appId === null) return false;
+  return caller.holding ? caller.holding.includes(appId) : true;
+}
 
 export type Effects = {
   now(): number;
@@ -434,7 +443,8 @@ export class IslandController {
 
   /** The phone beside the mark: who would be called, and from which number. */
   private openDialConfirm(): void {
-    if (this.mode !== "idle" || !this.current.onScreen) return;
+    // Also from a detected call that is not being recorded: an app holding the mic does not stop the rep calling a contact.
+    if ((this.mode !== "idle" && this.mode !== "call") || !this.current.onScreen) return;
     this.transition({ kind: "dialConfirm" }, true);
     this.startCountdown(CALL_LINGER);
   }
@@ -599,7 +609,7 @@ export class IslandController {
         if (this.current.finish?.step === "failed" && expanded) return this.dismissFinish();
         return this.transition(mode, !expanded);
       case "dialConfirm":
-        return this.transition({ kind: "idle" }, false);
+        return this.leaveDialConfirm();
       case "dialing":
         return this.transition(mode, !expanded);
       case "phoneCall":
@@ -614,9 +624,19 @@ export class IslandController {
 
   collapse(): void {
     // The confirm row is only ever open: closing it is going back to rest.
-    if (this.mode === "dialConfirm") this.transition({ kind: "idle" }, false);
+    if (this.mode === "dialConfirm") this.leaveDialConfirm();
     else if (this.current.mode.kind === "phoneCall" && this.current.mode.failed) this.endPhoneCall(false);
     else if (this.current.expanded) this.transition(this.current.mode, false);
+  }
+
+  /** Back from the confirm row: to the call offer it was opened from while that app still holds the mic, else to rest. */
+  private leaveDialConfirm(): void {
+    const caller = this.currentCaller;
+    if (caller && !this.callHandled && !this.isListening && !this.isQuiet(caller)) {
+      this.transition({ kind: "call", caller: { name: caller.name, icon: caller.icon ?? null } }, false);
+    } else {
+      this.transition({ kind: "idle" }, false);
+    }
   }
 
   /** The pointer holds a self-closing card open; leaving lets the line run out again, never snapping it shut. */
@@ -760,7 +780,7 @@ export class IslandController {
     const keepsShape = this.mode === "recording" || (this.mode === "dialing" && this.vocifyCallUp);
     this.transition({ kind: "recording" }, keepsShape && this.current.expanded);
     // The call app let go of the mic while the recording was still starting: nothing else will say so, so the hang-up is watched now.
-    if (this.recordingCaller?.appId && this.currentCaller === null) this.watchForHangUp(null);
+    if (this.recordingCaller?.appId && !holds(this.currentCaller, this.recordingCaller.appId)) this.watchForHangUp(this.currentCaller);
     if (this.soundCall) this.start("callSilence", CALL_SILENCE, () => this.callWentSilent());
   }
 
@@ -954,7 +974,13 @@ export class IslandController {
         return this.watchForHangUp(caller);
       case "phoneCall":
         // The first call app to take the mic while the island waits is the call on the phone.
-        if (caller && this.current.mode.kind === "phoneCall" && !this.current.mode.failed) this.phoneConnected(caller);
+        if (caller && this.current.mode.kind === "phoneCall" && !this.current.mode.failed) {
+          // Where the call is not heard through the PC's sound, the call service taking the mic is the call. Any other app
+          // on the mic (WhatsApp sitting on it, a browser) is not: recording then began when Call was pressed.
+          const service = this.effects.watchCallSound ? caller : (PHONE_CALL_SERVICES.find((id) => holds(caller, id)) ?? null);
+          if (typeof service === "string") this.phoneConnected({ name: "FaceTime", appId: service });
+          else if (service) this.phoneConnected(service);
+        }
         return;
       case "starting":
       case "stopped":
@@ -988,9 +1014,10 @@ export class IslandController {
   private watchForHangUp(caller: Caller | null): void {
     if (!this.recordingCaller?.appId) return;
     this.stopTimer("hangUp");
-    if (caller !== null) return;
+    // Its own app letting go is the hang-up, whichever other apps still hold the mic.
+    if (holds(caller, this.recordingCaller.appId)) return;
     this.start("hangUp", HANG_UP_GRACE, () => {
-      if (this.mode === "recording" && this.currentCaller === null) this.stop(true);
+      if (this.mode === "recording" && !holds(this.currentCaller, this.recordingCaller?.appId ?? null)) this.stop(true);
     });
   }
 

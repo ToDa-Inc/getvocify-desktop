@@ -56,7 +56,7 @@ export function createMacCallDetector(deps: {
   const callersEqual = (a: DetectedCaller | null, b: DetectedCaller | null): boolean => {
     if (a === null && b === null) return true;
     if (a === null || b === null) return false;
-    return a.name === b.name && a.appId === b.appId && a.path === b.path && a.browser === b.browser;
+    return a.name === b.name && a.appId === b.appId && a.path === b.path && a.browser === b.browser && (a.holding ?? []).join() === (b.holding ?? []).join();
   };
 
   return {
@@ -133,7 +133,11 @@ function selectCallApp(
 
   // Prefer named apps to browsers
   const namedApp = callApps.find((app) => !CrmPages.browser(app.owner));
-  return convertToDetectedCaller(namedApp ?? callApps[0]);
+  const caller = convertToDetectedCaller(namedApp ?? callApps[0]);
+  // WhatsApp or a browser sitting on the mic must not hide the call service of an iPhone call, nor keep a call "up" after
+  // its own app let go.
+  const holding = [...new Set(callApps.map((app) => app.owner))].sort();
+  return { ...caller, holding };
 }
 
 /** A helper's own name says "Helper" ("Google Chrome Helper (Renderer)"): the app's name is what the rep knows. */

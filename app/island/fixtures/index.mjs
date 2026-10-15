@@ -31,6 +31,7 @@ const base = {
   keypadOpen: false,
   material: "vibrancy",
   reduceMotion: true,
+  language: "es",
 };
 
 const clock = (seconds, extra = {}) => ({ startedAt: NOW - seconds * 1000, pausedMs: 0, pausedAt: null, ...extra });
@@ -226,6 +227,11 @@ export const fixtures = [
   { name: "recording-open-help-earlier", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu, liveHelp: true, lastHelp: answer }, expect: { width: 460, height: 400 } },
   { name: "recording-open-help-off", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu, liveHelp: false }, expect: { width: 460, height: 400 } },
   { name: "recording-open-type-list", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu, liveHelp: true }, steps: [".type-tag-button"], expect: { width: 460, height: 400 } },
+  // A type Vocify just set or changed: the tag grows into one line for 4 s (here at rest, as with reduced motion).
+  { name: "recording-open-type-propose", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Demo y cierre", note: { id: 1, kind: "propose", label: "Demo y cierre" } }, liveHelp: true }, expect: { width: 460, height: 400 } },
+  { name: "recording-open-type-change", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Demo y cierre", note: { id: 2, kind: "change", label: "Demo y cierre" } }, liveHelp: true }, expect: { width: 460, height: 400 } },
+  { name: "recording-open-type-change-long", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Llamada de seguimiento con decisor", note: { id: 3, kind: "change", label: "Llamada de seguimiento con decisor" } }, liveHelp: true }, expect: { width: 460, height: 400 } },
+  { name: "recording-open-type-propose-en", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, language: "en", typeMenu: { ...typeMenu, title: "Discovery call", note: { id: 4, kind: "propose", label: "Discovery call" } }, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-channel", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: channelTypeMenu, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-channel-list", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: channelTypeMenu, liveHelp: true }, steps: [".type-tag-button"], expect: { width: 460, height: 400 } },
   { name: "recording-open-channel-no-type", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Type", placeholder: true, proposed: false, channel: { title: "Reunión", rows: [{ key: "call", label: "Llamada", checked: false }, { key: "meeting", label: "Reunión", checked: true }] } }, liveHelp: true }, expect: { width: 460, height: 400 } },

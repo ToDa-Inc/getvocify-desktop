@@ -5,9 +5,10 @@ import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, transc
 import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, Copy, ExclamationCircle, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Video, Waveform } from "./icons.tsx";
 import { briefWhen, CallWording, PhoneFormat, type BriefKind, type BriefLine, type CompanyBrief, type DialIslandState, type OnScreenBrief, type OnScreenCall } from "../../core/callIsland.ts";
 import { MeetingWording, type IslandMeeting } from "../../core/meetingHeadsUp.ts";
+import { ProposalWording, type Language } from "../../core/typeProposal.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
-import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuView } from "./types.ts";
+import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuView, type TypeNoteView } from "./types.ts";
 
 type Act = (action: IslandAction) => void;
 
@@ -876,24 +877,14 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
           </>
         )}
         {menu && (
-          <button
-            type="button"
-            className="type-tag-button"
-            title={
-              menu.proposed
-                ? "Vocify chose this from the conversation. Pick another if it's wrong."
-                : menu.channel
-                  ? "The call or meeting, and its type: live help uses its playbook"
-                  : "The call type: live help uses its playbook"
-            }
-            onClick={(event) => {
-              event.stopPropagation();
-              const target = event.currentTarget;
-              setTypeAnchor((open) => (open ? null : anchorOf(target)));
-            }}
-          >
-            <TypeTag menu={menu} />
-          </button>
+          <TypeControl
+            menu={menu}
+            language={state.language}
+            reduceMotion={state.reduceMotion}
+            listOpen={typeAnchor !== null}
+            onOpenList={(target) => setTypeAnchor((open) => (open ? null : anchorOf(target)))}
+            onUndo={() => act({ name: "undoCallType" })}
+          />
         )}
         <div className="grow" />
         {state.turns.length > 0 && <CopyButton text={transcriptText(state.turns)} help="Copy the transcript" />}
@@ -1426,6 +1417,86 @@ function LiveHelpToggle({ on, onClick }: { on: boolean; onClick: () => void }) {
       <Sparkle size={9.5} />
       <span className="switch"><span className="knob" /></span>
     </button>
+  );
+}
+
+/** How long the grown tag takes to fold back, in ms (the CSS `type-note-fold`). */
+const TYPE_NOTE_FOLD_MS = 180;
+
+/** The call type in the controls row. A type Vocify just set or changed grows the tag into a line that says so
+ * (`Propone: Demo · Cambiar`, `Cambia a Demo · Deshacer`) for a few seconds, then it folds back. The list is open
+ * under the tag means the rep is choosing: no line then, the tick already moves. */
+function TypeControl({ menu, language, reduceMotion, listOpen, onOpenList, onUndo }: {
+  menu: TypeMenuView;
+  language: Language;
+  reduceMotion: boolean;
+  listOpen: boolean;
+  onOpenList: (target: HTMLElement) => void;
+  onUndo: () => void;
+}) {
+  const note = listOpen ? null : menu.note ?? null;
+  const [held, setHeld] = useState<TypeNoteView | null>(note);
+  const [folding, setFolding] = useState(false);
+  const noteId = note?.id ?? null;
+  useEffect(() => {
+    if (note) {
+      setHeld(note);
+      setFolding(false);
+      return;
+    }
+    if (reduceMotion) {
+      setHeld(null);
+      setFolding(false);
+      return;
+    }
+    setFolding(true);
+    const timer = setTimeout(() => {
+      setHeld(null);
+      setFolding(false);
+    }, TYPE_NOTE_FOLD_MS);
+    return () => clearTimeout(timer);
+    // The note's content is fixed by its id.
+  }, [noteId, reduceMotion]);
+
+  const title = menu.proposed
+    ? "Vocify chose this from the conversation. Pick another if it's wrong."
+    : menu.channel
+      ? "The call or meeting, and its type: live help uses its playbook"
+      : "The call type: live help uses its playbook";
+  const open = (event: MouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+    onOpenList(event.currentTarget);
+  };
+  if (!held) {
+    return (
+      <button type="button" className="type-tag-button" title={title} onClick={open}>
+        <TypeTag menu={menu} />
+      </button>
+    );
+  }
+  const undoable = held.kind === "change";
+  return (
+    <span className="type-note" role="status" data-folding={folding}>
+      <span key={held.id} className="type-note-pulse" aria-hidden />
+      <span className="type-note-line">
+        <button type="button" className="type-tag-button type-note-lead" title={title} onClick={open}>
+          <span className="type-note-text">{ProposalWording.lead(language, held.kind, held.label)}</span>
+          {!undoable && <span className="type-note-action">{ProposalWording.action(language, held.kind)}</span>}
+        </button>
+        {undoable && (
+          <button
+            type="button"
+            className="type-tag-button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onUndo();
+            }}
+          >
+            <span className="type-note-action">{ProposalWording.action(language, held.kind)}</span>
+          </button>
+        )}
+      </span>
+    </span>
   );
 }
 

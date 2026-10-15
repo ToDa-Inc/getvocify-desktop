@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, screen, shell, systemPreferences, Tray } from "electron";
 import { existsSync } from "node:fs";
 import { CallSource } from "../../core/callSource.ts";
+import { ProposalWording } from "../../core/typeProposal.ts";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { islandSize, offerBriefLines, showsMeeting } from "../../island/src/geometry.ts";
@@ -290,7 +291,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       },
     },
     placement.geometry,
-    { recorderReady: settings.get("recorderReady") === true, material: "opaque", reduceMotion: systemPreferences.getAnimationSettings().prefersReducedMotion },
+    { recorderReady: settings.get("recorderReady") === true, material: "opaque", reduceMotion: systemPreferences.getAnimationSettings().prefersReducedMotion, language: ProposalWording.language(app.getLocale()) },
   );
 
   /* ---------- the dashboard window ---------- */

@@ -3,6 +3,7 @@ import { decodeMeeting } from "../../core/meetingHeadsUp.ts";
 import { LostAudio } from "../../core/islandWording.ts";
 import { StopGrace, type StopStep } from "../../core/stopGrace.ts";
 import { TypeMenu } from "../../core/typeMenu.ts";
+import { TypeProposal, type Language } from "../../core/typeProposal.ts";
 import { WaveSide } from "../../core/waveSide.ts";
 import type { Assist, Geometry, IslandAction, IslandState, Levels, Mode, PostCallData } from "../../island/src/types.ts";
 import { postCallPending } from "../../island/src/types.ts";
@@ -75,7 +76,7 @@ export type Effects = {
   stopCallSound?(): void;
 };
 
-type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout" | "dialFailedHold" | "phoneConnect" | "callSilence";
+type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout" | "dialFailedHold" | "phoneConnect" | "callSilence" | "typeNote";
 
 export class IslandController {
   private effects: Effects;
@@ -83,6 +84,8 @@ export class IslandController {
   /** Everything the dashboard has pushed, key by key (`listening` is read from here). */
   private shell: Record<string, unknown> = {};
   private liveType: LiveType | null = null;
+  /** Which type is Vocify's and which the rep's, and the line that announces a change. */
+  private proposal = new TypeProposal();
   private grace: StopGrace | null = null;
   private cancels = new Map<Timers, () => void>();
   /** Set by a recording or a dismiss; cleared once the mic goes quiet, i.e. the call ended. */
@@ -115,7 +118,7 @@ export class IslandController {
   /** True when a native recorder draws the transcript itself; the dashboard's overlay then must not overwrite it. */
   nativeTranscript = false;
 
-  constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean }) {
+  constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean; language?: Language }) {
     this.effects = effects;
     this.current = {
       mode: { kind: "idle" },
@@ -143,6 +146,7 @@ export class IslandController {
       keypadOpen: false,
       material: options.material,
       reduceMotion: options.reduceMotion,
+      language: options.language ?? "en",
     };
   }
 
@@ -173,6 +177,10 @@ export class IslandController {
 
   private set(patch: Partial<IslandState>): void {
     this.current = { ...this.current, ...patch };
+    // A type Vocify changed while the island was closed waits: its line is on show for a few seconds once it is open.
+    if (this.proposal.note && this.current.expanded && !this.cancels.has("typeNote")) {
+      this.start("typeNote", TypeProposal.noteSeconds, () => this.typeNoteEnded());
+    }
     this.effects.onState(this.current);
   }
 
@@ -237,11 +245,15 @@ export class IslandController {
         finishChanged = true;
       }
     }
+    if ((update.language === "es" || update.language === "en") && update.language !== this.current.language) patch.language = update.language;
     if (typeof update.liveHelp === "boolean" && update.liveHelp !== this.current.liveHelp) patch.liveHelp = update.liveHelp;
     if (has("liveType")) {
       const next = parseLiveType(update.liveType);
       if (JSON.stringify(next) !== JSON.stringify(this.liveType)) {
         this.liveType = next;
+        const note = next ? this.proposal.hear(next.selected, next.proposed) : (this.proposal.reset(), null);
+        // A new note gets its own full time (set() starts it once the island is open); a gone one has nothing to time.
+        if (note || !this.proposal.note) this.stopTimer("typeNote");
         patch.typeMenu = this.typeMenuView();
       }
     }
@@ -322,7 +334,15 @@ export class IslandController {
       : null;
     // "Reunión · Call type" would name the wrong thing: with a channel shown, no type yet is just "Type".
     const title = channel && menu.placeholder ? "Type" : menu.title;
-    return { title, placeholder: menu.placeholder, proposed: menu.placeholder ? false : this.liveType.proposed, rows: menu.rows, channel };
+    const noted = this.proposal.note;
+    const label = noted && this.liveType.options.find((option) => option.key === noted.key)?.label;
+    const note = noted && label ? { id: noted.id, kind: noted.kind, label } : null;
+    return { title, placeholder: menu.placeholder, proposed: menu.placeholder ? false : this.liveType.proposed, rows: menu.rows, channel, note };
+  }
+
+  private typeNoteEnded(): void {
+    this.proposal.expire();
+    if (this.liveType) this.set({ typeMenu: this.typeMenuView() });
   }
 
   private applyLevels(raw: unknown): void {
@@ -366,6 +386,8 @@ export class IslandController {
         return this.dismissFinish();
       case "pickCallType":
         return this.pickCallType(action.key);
+      case "undoCallType":
+        return this.undoCallType();
       case "pickChannel":
         return this.pickChannel(action.kind);
       case "toggleLiveHelp":
@@ -824,11 +846,18 @@ export class IslandController {
 
   /** The type the rep chose while recording; null hands it back to Vocify's proposal. */
   private pickCallType(key: string | null): void {
-    if (key !== null && this.liveType) {
-      this.liveType = { ...this.liveType, selected: key, proposed: false };
-      this.set({ typeMenu: this.typeMenuView() });
-    }
+    this.proposal.pick(key);
+    this.stopTimer("typeNote");
+    if (key !== null && this.liveType) this.liveType = { ...this.liveType, selected: key, proposed: false };
+    if (this.liveType) this.set({ typeMenu: this.typeMenuView() });
     this.effects.emit("call:type", { key });
+  }
+
+  /** Undo on a change Vocify made: the type before, sent as the rep's own pick, so Vocify proposes no more. */
+  private undoCallType(): void {
+    const key = this.proposal.undo();
+    if (key === null) return;
+    this.pickCallType(key);
   }
 
   /** Types by channel: the channel the rep switched to. Shown at once; the dashboard sends back the

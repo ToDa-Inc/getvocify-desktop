@@ -1,6 +1,7 @@
 /** Everything the island draws. Main computes it (call logic, transcript, menus); the island only renders it. */
 import type { DialIslandState, OnScreenCall } from "../../core/callIsland.ts";
 import type { IslandMeeting } from "../../core/meetingHeadsUp.ts";
+import type { Language } from "../../core/typeProposal.ts";
 
 export type { DialIslandState, OnScreenCall };
 
@@ -38,8 +39,10 @@ export type Assist = {
 export type TypeMenuRow = { key: string; label: string; checked: boolean };
 /** Types by channel: the recording's channel and the two it can be; null when it is not offered. */
 export type ChannelMenuView = { title: string; rows: { key: "call" | "meeting"; label: string; checked: boolean }[] };
-/** `proposed`: the type is Vocify's, from the conversation; only the hover text says so. */
-export type TypeMenuView = { title: string; placeholder: boolean; proposed: boolean; rows: TypeMenuRow[]; channel?: ChannelMenuView | null };
+/** A type Vocify just set or changed, announced in the tag for a few seconds: `change` can be undone. */
+export type TypeNoteView = { id: number; kind: "propose" | "change"; label: string };
+/** `proposed`: the type is Vocify's, from the conversation. `note`: it was just set or changed and the tag says so. */
+export type TypeMenuView = { title: string; placeholder: boolean; proposed: boolean; rows: TypeMenuRow[]; channel?: ChannelMenuView | null; note?: TypeNoteView | null };
 
 /** Where the recording that just ended is, as the dashboard reports it. */
 export type Finish = { step: "stopping" | "uploading" | "failed" | "skipped"; message: string | null };
@@ -156,6 +159,8 @@ export type IslandState = {
   /** "vibrancy": the window blurs what is behind it (macOS). "opaque": no blur available, so the glass is denser. */
   material: "vibrancy" | "opaque";
   reduceMotion: boolean;
+  /** The rep's language, for the words the island writes itself (the rest comes from the dashboard). */
+  language: Language;
 };
 
 export type IslandAction =
@@ -171,6 +176,8 @@ export type IslandAction =
   /** Close the card that says the ended recording failed. */
   | { name: "dismissFinish" }
   | { name: "pickCallType"; key: string | null }
+  /** Undo on "Cambia a ...": back to the type before, now the rep's. */
+  | { name: "undoCallType" }
   | { name: "pickChannel"; kind: "call" | "meeting" }
   | { name: "toggleLiveHelp" }
   | { name: "pointer"; inside: boolean }

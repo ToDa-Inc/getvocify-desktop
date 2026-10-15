@@ -486,6 +486,86 @@ test("tapping Vocify's ticked proposal confirms it as the rep's own", () => {
   assert.deepEqual(t.last("call:type"), { key: "discovery" });
 });
 
+const NOTE_OPTIONS = [{ key: "discovery", label: "Discovery" }, { key: "closing", label: "Demo y cierre" }, { key: "proposal", label: "Propuesta" }];
+/** A recording with the island open: the type's line is only timed while it can be seen. */
+function openRecording() {
+  const t = recording();
+  t.controller.act({ name: "toggle" });
+  return t;
+}
+const typeFrom = (selected: string | null, proposed: boolean) => ({ liveType: { selected, proposed, options: NOTE_OPTIONS } });
+
+test("a type Vocify sets grows the tag into a proposal for 4 s, then folds back", () => {
+  const t = openRecording();
+  t.controller.applyShellState(typeFrom("closing", true));
+  assert.deepEqual(t.controller.state.typeMenu?.note && [t.controller.state.typeMenu.note.kind, t.controller.state.typeMenu.note.label], ["propose", "Demo y cierre"]);
+  t.advance(3.9);
+  assert.ok(t.controller.state.typeMenu?.note);
+  t.advance(0.2);
+  assert.equal(t.controller.state.typeMenu?.note, null);
+  assert.equal(t.controller.state.typeMenu?.title, "Demo y cierre");
+});
+
+test("a type Vocify sets while the island is closed is announced once it is opened, for 4 s", () => {
+  const t = recording();
+  assert.equal(t.controller.state.expanded, false);
+  t.controller.applyShellState(typeFrom("closing", true));
+  t.advance(30);
+  assert.equal(t.controller.state.typeMenu?.note?.kind, "propose");
+  t.controller.act({ name: "toggle" });
+  assert.equal(t.controller.state.expanded, true);
+  t.advance(3.9);
+  assert.ok(t.controller.state.typeMenu?.note);
+  t.advance(0.2);
+  assert.equal(t.controller.state.typeMenu?.note, null);
+});
+
+test("a later change reads as a change, and Undo restores the type before as the rep's own, for good", () => {
+  const t = openRecording();
+  t.controller.applyShellState(typeFrom("discovery", true));
+  t.advance(5);
+  t.controller.applyShellState(typeFrom("closing", true));
+  assert.equal(t.controller.state.typeMenu?.note?.kind, "change");
+  t.controller.act({ name: "undoCallType" });
+  assert.equal(t.controller.state.typeMenu?.title, "Discovery");
+  assert.equal(t.controller.state.typeMenu?.note, null);
+  assert.equal(t.controller.state.typeMenu?.proposed, false);
+  assert.deepEqual(t.last("call:type"), { key: "discovery" });
+  t.controller.applyShellState(typeFrom("proposal", true));
+  assert.equal(t.controller.state.typeMenu?.note, null);
+});
+
+test("Undo does nothing on a first proposal", () => {
+  const t = openRecording();
+  t.controller.applyShellState(typeFrom("discovery", true));
+  t.controller.act({ name: "undoCallType" });
+  assert.equal(t.last("call:type"), undefined);
+  assert.equal(t.controller.state.typeMenu?.note?.kind, "propose");
+});
+
+test("a pick, even of the type already shown, ends the note and nothing is announced after it", () => {
+  const t = openRecording();
+  t.controller.applyShellState(typeFrom("discovery", true));
+  t.controller.act({ name: "pickCallType", key: "discovery" });
+  assert.equal(t.controller.state.typeMenu?.note, null);
+  t.controller.applyShellState(typeFrom("closing", true));
+  assert.equal(t.controller.state.typeMenu?.note, null);
+  t.advance(10);
+  assert.equal(t.controller.state.typeMenu?.note, null);
+});
+
+test("a new call announces again, and the language comes from the computer unless the dashboard says", () => {
+  const t = openRecording();
+  assert.equal(t.controller.state.language, "en");
+  t.controller.applyShellState({ language: "es" });
+  assert.equal(t.controller.state.language, "es");
+  t.controller.applyShellState(typeFrom("discovery", true));
+  t.controller.act({ name: "pickCallType", key: "closing" });
+  t.controller.applyShellState({ liveType: null });
+  t.controller.applyShellState(typeFrom("discovery", true));
+  assert.equal(t.controller.state.typeMenu?.note?.kind, "propose");
+});
+
 const CHANNEL_TYPES = {
   selected: "cold",
   proposed: true,

@@ -1261,3 +1261,25 @@ test("a browser call that ends while the rep records stops the recording after t
   t.advance(2);
   assert.equal(t.mode(), "stopped", "the mic released for the grace period ends the recording, as for Zoom");
 });
+
+test("a recording that is not a detected call (a Vocify call) does not hide the next call app", () => {
+  const t = setup();
+  t.controller.applyShellState({ dial: dialState("active", { answeredAt: 1_700_000_000_000 }) });
+  t.controller.show();
+  t.controller.applyShellState({ dial: null });
+  t.controller.hide(true);
+  t.advance(31);
+  t.controller.callChanged(zoom);
+  assert.equal(t.mode(), "call");
+});
+
+test("a call app that takes the mic while the island waits for a memo is offered when the wait ends", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  t.controller.callChanged(null);
+  t.controller.callChanged(zoom);
+  assert.equal(t.mode(), "finishing");
+  t.advance(31);
+  assert.equal(t.mode(), "call");
+});

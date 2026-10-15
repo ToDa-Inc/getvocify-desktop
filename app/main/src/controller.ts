@@ -725,7 +725,9 @@ export class IslandController {
   /** The dashboard started recording (`overlay:show`), from the island or from its own button; an answered Vocify call
    * counts from the answer itself, so the transcript view is there before the live session has started. */
   show(): void {
-    this.callHandled = true;
+    // Only a call app already holding the mic is the one being handled (until it lets go). A recording that is not a detected
+    // call (a Vocify call, a meeting) must not hide the next call app from the island.
+    this.callHandled = this.currentCaller !== null;
     this.stopTimer("startTimeout");
     // The dashboard ends a Vocify call; another app letting go of the mic says nothing about it.
     if (this.vocifyCallUp) this.recordingCaller = null;
@@ -773,7 +775,10 @@ export class IslandController {
     this.set({ finish: null, countdown: null });
     this.transition({ kind: "finishing" }, false);
     this.start("finishTimeout", FINISH_GIVE_UP, () => {
-      if (this.mode === "finishing") this.rest();
+      if (this.mode !== "finishing") return;
+      this.rest();
+      // A call app that took the mic while the island waited for the memo was ignored then, and nothing reports it again.
+      if (this.mode === "idle" && this.currentCaller && !this.callHandled && !this.isListening && !this.isQuiet(this.currentCaller)) this.callChanged(this.currentCaller);
     });
   }
 

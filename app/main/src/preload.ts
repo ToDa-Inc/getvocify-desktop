@@ -1,11 +1,15 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { IslandAction, IslandState, Levels } from "../../island/src/types.ts";
 
+// Answers the app's health check from the page's own thread: a page that is hung cannot (see `reloadIsland`).
+ipcRenderer.on("island:ping", () => ipcRenderer.send("island:pong"));
+
 contextBridge.exposeInMainWorld("vocifyIsland", {
   platform: process.platform,
   onState(callback: (state: IslandState) => void) {
     const handler = (_event: unknown, state: IslandState) => callback(state);
     ipcRenderer.on("island:state", handler);
+    ipcRenderer.send("island:ready");
     return () => ipcRenderer.removeListener("island:state", handler);
   },
   onLevels(callback: (levels: Levels) => void) {

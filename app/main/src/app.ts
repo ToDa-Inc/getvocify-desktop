@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, screen, shell, systemPreferences, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, screen, shell, systemPreferences, Tray } from "electron";
 import { existsSync } from "node:fs";
 import { CallSource } from "../../core/callSource.ts";
 import { basename, dirname, join } from "node:path";
@@ -131,6 +131,10 @@ const trustedHostsFor = (dashboardUrl: string) => {
 
 export async function startApp(options: AppOptions): Promise<AppHandle> {
   const log = createLogger(join(options.userDataDir, "logs", "vocify.log"));
+  // An uncaught error in the main process would otherwise stop at Electron's error box, which holds the app (and so the
+  // island) until it is answered, and leaves nothing in the log.
+  process.on("uncaughtException", (error) => log(`uncaught exception: ${error.stack ?? String(error)}`));
+  process.on("unhandledRejection", (reason) => log(`unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`));
   const settings = new JsonSettings(join(options.userDataDir, "settings.json"));
   // An update restarts the app by itself: it must not throw the dashboard window up as if the rep had just launched it.
   const startedAfterUpdate = settings.get("restartedForUpdate") === true;
@@ -518,6 +522,56 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   await island.loadFile(join(here, "../../island/dist/index.html"));
   island.webContents.send("island:state", controller.state);
+  /**
+   * An island page that hangs or dies (the app having run for days, the PC woken from sleep) would sit there taking no
+   * click, and only Task Manager could end it. It is logged, and the page is loaded again with the state it missed.
+   */
+  const reloadIsland = (why: string) => {
+    if (island.isDestroyed()) return;
+    log(`island: ${why}, reloading the page`);
+    island.webContents.reloadIgnoringCache();
+  };
+  // A reloaded page has no state until it is given one, and nothing else would send it while the state stays as it is: the
+  // page asks as soon as it listens (a state sent when the load finishes can arrive before that).
+  ipcMain.on("island:ready", (event) => {
+    if (!island.isDestroyed() && event.sender === island.webContents) island.webContents.send("island:state", controller.state);
+  });
+  island.webContents.on("render-process-gone", (_event, details) => reloadIsland(`its page process is gone (${details.reason})`));
+  let hung: ReturnType<typeof setTimeout> | null = null;
+  island.webContents.on("unresponsive", () => {
+    log("island: its page stopped responding");
+    // Given a few seconds to come back by itself; then it is ended, which reloads it through the event above.
+    hung = setTimeout(() => {
+      if (!island.isDestroyed()) island.webContents.forcefullyCrashRenderer();
+    }, 5000);
+  });
+  island.webContents.on("responsive", () => {
+    if (hung) clearTimeout(hung);
+    hung = null;
+    log("island: its page responds again");
+  });
+  island.webContents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {
+    if (isMainFrame) log(`island: the page failed to load (${code} ${description})`);
+  });
+  // A page that is hung may raise no event at all: the preload answers a ping on the page's own thread, so a page that
+  // stops answering is reloaded. (The first answer comes with the first load; a reload starts the count again.)
+  let lastPong = Date.now();
+  island.webContents.on("did-finish-load", () => (lastPong = Date.now()));
+  ipcMain.on("island:pong", (event) => {
+    if (!island.isDestroyed() && event.sender === island.webContents) lastPong = Date.now();
+  });
+  const heartbeat = setInterval(() => {
+    if (island.isDestroyed()) return;
+    if (Date.now() - lastPong > 30_000) {
+      lastPong = Date.now();
+      // A hung page cannot run a reload: its process is ended, and the event above loads the page again.
+      log("island: its page did not answer for 30 seconds, ending it");
+      island.webContents.forcefullyCrashRenderer();
+      return;
+    }
+    island.webContents.send("island:ping");
+  }, 10_000);
+  heartbeat.unref();
   // Before it is ever shown: a click on the island must never activate Vocify (that brings the dashboard forward).
   log(`island: ${os.island.prepare(island)}`);
   island.showInactive();
@@ -725,6 +779,20 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   screen.on("display-metrics-changed", reposition);
   screen.on("display-added", reposition);
   screen.on("display-removed", reposition);
+  // After sleep or a locked screen Windows may have moved or resized the window, or dropped its place above the taskbar: put
+  // the island back where it belongs, now and once the displays are surely up.
+  const reassert = (why: string) => {
+    log(`power: ${why}, placing the island again`);
+    const again = () => {
+      if (island.isDestroyed()) return;
+      island.setAlwaysOnTop(true, "screen-saver");
+      reposition();
+    };
+    again();
+    setTimeout(again, 2000).unref();
+  };
+  powerMonitor.on("resume", () => reassert("resumed from sleep"));
+  powerMonitor.on("unlock-screen", () => reassert("screen unlocked"));
 
   app.on("before-quit", (event) => {
     if (!controller.isListening) {

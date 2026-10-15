@@ -212,6 +212,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
         if (!island.isDestroyed()) island.webContents.send("island:levels", levels);
       },
       saveRecorderReady: (ready) => settings.set("recorderReady", ready),
+      log: (line) => log(line),
       openExternal: (url) => void shell.openExternal(url),
       ...(callSound
         ? {

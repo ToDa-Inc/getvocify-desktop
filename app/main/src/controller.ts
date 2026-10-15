@@ -61,6 +61,8 @@ export type Effects = {
   onLevels(levels: Levels): void;
   /** Remembered across launches so the island is not "signed out" while the dashboard is still loading. */
   saveRecorderReady(ready: boolean): void;
+  /** One line for the log (optional): why a call was or was not offered. */
+  log?(line: string): void;
   /** Recording without a detected call: name the app holding the mic, if any (never asks for browser access). */
   lookUpCallSource?(caller: Caller | null): void;
   /** A call was detected: read the CRM page on screen and the call source. */
@@ -902,7 +904,11 @@ export class IslandController {
   callChanged(caller: Caller | null): void {
     this.currentCaller = caller;
     // Our own call holds the mic: never offer to record it, or anything else, on top of it.
-    if (this.vocifyCallUp) return;
+    if (this.vocifyCallUp) {
+      if (caller) this.effects.log?.("call offer: not offered (a Vocify call is up)");
+      return;
+    }
+    if (caller !== null && this.mode !== "idle" && this.mode !== "call" && this.mode !== "postCall") this.effects.log?.(`call offer: not offered (island is ${this.mode})`);
     if (caller === null) {
       this.callHandled = false;
       // The app let go of the mic: that call is over, so the same app holding it again is a new call, not the old one's tail.
@@ -923,6 +929,7 @@ export class IslandController {
         return;
       default: {
         const detected = caller !== null && !this.callHandled && !this.isListening && !this.isQuiet(caller);
+        if (caller) this.effects.log?.(`call offer: ${detected ? "offered" : `not offered (${this.callHandled ? "already handled" : this.isListening ? "already recording" : "just recorded"})`}`);
         if (detected && caller) {
           const same = this.current.mode.kind === "call" && this.shownCaller?.appId === caller.appId && this.shownCaller?.name === caller.name;
           if (same) return;

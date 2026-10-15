@@ -128,9 +128,10 @@ app.whenReady().then(async () => {
     check(await until(() => !dashboard.exists, 6000, "dashboard released after the heads-up is off"), "and is given back when the heads-up is off");
 
     // --- a detected call, by hand: the helper's job
-    // A recording marks the call as handled until the mic goes quiet, so the first call app to let go ends it (the Swift rule).
+    // A recording marks a call app holding the mic as handled until it lets go. The recording above was not of a call app, so one
+    // taking the mic now is a new call and is offered (a dialer call or a meeting must not hide the next call from the island).
     handle.detectCall({ name: "Zoom", appId: "zoom.exe" });
-    check(mode() === "idle", "the call just recorded is not offered again while its app still holds the mic");
+    check(mode() === "call", "a call app taking the mic after a recording that was not of it is offered");
     handle.detectCall(null);
     handle.detectCall({ name: "Zoom", appId: "zoom.exe" });
     check(mode() === "call" && controller.state.expanded, "a call app taking the mic drops the island down to offer Record");

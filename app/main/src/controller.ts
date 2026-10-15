@@ -778,7 +778,7 @@ export class IslandController {
       if (this.mode !== "finishing") return;
       this.rest();
       // A call app that took the mic while the island waited for the memo was ignored then, and nothing reports it again.
-      if (this.mode === "idle" && this.currentCaller && !this.callHandled && !this.isListening && !this.isQuiet(this.currentCaller)) this.callChanged(this.currentCaller);
+      if ((this.mode as string) === "idle" && this.currentCaller && !this.callHandled && !this.isListening && !this.isQuiet(this.currentCaller)) this.callChanged(this.currentCaller);
     });
   }
 

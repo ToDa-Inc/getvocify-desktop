@@ -13,6 +13,9 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 html, body, #root { height: 100%; background: transparent; overflow: hidden; }
+/* The island is centred by flex, not by auto margins: when it is briefly wider than its window (the window follows a
+   frame later) it grows and is clipped equally on both sides, instead of sticking to the left edge and jumping. */
+#root { display: flex; justify-content: center; align-items: flex-start; }
 
 body {
   font-family: -apple-system, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
@@ -27,7 +30,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: def
 
 .island {
   position: relative;
-  margin: 0 auto;
+  flex: none;
   overflow: hidden;
   border-radius: 0 0 var(--radius) var(--radius);
   transition: width 340ms var(--ease), height 340ms var(--ease), border-radius 340ms var(--ease);

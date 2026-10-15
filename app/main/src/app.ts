@@ -531,8 +531,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     trace?.(state);
     followSpeakers(state);
     if (island.isDestroyed()) return;
-    island.webContents.send("island:state", state);
+    // The window first, so it is already big enough when the page starts drawing the bigger island.
     fit(targetSize(state), false);
+    island.webContents.send("island:state", state);
     tray?.setContextMenu(buildTrayMenu(state));
     dashboard.releaseIfIdle();
   }
@@ -810,6 +811,22 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   };
   powerMonitor.on("resume", () => reassert("resumed from sleep"));
   powerMonitor.on("unlock-screen", () => reassert("screen unlocked"));
+  // An island that has been up for days (or whose graphics process was restarted, or that woke from sleep) can end up drawing
+  // nothing while its page still answers. Its page is loaded again (it asks for the state as it starts), only while it is at
+  // rest so nothing the rep is doing is interrupted.
+  const atRest = () => controller.state.mode.kind === "idle" && !controller.state.expanded;
+  const redraw = (why: string) => {
+    if (island.isDestroyed()) return;
+    if (atRest()) return reloadIsland(why);
+    setTimeout(() => atRest() && reloadIsland(`${why}, once at rest`), 60_000).unref();
+  };
+  powerMonitor.on("resume", () => setTimeout(() => redraw("woke from sleep"), 3000).unref());
+  powerMonitor.on("unlock-screen", () => setTimeout(() => redraw("screen unlocked"), 3000).unref());
+  app.on("child-process-gone", (_event, details) => {
+    if (details.type === "GPU") redraw(`the graphics process is gone (${details.reason})`);
+  });
+  const periodicRedraw = setInterval(() => redraw("up for hours"), 4 * 60 * 60 * 1000);
+  periodicRedraw.unref();
 
   app.on("before-quit", (event) => {
     if (!controller.isListening) {

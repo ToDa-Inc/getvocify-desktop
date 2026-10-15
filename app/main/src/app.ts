@@ -468,6 +468,24 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
    * The window first covers both the old and the new shape, the shape animates inside it, then the window fits the new
    * shape: the frame and the page never animate against each other (the Swift island's approach).
    */
+  /**
+   * Once the island has settled it must sit where it belongs: the window centred on the notch or screen middle, and the island
+   * drawn in the middle of its window. When it does not, the log says which of the two is off (and the window is placed again),
+   * because a island that drifts sideways cannot be told apart from the outside.
+   */
+  const checkCentred = async (target: { width: number; height: number }) => {
+    if (island.isDestroyed()) return;
+    const want = frameFor(target.width, target.height);
+    const got = island.getBounds();
+    const page = await island.webContents
+      .executeJavaScript(`(() => { const r = document.querySelector('.island')?.getBoundingClientRect(); return r ? { left: Math.round(r.left), right: Math.round(innerWidth - r.right), width: Math.round(r.width), window: innerWidth } : null; })()`)
+      .catch(() => null);
+    const windowOff = platform !== "win32" && Math.abs(got.x + got.width / 2 - (want.x + want.width / 2)) > 2;
+    const pageOff = page !== null && Math.abs(page.left - page.right) > 2;
+    if (!windowOff && !pageOff) return;
+    log(`island: off-centre after settling: window ${got.x},${got.y} ${got.width}x${got.height} (wanted ${want.x},${want.y} ${want.width}x${want.height}), page island ${page ? `${page.width}px with ${page.left}px left and ${page.right}px right in a ${page.window}px window` : "not read"}; placing it again`);
+    place(want);
+  };
   let fitTimer: ReturnType<typeof setTimeout> | null = null;
   let lastKey = "";
   const fit = (target: { width: number; height: number }, force: boolean) => {
@@ -483,6 +501,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (fitTimer) clearTimeout(fitTimer);
     fitTimer = setTimeout(() => {
       if (!island.isDestroyed()) place(frameFor(target.width, target.height));
+      setTimeout(() => void checkCentred(target), 600);
     }, 420);
   };
 

@@ -328,6 +328,40 @@ test("skipping a call hides the offer and it is not offered again until the mic 
   assert.equal(t.mode(), "call");
 });
 
+test("a call recorded and hung up is over: the same app holding the mic again soon after is offered as a new call", () => {
+  const t = setup();
+  t.controller.callChanged(zoom);
+  t.controller.act({ name: "record" });
+  t.controller.show();
+  t.controller.callChanged(null);
+  t.advance(3.1);
+  assert.equal(t.mode(), "stopped");
+  t.controller.hide();
+  t.advance(6);
+  t.controller.callChanged({ ...zoom });
+  assert.equal(t.mode(), "call");
+});
+
+test("a call stopped by hand while the app still holds the mic is not offered again at once", () => {
+  const t = setup();
+  t.controller.callChanged(zoom);
+  t.controller.act({ name: "record" });
+  t.controller.show();
+  t.controller.hide();
+  t.controller.callChanged({ ...zoom });
+  assert.equal(t.mode(), "idle");
+});
+
+test("the call app letting go of the mic while the recording is still starting still ends it", () => {
+  const t = setup();
+  t.controller.callChanged(zoom);
+  t.controller.act({ name: "record" });
+  t.controller.callChanged(null);
+  t.controller.show();
+  t.advance(3.1);
+  assert.equal(t.mode(), "stopped");
+});
+
 test("no offer while the dashboard is already recording", () => {
   const t = setup();
   t.controller.applyShellState({ listening: true });

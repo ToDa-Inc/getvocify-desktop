@@ -15,6 +15,8 @@ import { parseAssist, parseClock, parseContact, parseFinish, parseLiveType, pars
  */
 
 const AFTER_CALL_QUIET = 120;
+/** Once the app has let go of the mic the call is over: the next time it holds the mic is a new call, after a short flap. */
+const QUIET_AFTER_RELEASE = 5;
 const IDLE_LINGER = 5;
 /** A meeting's heads-up stays open this long (the pointer on it holds it). */
 const MEETING_LINGER = 60;
@@ -726,10 +728,13 @@ export class IslandController {
     // The dashboard ends a Vocify call; another app letting go of the mic says nothing about it.
     if (this.vocifyCallUp) this.recordingCaller = null;
     else if (this.current.mode.kind === "call") this.recordingCaller = this.shownCaller;
-    else if (this.mode !== "recording") this.recordingCaller = this.currentCaller;
+    // Started from the island's offer: the call it named is the one to follow, even if it already let go of the mic.
+    else if (this.mode !== "recording" && this.mode !== "starting") this.recordingCaller = this.currentCaller;
     // The call the rep placed from the island stays as open (or closed) as they had it when it is answered.
     const keepsShape = this.mode === "recording" || (this.mode === "dialing" && this.vocifyCallUp);
     this.transition({ kind: "recording" }, keepsShape && this.current.expanded);
+    // The call app let go of the mic while the recording was still starting: nothing else will say so, so the hang-up is watched now.
+    if (this.recordingCaller?.appId && this.currentCaller === null) this.watchForHangUp(null);
     if (this.soundCall) this.start("callSilence", CALL_SILENCE, () => this.callWentSilent());
   }
 
@@ -744,7 +749,9 @@ export class IslandController {
     this.stopTimer("startTimeout");
     this.stopTimer("hangUp");
     if ((this.mode === "recording" || this.mode === "stopped") && this.recordingCaller?.appId) {
-      this.quiet = { appId: this.recordingCaller.appId, until: this.effects.now() + AFTER_CALL_QUIET * 1000 };
+      // The mic already let go (a hang-up): that call is over. Held still (the rep stopped it by hand): dialers grab it again.
+      const seconds = this.currentCaller === null ? QUIET_AFTER_RELEASE : AFTER_CALL_QUIET;
+      this.quiet = { appId: this.recordingCaller.appId, until: this.effects.now() + seconds * 1000 };
     }
     this.recordingCaller = null;
     // The call on the phone is over: stop following its sound and audio session.
@@ -898,6 +905,8 @@ export class IslandController {
     if (this.vocifyCallUp) return;
     if (caller === null) {
       this.callHandled = false;
+      // The app let go of the mic: that call is over, so the same app holding it again is a new call, not the old one's tail.
+      if (this.quiet) this.quiet.until = Math.min(this.quiet.until, this.effects.now() + QUIET_AFTER_RELEASE * 1000);
       if (this.mode !== "recording" && this.mode !== "starting" && this.mode !== "stopped") this.effects.emit("call:ended", {});
     }
     switch (this.mode) {

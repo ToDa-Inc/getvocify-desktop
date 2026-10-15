@@ -213,6 +213,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       },
       emit: (channel, payload) => dashboardHolder.host?.emit(channel, payload),
       showMainWindow: () => dashboardHolder.host?.show(),
+      quitApp: () => app.quit(),
       onState: (state) => pushState(state),
       onLevels: (levels) => {
         if (!island.isDestroyed()) island.webContents.send("island:levels", levels);

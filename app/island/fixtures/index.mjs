@@ -209,7 +209,8 @@ export const fixtures = [
   { name: "call-open-app-only", state: { mode: { kind: "call", caller: { name: "Zoom" } }, expanded: true }, expect: { width: 380, height: 88 } },
   { name: "call-open-signed-out", state: { mode: { kind: "call", caller: { name: "Zoom" } }, expanded: true, recorderReady: false }, expect: { width: 380, height: 88 } },
   // starting
-  { name: "starting", state: { mode: { kind: "starting" } }, expect: { width: 349, height: 32 } },
+  { name: "starting", state: { mode: { kind: "starting" } }, expect: { width: 277, height: 32 } },
+  { name: "starting-no-notch", state: { mode: { kind: "starting" }, geometry: BAR_ONLY }, expect: { width: 104, height: 30 } },
   // recording closed
   { name: "recording-closed", state: { mode: { kind: "recording" }, clock: clock(754), levels: { you: 0.5, them: 0, side: "you", at: NOW } }, expect: { width: 349, height: 32 } },
   { name: "recording-closed-hour", state: { mode: { kind: "recording" }, clock: clock(3725), levels: { you: 0, them: 0.6, side: "them", at: NOW } }, expect: { width: 349, height: 32 } },

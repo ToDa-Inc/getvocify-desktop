@@ -94,13 +94,22 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
           title={helpText({ kind, open, stage: state.postCall?.stage ?? null, crmName: state.postCall ? postCallCrmName(state.postCall) : null, pending: state.postCall ? postCallPending(state.postCall) : 0, finishLine: finishLine(state.finish), dialLine: state.mode.kind === "phoneCall" ? CallWording.onPhone(state.mode.name, state.mode.failed).title : dialLine(state.dial) })}
           onClick={() => act({ name: "toggle" })}
         >
-          <div className="ear ear-left" style={{ width: ear, paddingLeft: !open && kind !== "recording" ? 12 : 14 }}>
-            <LeftEar state={state} open={open} lifted={lifted} />
-          </div>
-          <div style={{ minWidth: state.geometry.notchWidth, flex: 1 }} />
-          <div className="ear ear-right" style={{ width: ear, paddingRight: !open && isCall ? 10 : 12 }}>
-            <RightEar state={state} open={open} lifted={lifted} act={act} />
-          </div>
+          {kind === "starting" && state.geometry.notchWidth === 0 ? (
+            // No notch to sit beside: the one spinner is the middle of the pill, not stuck to one end of it.
+            <div className="ear" style={{ flex: 1, justifyContent: "center" }} title="Starting the recording" aria-label="Starting the recording">
+              <Spinner />
+            </div>
+          ) : (
+            <>
+              <div className="ear ear-left" style={{ width: ear, paddingLeft: !open && kind !== "recording" ? 12 : 14 }}>
+                <LeftEar state={state} open={open} lifted={lifted} />
+              </div>
+              <div style={{ minWidth: state.geometry.notchWidth, flex: 1 }} />
+              <div className="ear ear-right" style={{ width: ear, paddingRight: !open && isCall ? 10 : 12 }}>
+                <RightEar state={state} open={open} lifted={lifted} act={act} />
+              </div>
+            </>
+          )}
         </div>
         {open && <Body state={state} act={act} onPopupExtent={setPopupBottom} />}
       </div>
@@ -238,7 +247,7 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
     case "finishing":
       return open ? <OpenArrow open /> : null;
     case "starting":
-      return <span className="starting">Starting</span>;
+      return null;
     case "idle":
       return state.onScreen && !open ? (
         <CallGlyph onScreen={state.onScreen} onClick={() => act({ name: "openDialConfirm" })} />

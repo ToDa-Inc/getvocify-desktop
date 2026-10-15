@@ -24,6 +24,7 @@ export function earWidth(kind: Kind, open: boolean): number {
       return IDLE_EAR;
     case "call":
     case "postCall":
+    case "starting":
     case "finishing":
     case "dialConfirm":
     case "dialing":

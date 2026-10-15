@@ -36,7 +36,7 @@ function pickedValues(change: PostCallChange, edited: string | undefined): strin
 
 /** What the value reads as: the picked options' labels, or the text (as typed, when the rep edited it). */
 function shownValue(change: PostCallChange, edited: string | undefined): string {
-  if (edited === undefined) return change.to;
+  if (edited === undefined) return change.pending ? "Choose…" : change.to;
   if (change.options.length === 0) return edited;
   const labels = pickedValues(change, edited).map((v) => change.options.find((o) => o.value === v)?.label ?? v);
   return labels.length ? labels.join(", ") : "—";
@@ -68,14 +68,17 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
 
   const groups = groupedChanges(postCall);
   const nothingSure = groups.length === 0;
-  const noteEditable = postCall.stage === "ready" && postCall.canApprove && !nothingSure;
+  const noteEditable = postCall.stage === "ready" && postCall.canApprove;
   const noteText = noteDraft ?? postCall.summary ?? "";
   const tabs: Tab[] = ["crm"];
   if (postCall.email) tabs.push("email");
   if (postCall.notes || postCall.summary !== null || noteEditable) tabs.push("notes");
   const tab = tabs.includes(activeTab) ? activeTab : "crm";
-  const isKept = (key: string) => !dropped.has(key);
+  // A change with nothing proposed (the lead status) is written only once the rep has picked a value for it.
+  const isKept = (key: string) => !dropped.has(key) && !(postCall.changes.find((c) => c.key === key)?.pending && edited[key] === undefined);
   const keptCount = postCall.changes.filter((c) => isKept(c.key)).length;
+  const hasNote = noteDraft !== null && noteDraft.trim() !== "";
+  const canSave = keptCount > 0 || hasNote;
   const crm = postCallCrmName(postCall);
 
   // The island never takes the keyboard (a click must not take it from the call), except while this card can still save:
@@ -121,7 +124,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   /** Like the Mac app: what is not ticked is left out, and only values the rep changed are sent as edits. */
   const approve = () => {
     const omit = postCall.changes.map((c) => c.key).filter((key) => !isKept(key));
-    if (omit.length >= postCall.changes.length) return;
+    if (!canSave) return;
     const edits = Object.fromEntries(Object.entries(edited).filter(([key, value]) => postCall.changes.some((c) => c.key === key && c.value !== value)));
     act({ name: "postCall", type: "approve", details: { omit, edits, ...(noteDraft !== null ? { note: noteDraft } : {}) } });
   };
@@ -208,9 +211,9 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
                 <div className="postcall-actions" style={{ height: L.actions }}>
                   {postCall.canApprove ? (
                     <>
-                      <button type="button" className="primary-action" disabled={keptCount === 0} title={`Writes the ticked changes to ${crm}`} onClick={approve}>
+                      <button type="button" className="primary-action" disabled={!canSave} title={`Writes the ticked changes and the note to ${crm}`} onClick={approve}>
                         <Check size={9} />
-                        <span>{keptCount === 0 ? "Nothing ticked" : `Save ${keptCount} to ${postCall.crm ?? "the CRM"}`}</span>
+                        <span>{saveLabel(keptCount, hasNote, postCall.crm ?? "the CRM")}</span>
                       </button>
                       <div className="grow" />
                       {review}
@@ -238,7 +241,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
             )}
             {postCall.stage === "done" && (
               <Line icon={<Check size={10.5} stroke={3} />} trailing={postCall.crmUrl ? <TextAction title={`Open in ${crm}`} arrow onClick={() => send("openCrm")} /> : undefined}>
-                <span>{postCall.applied === null ? `Updated in ${crm}` : postCall.applied === 1 ? `1 field updated in ${crm}` : `${postCall.applied} fields updated in ${crm}`}</span>
+                <span>{postCall.applied === null ? `Updated in ${crm}` : postCall.applied === 0 ? `Note saved in ${crm}` : postCall.applied === 1 ? `1 field updated in ${crm}` : `${postCall.applied} fields updated in ${crm}`}</span>
               </Line>
             )}
             {postCall.stage === "internal" && <Line icon={<Users />}><span className="dim">Internal, nothing goes to the CRM</span></Line>}
@@ -301,9 +304,14 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
               <NoteBox editable={noteEditable} text={noteText} placeholder={`Add a note for ${crm}`} onChange={setNoteDraft} />
             )}
             <div className="postcall-actions" style={{ height: L.actions }}>
-              <TextAction title="Open in Vocify" arrow onClick={() => send("openNotes")} />
+              {noteEditable ? (
+                <button type="button" className="primary-action" disabled={!canSave} title={`Writes the ticked changes and the note to ${crm}`} onClick={approve}>
+                  <Check size={9} />
+                  <span>{saveLabel(keptCount, hasNote, postCall.crm ?? "the CRM")}</span>
+                </button>
+              ) : null}
               <div className="grow" />
-              {noteEditable && <span className="note-hint">Saved to {crm} with the update</span>}
+              <TextAction title="Open in Vocify" arrow onClick={() => send("openNotes")} />
             </div>
           </>
         )}
@@ -338,6 +346,12 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
       )}
     </>
   );
+}
+
+/** The Save button: the ticked fields and/or the note, whichever the rep has. */
+function saveLabel(fields: number, note: boolean, crm: string): string {
+  if (fields > 0) return `Save ${fields}${note ? " + note" : ""} to ${crm}`;
+  return note ? `Save note to ${crm}` : "Nothing to save";
 }
 
 /** CRM / Email / Notes, each with what it still needs from the rep. */

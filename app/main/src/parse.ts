@@ -53,6 +53,7 @@ export function parsePostCall(raw: unknown): PostCallData | null {
       // Only a dashboard that writes typed text says so; anything else stays "edit it in Vocify".
       editable: options.length === 0 && (bool(item.editable) ?? false),
       check: bool(item.check) ?? false,
+      pending: options.length > 0 && (bool(item.pending) ?? false),
       when: nonBlank(item.when),
       whenSuggested: bool(item.whenSuggested) ?? false,
     });

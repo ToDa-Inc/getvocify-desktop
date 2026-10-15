@@ -118,6 +118,8 @@ const postCallTasks = [
   { key: "task:next_step_task_1", label: "Next Step 2 (Task)", object: "other", from: null, to: "Enviar la propuesta", value: "Enviar la propuesta", options: [], multiple: false, editable: false, check: false, when: "Sat 17 Oct, 09:00", whenSuggested: true },
 ];
 
+const leadStatusToPick = { key: "contacts:hs_lead_status", label: "Lead Status", object: "contact", from: null, to: "Choose", value: "", options: [{ value: "NEW", label: "New" }, { value: "ATTEMPTED_TO_CONTACT", label: "Attempted to contact" }, { value: "CONNECTED", label: "Connected" }], multiple: false, editable: false, check: false, pending: true, when: null, whenSuggested: false };
+
 const postCallChanges = [
   {
     key: "contact:title",
@@ -266,6 +268,8 @@ export const fixtures = [
   // a recording with no contact: nothing is saved from here, the card sends the rep to Vocify's contact picker
   { name: "postcall-open-needs-contact", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { contactName: null, changes: postCallChanges.slice(3) }) }, expect: { width: 420, ticked: 2, saveLabel: "Choose contact to save" }, fit: true },
   { name: "postcall-open-done-link", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("done", { applied: 4, crmUrl: "https://app.hubspot.com/contacts/1/record/0-1/42" }) }, expect: { width: 420, height: 200, crmLink: "Open in HubSpot" }, fit: true },
+  // a call with nothing to write: the lead status is still offered, and Save waits for a pick or a note
+  { name: "postcall-open-lead-status-only", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [leadStatusToPick], canApprove: true, summary: "Voicemail.", notes: true }) }, expect: { width: 420, ticked: 0, saveLabel: "Nothing to save" }, fit: true },
   { name: "postcall-open-nothing-sure", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [], canApprove: false }) }, expect: { width: 420 }, fit: true },
   // calling the CRM contact on screen: same names and values as the Mac app's IslandFixtures.swift
   { name: "idle-callable", state: { onScreen: ana }, expect: { width: 257, height: 32 } },

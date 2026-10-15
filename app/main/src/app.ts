@@ -413,9 +413,26 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     width: size.width,
     height: size.height,
   });
+  // Where the island was last put. Anything else that moves the window (the system, as a capture starts) is put back.
+  let placed: Frame | null = null;
+  let straighten: ReturnType<typeof setTimeout> | null = null;
+  island.on("move", () => {
+    if (platform === "win32" || !placed) return;
+    if (straighten) clearTimeout(straighten);
+    straighten = setTimeout(() => {
+      if (island.isDestroyed() || !placed) return;
+      const got = island.getBounds();
+      if (Math.abs(got.x - placed.x) <= 1 && Math.abs(got.y - placed.y) <= 1) return;
+      log(`island: the window was moved to ${got.x},${got.y} from ${placed.x},${placed.y}, putting it back`);
+      island.setBounds(placed);
+    }, 60);
+  });
   const place = (frame: Frame) => {
     requested = { width: frame.width, height: frame.height };
-    if (platform !== "win32") return island.setBounds(frame);
+    if (platform !== "win32") {
+      placed = frame;
+      return island.setBounds(frame);
+    }
     let size = { width: Math.max(frame.width, windowsMinimum.width), height: Math.max(frame.height, windowsMinimum.height) };
     // Growing out of the clip: lift it first, or the new area would show (and take clicks) only after a frame.
     if (clipped && size.width === frame.width && size.height === frame.height) {

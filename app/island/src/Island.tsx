@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { cornerRadius, earWidth, islandSize, offerBriefLines, showsMeeting } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, transcriptText, turnParts, turnPlainText } from "./helpers.ts";
-import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, Copy, ExclamationCircle, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Power, Sparkle, Video, Waveform } from "./icons.tsx";
+import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, Copy, ExclamationCircle, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Video, Waveform } from "./icons.tsx";
 import { briefWhen, CallWording, PhoneFormat, type BriefKind, type BriefLine, type CompanyBrief, type DialIslandState, type OnScreenBrief, type OnScreenCall } from "../../core/callIsland.ts";
 import { MeetingWording, type IslandMeeting } from "../../core/meetingHeadsUp.ts";
 import { ProposalWording, type Language } from "../../core/typeProposal.ts";
@@ -516,9 +516,6 @@ function IdleMenu({
       )}
       <IconButton help="Open Vocify" onClick={() => act({ name: "openApp" })}>
         <ArrowUpRight size={12} />
-      </IconButton>
-      <IconButton help="Quit Vocify" onClick={() => act({ name: "quitApp" })}>
-        <Power size={11} />
       </IconButton>
     </Offer>
   );

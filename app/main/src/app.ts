@@ -213,7 +213,6 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       },
       emit: (channel, payload) => dashboardHolder.host?.emit(channel, payload),
       showMainWindow: () => dashboardHolder.host?.show(),
-      quitApp: () => app.quit(),
       onState: (state) => pushState(state),
       onLevels: (levels) => {
         if (!island.isDestroyed()) island.webContents.send("island:levels", levels);
@@ -338,6 +337,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     trustFiles: options.trustFiles === true,
     devTrace: traceOn,
     canDestroy,
+    isQuitting: () => quitting,
+    // Closing Vocify's window closes Vocify (the island too); a meeting still recording is asked about first.
+    onUserClose: () => app.quit(),
     log,
   });
   dashboardHolder.host = dashboard;
@@ -561,14 +563,6 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     }
   }
 
-  // Put away from the tray: it stays away at rest, and shows itself for a call, a recording or a card.
-  let islandHidden = settings.get("islandHidden") === true;
-  const applyIslandVisibility = (state: IslandState) => {
-    if (island.isDestroyed()) return;
-    const show = !islandHidden || state.mode.kind !== "idle" || state.postCall !== null;
-    if (show && !island.isVisible()) island.showInactive();
-    else if (!show && island.isVisible()) island.hide();
-  };
   const trace = traceOn ? createTranscriptTrace(options.userDataDir) : null;
 
   function pushState(state: IslandState): void {
@@ -579,7 +573,6 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     fit(targetSize(state), false);
     island.webContents.send("island:state", state);
     tray?.setContextMenu(buildTrayMenu(state));
-    applyIslandVisibility(state);
     dashboard.releaseIfIdle();
   }
 
@@ -637,7 +630,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   heartbeat.unref();
   // Before it is ever shown: a click on the island must never activate Vocify (that brings the dashboard forward).
   log(`island: ${os.island.prepare(island)}`);
-  if (!islandHidden) island.showInactive();
+  island.showInactive();
   // The meeting heads-up lives in the dashboard page: start it, hidden, for a rep whose calendar is connected, and for a
   // signed-in rep not yet asked (the grace below keeps it until it has answered).
   if (startsPageAtLaunch({ calendarWatch: settings.get("calendarWatch"), recorderReady: settings.get("recorderReady") })) {
@@ -948,19 +941,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   function buildTrayMenu(state: IslandState): Menu {
     return Menu.buildFromTemplate(
-      trayItems(state, `Vocify ${app.getVersion()} · ${dashboardHost}`, microphoneLabel(systemPreferences.getMediaAccessStatus("microphone")), islandHidden).map((item) => {
+      trayItems(state, `Vocify ${app.getVersion()} · ${dashboardHost}`, microphoneLabel(systemPreferences.getMediaAccessStatus("microphone"))).map((item) => {
         if (item.id === "separator") return { type: "separator" as const };
         const click = () => {
           if (item.id === "open") dashboard.show();
           else if (item.id === "record") controller.shortcutPressed();
           else if (item.id === "stop") controller.act({ name: "stop" });
           else if (item.id === "update") checkForUpdates?.();
-          else if (item.id === "island") {
-            islandHidden = !islandHidden;
-            settings.set("islandHidden", islandHidden);
-            applyIslandVisibility(controller.state);
-            tray?.setContextMenu(buildTrayMenu(controller.state));
-          } else if (item.id === "permissions") void shell.openExternal(microphoneSettingsUrl(platform));
+          else if (item.id === "permissions") void shell.openExternal(microphoneSettingsUrl(platform));
           else app.quit();
         };
         return { label: item.label, enabled: item.enabled, click };

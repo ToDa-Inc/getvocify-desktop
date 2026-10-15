@@ -23,6 +23,10 @@ export type DashboardOptions = {
   trustFiles: boolean;
   /** Whether the page may be destroyed now (nothing is recording and no call update is waiting). */
   canDestroy(): boolean;
+  /** The app is quitting: the window really closes. */
+  isQuitting(): boolean;
+  /** The rep closed the window: the app quits (nothing recording) or asks first. */
+  onUserClose(): void;
   log(line: string): void;
 };
 
@@ -97,9 +101,9 @@ export class DashboardHost {
     });
     win.webContents.on("render-process-gone", (_event, details) => this.options.log(`dashboard renderer gone: ${details.reason}`));
     win.on("close", (event) => {
-      if (this.options.canDestroy()) return;
+      if (this.options.isQuitting()) return;
       event.preventDefault();
-      win.hide();
+      this.options.onUserClose();
     });
     win.on("closed", () => {
       this.window = null;

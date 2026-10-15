@@ -65,8 +65,6 @@ export type Effects = {
   /** To the dashboard page: `__vocifyEmit(channel, payload)`. */
   emit(channel: string, payload: unknown): void;
   showMainWindow(): void;
-  /** Quits the app. */
-  quitApp?(): void;
   /** Full state, whenever anything but the voice levels changed. */
   onState(state: IslandState): void;
   /** Voice levels, about ten times a second; they never trigger a full state. */
@@ -385,9 +383,6 @@ export class IslandController {
         return this.hide();
       case "openApp":
         return this.effects.showMainWindow();
-      case "quitApp":
-        // Only from the island at rest; a recording is stopped on purpose, and the app asks before it quits over one.
-        return this.mode === "idle" ? this.effects.quitApp?.() : undefined;
       case "togglePause":
         return this.effects.emit("shell:command", this.current.paused ? "resume" : "pause");
       case "stop":

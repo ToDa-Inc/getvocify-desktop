@@ -1,9 +1,9 @@
 import type { IslandState } from "../../island/src/types.ts";
 
-export type TrayItem = { id: "about" | "open" | "microphone" | "permissions" | "record" | "stop" | "update" | "island" | "quit"; label: string; enabled: boolean } | { id: "separator" };
+export type TrayItem = { id: "about" | "open" | "microphone" | "permissions" | "record" | "stop" | "update" | "quit"; label: string; enabled: boolean } | { id: "separator" };
 
 /** The tray menu for the island's current state: Record when it can, Stop while recording, never both. */
-export function trayItems(state: Pick<IslandState, "mode" | "recorderReady">, about: string, microphone: string, islandHidden = false): TrayItem[] {
+export function trayItems(state: Pick<IslandState, "mode" | "recorderReady">, about: string, microphone: string): TrayItem[] {
   const kind = state.mode.kind;
   const recording = kind === "recording" || kind === "stopped";
   const canRecord = state.recorderReady && (kind === "idle" || kind === "call" || kind === "postCall");
@@ -20,8 +20,6 @@ export function trayItems(state: Pick<IslandState, "mode" | "recorderReady">, ab
     recording ? { id: "stop", label: "Stop recording", enabled: kind === "recording" } : { id: "record", label: "Record", enabled: canRecord },
     { id: "separator" },
     { id: "update", label: "Check for updates", enabled: true },
-    // The island can be put away without quitting; it comes back by itself while there is a call, a recording or a card.
-    { id: "island", label: islandHidden ? "Show island" : "Hide island", enabled: true },
     { id: "quit", label: "Quit Vocify", enabled: true },
   ];
 }

@@ -168,8 +168,6 @@ export type IslandAction =
   | { name: "record" }
   | { name: "dismissCall" }
   | { name: "openApp" }
-  /** Quit Vocify altogether (the island goes with it). Asks first when a meeting is recording. */
-  | { name: "quitApp" }
   | { name: "togglePause" }
   | { name: "stop" }
   | { name: "resume" }

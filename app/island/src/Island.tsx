@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
-import { cornerRadius, earWidth, islandSize, offerBriefLines, showsMeeting } from "./geometry.ts";
+import { cornerRadius, earWidth, islandSize, offerBriefLines, showsConversation, showsMeeting } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, transcriptText, turnParts, turnPlainText } from "./helpers.ts";
 import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, Copy, ExclamationCircle, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Video, Waveform } from "./icons.tsx";
@@ -7,22 +7,13 @@ import { briefWhen, CallWording, PhoneFormat, type BriefKind, type BriefLine, ty
 import { MeetingWording, type IslandMeeting } from "../../core/meetingHeadsUp.ts";
 import { ProposalWording, type Language } from "../../core/typeProposal.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
+import { LiveBody } from "./live/LiveBody.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
+import { TypingDots } from "./TypingDots.tsx";
+import { useNow } from "./useNow.ts";
 import { postCallCrmName, postCallPending, type Assist, type IslandAction, type IslandState, type Turn, type TypeMenuView, type TypeNoteView } from "./types.ts";
 
 type Act = (action: IslandAction) => void;
-
-/** `now` in ms; tests pin it so screenshots are repeatable. */
-function useNow(intervalMs: number, active: boolean): number {
-  const fixed = (window as unknown as { __fixedNow?: number }).__fixedNow;
-  const [now, setNow] = useState(() => fixed ?? Date.now());
-  useEffect(() => {
-    if (!active || fixed !== undefined) return;
-    const id = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs, active, fixed]);
-  return fixed ?? now;
-}
 
 export function Island({ state, act }: { state: IslandState; act: Act }) {
   const kind = state.mode.kind;
@@ -34,7 +25,7 @@ export function Island({ state, act }: { state: IslandState; act: Act }) {
   const column = useRef<HTMLDivElement>(null);
   // As tall as its content: the after-call card, and a call offer or call carrying the contact's brief (it wraps).
   const natural = open && (kind === "postCall" || offerBriefLines(state) > 0);
-  const shape = islandSize(state.geometry, kind, open, undefined, offerBriefLines(state), showsMeeting(state));
+  const shape = islandSize(state.geometry, kind, open, undefined, offerBriefLines(state), showsMeeting(state), showsConversation(state));
   const size = natural && cardHeight !== null ? { width: shape.width, height: cardHeight } : shape;
   const radius = cornerRadius(kind, open);
   const [hovered, setHovered] = useState(false);
@@ -203,6 +194,11 @@ function LeftEar({ state, open, lifted }: { state: IslandState; open: boolean; l
   }
 }
 
+/** The closed island's "help is ready" mark: today's card, or with the live assistant any point still waiting in Ayuda. */
+function liveHelpReady(state: IslandState): boolean {
+  return state.live ? state.liveHelp !== false && state.live.points.some((point) => point.outcome === "open") : state.assist !== null;
+}
+
 function RightEar({ state, open, lifted, act }: { state: IslandState; open: boolean; lifted: boolean; act: Act }) {
   const mode = state.mode;
   switch (mode.kind) {
@@ -222,7 +218,7 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
                   <AlertCircle size={12} />
                 </span>
               )}
-              {state.assist !== null && !open && (
+              {liveHelpReady(state) && !open && (
                 <span title="Live help is ready" className="help-ready">
                   <Sparkle size={10} />
                 </span>
@@ -866,7 +862,7 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
   const menu = state.typeMenu;
   const hasBrief = Boolean(state.dial?.brief?.length || state.dial?.companyBrief);
   return (
-    <div className="open-island">
+    <div className={state.live ? "open-island live" : "open-island"}>
       <div className="controls">
         {state.dial ? (
           <CallBar dial={state.dial} keypadOpen={state.keypadOpen} keypadButton={keypadButton} act={act} />
@@ -933,10 +929,26 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
         <KeypadPopover anchor={keypadAnchor} onDigit={(digit) => act({ name: "digit", digit })} onClose={closeKeypad} />
       )}
       {state.micSilent && !state.paused ? <MicSilentLine /> : state.callAudioLost && !state.paused && <CallAudioLostLine />}
-      {state.liveHelp !== false && <HelpSection current={state.assist} earlier={state.lastHelp} />}
-      <div className="hairline" />
-      {hasBrief && state.dial && <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} talking={state.turns.length > 0} />}
-      <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} />
+      {state.live ? (
+        // The live assistant: tabs, views and the bar. The transcript is its first view, as it was.
+        <LiveBody
+          state={state}
+          act={act}
+          transcript={
+            <>
+              {hasBrief && state.dial && <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} talking={state.turns.length > 0} />}
+              <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} />
+            </>
+          }
+        />
+      ) : (
+        <>
+          {state.liveHelp !== false && <HelpSection current={state.assist} earlier={state.lastHelp} />}
+          <div className="hairline" />
+          {hasBrief && state.dial && <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} talking={state.turns.length > 0} />}
+          <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} />
+        </>
+      )}
     </div>
   );
 }
@@ -1325,16 +1337,6 @@ function OpenArrow({ open, style }: { open: boolean; style?: CSSProperties }) {
 
 function PendingBadge({ count }: { count: number }) {
   return <span className="badge">{count}</span>;
-}
-
-function TypingDots() {
-  return (
-    <span className="dots" aria-label="Writing">
-      <span style={{ animationDelay: "0s" }} />
-      <span style={{ animationDelay: "-0.17s" }} />
-      <span style={{ animationDelay: "-0.34s" }} />
-    </span>
-  );
 }
 
 /** `besideCall`: next to Call, as tall as it and quieter, so Call stays the main action. */

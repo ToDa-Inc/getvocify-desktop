@@ -28,9 +28,9 @@ await bundle({
   minify: true,
   logLevel: "info",
 });
-// The stylesheet is imported by name from index.html, so bundle it as its own entry.
+// The stylesheet is imported by name from index.html, so bundle it as its own entry (island.css, then live.css over it).
 await bundle({
-  entryPoints: { island: join(here, "src/island.css") },
+  entryPoints: { island: join(here, "src/styles.css") },
   bundle: true,
   outdir: dist,
   logLevel: "silent",

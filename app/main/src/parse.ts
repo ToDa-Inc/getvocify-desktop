@@ -1,4 +1,7 @@
-import type { Assist, Clock, Finish, PostCallChange, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn } from "../../island/src/types.ts";
+import type {
+  Assist, Clock, Finish, LiveData, LiveDecision, LiveGoal, LiveNow, LiveOutcome, LivePoint, LiveProgress, LiveRecap, LiveResponder, LiveStep, LiveView,
+  PostCallChange, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn,
+} from "../../island/src/types.ts";
 
 /**
  * Turns what the dashboard pushes through `shell:state` into the island's types. The rules are the Swift
@@ -197,4 +200,129 @@ export function parseContact(raw: unknown): string | null {
   if (!isRaw(raw)) return null;
   const name = str(raw.name)?.trim();
   return name ? name : null;
+}
+
+
+/* ---------- the live call assistant: `shell:state` liveBrain (see the shell contract, live-state-shell-contract.md) ---------- */
+
+const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []);
+const OUTCOMES: readonly LiveOutcome[] = ["open", "answered", "promised", "unanswered", "gone", "dismissed"];
+const DECISIONS: readonly LiveDecision[] = ["responder", "reconducir", "aplazar", "cerrar"];
+
+function parsePoint(raw: Raw): LivePoint | null {
+  const id = nonEmpty(raw.id);
+  const kind = raw.kind === "question" || raw.kind === "objection" ? raw.kind : null;
+  const title = nonBlank(raw.title);
+  const outcome = OUTCOMES.find((o) => o === raw.outcome);
+  if (!id || !kind || !title || !outcome) return null;
+  const answer = nonBlank(raw.answer);
+  const fallback = nonBlank(raw.fallback);
+  const source = isRaw(raw.source) ? nonBlank(raw.source.label) : null;
+  return {
+    id, kind, title, outcome, answer, fallback, source,
+    tag: nonBlank(raw.tag),
+    tagKey: nonBlank(raw.tag_key) ?? kind,
+    saidAt: num(raw.said_at) ?? 0,
+    decision: DECISIONS.find((d) => d === raw.decision) ?? null,
+    decisionNote: nonBlank(raw.decision_note),
+    gap: nonBlank(raw.gap),
+    // A point whose words were not written yet is still being read; the rest is written.
+    phase: answer === null && fallback === null ? "thinking" : "ready",
+    repeated: bool(raw.repeated) ?? false,
+    draft: false,
+  };
+}
+
+/** What the model is writing right now, from its stream: after the open points. It has no tag yet and no kind. */
+function parseDraft(raw: Raw, index: number): LivePoint {
+  const say = nonBlank(raw.say);
+  return {
+    id: `draft:${index}`, kind: "question", tag: null, tagKey: "question", title: nonBlank(raw.title) ?? "", saidAt: Number.MAX_SAFE_INTEGER,
+    decision: null, decisionNote: null, answer: say, fallback: null, gap: null, source: null,
+    phase: say === null ? "thinking" : "writing", outcome: "open", repeated: false, draft: true,
+  };
+}
+
+function parseProgress(state: Raw, playbook: Raw | null): LiveProgress {
+  const progress = isRaw(state.progress) ? state.progress : {};
+  const doneSteps = isRaw(progress.steps) ? progress.steps : {};
+  const doneData = isRaw(progress.data) ? progress.data : {};
+  const by = (item: unknown) => isRaw(item) && item.by === "rep";
+  const quote = (item: unknown) => (isRaw(item) ? nonBlank(item.quote) : null);
+  const named = isRaw(progress.playbook) ? progress.playbook : {};
+
+  // Steps about how the rep talks are for coaching: never drawn live.
+  const steps: LiveStep[] = list(playbook?.steps).flatMap((item) => {
+    const id = nonEmpty(item.id);
+    const label = nonBlank(item.label);
+    if (!id || !label || item.live === false) return [];
+    const done = isRaw(doneSteps[id]);
+    return [{ id, label, concept: nonBlank(item.concept), criterion: nonBlank(item.criterion), example: nonBlank(item.example), done, byRep: done && by(doneSteps[id]), quote: quote(doneSteps[id]) }];
+  });
+  const data: LiveData[] = list(playbook?.data).flatMap((item) => {
+    const id = nonEmpty(item.id);
+    const label = nonBlank(item.label);
+    if (!id || !label) return [];
+    const found = doneData[id];
+    const done = isRaw(found);
+    return [{
+      id, label, good: nonBlank(item.good), question: nonBlank(item.question), done, byRep: done && by(found),
+      value: done ? nonBlank(found.value) : null, quote: quote(found), reread: done && bool(found.reread) === true,
+    }];
+  });
+
+  const missing = strings(progress.missing);
+  let now: LiveNow | null = null;
+  if (isRaw(progress.now)) {
+    const kind = progress.now.kind === "step" || progress.now.kind === "data" || progress.now.kind === "goal" ? progress.now.kind : null;
+    const id = nonEmpty(progress.now.id);
+    if (kind && id) now = { kind, id, say: nonBlank(progress.now.say) };
+  }
+  // The producer gives the goal no wording of its own: it is drawn once it is named (reached, picked or "now"), under the
+  // playbook's wording when there is one.
+  const reached = isRaw(progress.goal) ? progress.goal : null;
+  let goal: LiveGoal | null = null;
+  if (reached || missing.includes("goal") || now?.kind === "goal") {
+    goal = { label: nonBlank(playbook?.goal_label), done: reached !== null, byRep: reached !== null && by(reached), value: reached ? nonBlank(reached.value) : null, quote: reached ? nonBlank(reached.quote) : null };
+  }
+
+  return {
+    playbook: { key: nonBlank(playbook?.key) ?? nonBlank(named.key), name: nonBlank(playbook?.name) ?? nonBlank(named.name) },
+    hasPlaybook: bool(playbook?.has_playbook) ?? bool(progress.has_playbook) ?? false,
+    steps, data, goal, missing, now,
+  };
+}
+
+function parseResponder(raw: unknown): LiveResponder | null {
+  if (!isRaw(raw)) return null;
+  const seq = num(raw.seq);
+  const status = raw.status === "reading" || raw.status === "found" || raw.status === "nothing" ? raw.status : null;
+  return seq === undefined || !status ? null : { seq, status, pointId: nonEmpty(raw.point_id) };
+}
+
+function parseRecap(raw: unknown): LiveRecap | null {
+  if (!isRaw(raw)) return null;
+  const seq = num(raw.seq);
+  const status = raw.status === "reading" || raw.status === "ready" ? raw.status : null;
+  return seq === undefined || !status ? null : { seq, status, upTo: num(raw.up_to_t) ?? null, lines: strings(raw.lines), unknown: strings(raw.unknown) };
+}
+
+/** What the dashboard pushes under `liveBrain` (null or malformed: the island is today's). A malformed point is dropped,
+ * never guessed. */
+export function parseLiveBrain(raw: unknown): LiveView | null {
+  if (!isRaw(raw)) return null;
+  const state = isRaw(raw.state) ? raw.state : {};
+  const points = list(state.points).flatMap((item) => {
+    const point = parsePoint(item);
+    return point ? [point] : [];
+  });
+  const drafts = list(raw.drafts).map(parseDraft);
+  const asks = isRaw(raw.asks) ? raw.asks : {};
+  return {
+    on: bool(raw.on) ?? false,
+    points: [...points, ...drafts],
+    progress: parseProgress(state, isRaw(raw.playbook) ? raw.playbook : null),
+    asks: { responder: parseResponder(asks.responder), recap: parseRecap(asks.recap) },
+    offlineSince: num(raw.offline_since) ?? null,
+  };
 }

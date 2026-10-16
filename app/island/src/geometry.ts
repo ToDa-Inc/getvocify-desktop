@@ -50,7 +50,16 @@ export const BRIEF_LINE = 20;
 /** A meeting's heads-up is as wide as the after-call card: who, the title, when and where beside Join and Record. */
 export const MEETING_WIDTH = POST_CALL_WIDTH;
 
-export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody = 44, briefLines = 0, meeting = false): Size {
+/** The open recording's height: 400, or 460 while the live assistant's Conversación is open (never over half the screen). */
+export const RECORDING_HEIGHT = 400;
+export const RECORDING_HEIGHT_CONVERSATION = 460;
+
+/** Conversación needs the taller island: only the live assistant's own view, only while the recording is open. */
+export function showsConversation(state: { mode: { kind: Kind }; live?: unknown; liveTab?: string }): boolean {
+  return state.mode.kind === "recording" && Boolean(state.live) && state.liveTab === "conversation";
+}
+
+export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody = 44, briefLines = 0, meeting = false, conversation = false): Size {
   const closed = { width: gap(g) + earWidth(kind, false) * 2, height: g.barHeight };
   const wide = (min: number) => Math.max(gap(g) + EAR * 2, min);
   const brief = briefLines > 0 ? BRIEF_HEAD + briefLines * BRIEF_LINE : 0;
@@ -66,7 +75,7 @@ export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody 
     case "dialing":
       return open ? { width: wide(380), height: g.barHeight + 56 + brief } : closed;
     case "recording":
-      return open ? { width: wide(460), height: Math.min(400, Math.round(g.screenHeight * 0.5)) } : closed;
+      return open ? { width: wide(460), height: Math.min(conversation ? RECORDING_HEIGHT_CONVERSATION : RECORDING_HEIGHT, Math.round(g.screenHeight * 0.5)) } : closed;
     case "postCall":
       return open ? { width: wide(POST_CALL_WIDTH), height: g.barHeight + postCallBody } : closed;
     case "starting":

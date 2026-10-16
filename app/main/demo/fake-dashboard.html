@@ -21,6 +21,8 @@
   <button id="help">Show live help</button>
   <button id="lost">Toggle "not hearing the call"</button>
   <button id="audio">Ask for call audio (Windows only)</button>
+  <button id="brain">Live assistant: on</button>
+  <button id="brain-off">Live assistant: off</button>
 </div>
 <div id="log"></div>
 <script>
@@ -143,6 +145,8 @@
 
   function stop(quiet) {
     timers.forEach(clearTimeout); timers = [];
+    stopBrain();
+    if (brain) { brain = null; set({ liveBrain: null }); }
     if (!meeting) return;
     meeting = null;
     if (quiet) return;
@@ -168,6 +172,97 @@
     set({ assist: { stage: "draft", label: ANSWER.label, bridge: ANSWER.bridge } });
     later(1600, () => set({ assist: { label: ANSWER.label, bridge: ANSWER.bridge, sayThis: ANSWER.sayThis } }));
   };
+
+  /* ---------- the live call assistant: a stand-in brain pushing `liveBrain` and answering the island's asks ---------- */
+  // The wire is the shell contract's (live-state-shell-contract.md): the whole LiveState, the playbook's words, drafts, asks.
+  const PB = {
+    key: "cold", name: "Llamada en frío", has_playbook: true,
+    steps: [
+      { id: "apertura", label: "Apertura con marco", concept: "Preséntate y di que será breve", criterion: "Se presenta y pide permiso.", example: "Hola Marta, soy Dani de Vocify. Te robo un minuto y me dices si tiene sentido.", live: true },
+      { id: "problema", label: "Plantear el problema", concept: "Cuenta el problema como algo común", criterion: "Lo plantea como algo común.", example: "Lo que vemos en los equipos comerciales es que el CRM se rellena tarde o nunca.", live: true },
+      { id: "tiempo", label: "Preguntar tiempo y proceso", concept: "Pregunta cuánto tardan hoy", criterion: "Pregunta cuánto dedican.", example: "¿Cuánto tiempo le lleva a cada comercial apuntar una visita en el CRM?", live: true },
+      { id: "encaje", label: "Cualificar el encaje", concept: "Comerciales, CRM, quién decide", criterion: "Averigua tamaño y decisor.", example: "¿Cuántos comerciales sois y quién decide una herramienta así?", live: true },
+    ],
+    data: [
+      { id: "comerciales", label: "N.º de comerciales", good: "Cuántos hay en el equipo.", question: "¿Cuántos comerciales sois?" },
+      { id: "crm", label: "CRM que usan", good: "Qué CRM usan.", question: "¿Qué CRM usáis?" },
+    ],
+  };
+  const POINTS = [
+    { at: 6, id: "hubspot", kind: "question", tag_key: "question", title: "¿se integra con HubSpot?", answer: "Sí, se integra con HubSpot: lo que se dice en la llamada queda en el CRM sin que nadie lo apunte.", source: { id: "k", label: "Conocimiento · Integraciones" } },
+    { at: 14, id: "precio", kind: "question", tag_key: "question", title: "¿y cuánto cuesta?", answer: "Depende del número de comerciales. ¿Cuántos sois, y cuántos están en la calle?", source: { id: "p", label: "Playbook · Precio" }, decision: "reconducir", decision_note: "Antes de dar precio: falta el dolor" },
+    { at: 24, id: "email", kind: "objection", tag_key: "custom", tag: "Mándame información por email", title: "mándame un email", answer: "Claro, te lo mando. Aunque esos correos acaban en un agujero negro: ¿agendamos 15 minutos y lo vemos?", source: { id: "e", label: "Playbook · Email" } },
+    { at: 30, id: "desde", kind: "question", tag_key: "question", title: "¿desde cuándo existís?", fallback: "Te lo confirmo, pero lo importante: ya trabajamos con equipos comerciales en piloto.", gap: "La fecha no está en tu conocimiento" },
+  ];
+  let brain = null;
+  let brainTimers = [];
+  const brainLater = (ms, fn) => { const id = setTimeout(fn, ms); brainTimers.push(id); };
+  const seconds = () => (meeting ? (Date.now() - meeting.startedAt - meeting.pausedMs) / 1000 : 0);
+  const pushBrain = () => set({ liveBrain: brain && { ...brain, state: { ...brain.state, version: brain.state.version + 1 } } });
+  const progressOf = (marks) => {
+    const steps = Object.fromEntries(PB.steps.filter((x) => marks[x.id]).map((x) => [x.id, { id: x.id, status: "done", by: "rep", quote: null, turn_ids: [] }]));
+    const data = Object.fromEntries(PB.data.filter((x) => marks[x.id]).map((x) => [x.id, { id: x.id, value: null, quote: null, reread: false, by: "rep", turn_ids: [] }]));
+    const pending = PB.steps.filter((x) => !marks[x.id]);
+    return { playbook: { key: PB.key, name: PB.name }, has_playbook: true, steps, data, goal: marks.goal ? { reached: true, value: null, quote: null, by: "rep", turn_ids: [] } : null, missing: pending.slice(0, 2).map((x) => x.id), now: pending[0] ? { kind: "step", id: pending[0].id, say: pending[0].example } : null };
+  };
+  let marks = {};
+  const patchPoint = (id, patch) => { brain.state.points = brain.state.points.map((p) => (p.id === id ? { ...p, ...patch } : p)); pushBrain(); };
+  function startBrain() {
+    stopBrain();
+    marks = {};
+    brain = { on: true, call_id: "demo", state: { version: 0, call_id: "demo", points: [], progress: progressOf(marks), rep: { ticked: [], unticked: [] }, cursors: {} }, playbook: PB, drafts: [], reading: { points: false, progress: false, recap: false }, offline_since: null, asks: { responder: null, recap: null }, type_changed: false };
+    pushBrain();
+    log("live assistant on (stand-in brain)");
+    for (const p of POINTS) {
+      brainLater(p.at * 1000, () => {
+        const { at, ...point } = p;
+        const text = p.answer ?? p.fallback;
+        // The words are written into a draft as the model streams them, then the point lands with them.
+        const parts = text.match(/.{1,14}/g);
+        brain.drafts = [{ title: p.title, say: null, grounded: null }];
+        pushBrain();
+        parts.forEach((_, i) => brainLater(700 + i * 70, () => { brain.drafts = [{ title: p.title, say: parts.slice(0, i + 1).join(""), grounded: null }]; pushBrain(); }));
+        brainLater(700 + parts.length * 70 + 60, () => {
+          brain.drafts = [];
+          brain.state.points = [...brain.state.points, { tag: null, decision: null, decision_note: null, answer: null, fallback: null, gap: null, source: null, ...point, said_at: seconds(), repeated: false, outcome: "open", turn_ids: [] }];
+          pushBrain();
+        });
+      });
+    }
+    // The rep deals with the first point on their own: it ends as answered.
+    brainLater(26000, () => brain && patchPoint("hubspot", { outcome: "answered" }));
+  }
+  function stopBrain() { brainTimers.forEach(clearTimeout); brainTimers = []; }
+  let seq = { responder: 0, recap: 0 };
+  bridge.shell.onLiveAction((action) => {
+    log("live action from the island: " + JSON.stringify(action));
+    if (!brain) return;
+    if (action.type === "dismiss") patchPoint(action.id, { outcome: "dismissed" });
+    else if (action.type === "tick" || action.type === "untick") {
+      marks = action.type === "tick" ? { ...marks, [action.id]: true } : Object.fromEntries(Object.entries(marks).filter(([k]) => k !== action.id));
+      brain.state.progress = progressOf(marks);
+      pushBrain();
+    } else if (action.type === "responder") {
+      const n = ++seq.responder;
+      brain.asks.responder = { seq: n, status: "reading", point_id: null };
+      pushBrain();
+      brainLater(900, () => {
+        const open = brain.state.points.filter((p) => p.outcome === "open");
+        brain.asks.responder = open.length ? { seq: n, status: "found", point_id: open[open.length - 1].id } : { seq: n, status: "nothing", point_id: null };
+        pushBrain();
+      });
+    } else if (action.type === "resumen") {
+      const n = ++seq.recap;
+      brain.asks.recap = { seq: n, status: "reading", up_to_t: seconds(), lines: [], unknown: [] };
+      pushBrain();
+      brainLater(900, () => {
+        brain.asks.recap = { seq: n, status: "ready", up_to_t: seconds(), lines: ["Marta Ruiz, de Acme Logistics.", "Pregunta por la integración con HubSpot y por el precio.", "Pide la información por email."], unknown: ["N.º de comerciales", "Quién decide"] };
+        pushBrain();
+      });
+    }
+  });
+  document.getElementById("brain").onclick = startBrain;
+  document.getElementById("brain-off").onclick = () => { stopBrain(); brain = null; set({ liveBrain: null }); log("live assistant off"); };
   let lost = false;
   document.getElementById("lost").onclick = () => { lost = !lost; set({ callAudioLost: lost }); };
   document.getElementById("audio").onclick = async () => { log("call audio: " + JSON.stringify(await bridge.systemAudio.start())); };

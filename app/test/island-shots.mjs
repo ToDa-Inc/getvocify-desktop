@@ -47,7 +47,7 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
   const el = document.querySelector('.island');
   if (!el) return { missing: true };
   const r = el.getBoundingClientRect();
-  const overflow = [...document.querySelectorAll('.ear, .menu, .controls, .help, .lost-line, .stop-button, .primary-action')]
+  const overflow = [...document.querySelectorAll('.ear, .menu, .controls, .help, .lost-line, .stop-button, .primary-action, .live-tabs, .live-bar-row, .live-peek-card, .live-now, .live-item-body, .live-todo')]
     .filter((e) => e.scrollWidth > e.clientWidth + 1)
     .map((e) => e.className + ' ' + e.scrollWidth + '>' + e.clientWidth);
   const t = document.querySelector('.transcript');
@@ -83,6 +83,60 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
     repeatedLabels: (() => {
       const labels = [...document.querySelectorAll('.recent-label')].map((label) => label.textContent.trim().toLowerCase());
       return labels.filter((label, i) => labels.indexOf(label) !== i);
+    })(),
+    live: (() => {
+      if (!document.querySelector('.live')) return null;
+      const text = (el) => el?.textContent.trim() ?? null;
+      const all = (sel, root = document) => [...root.querySelectorAll(sel)];
+      const rect = (sel) => { const b = document.querySelector(sel)?.getBoundingClientRect(); return b ? { top: Math.round(b.top * 2) / 2, height: Math.round(b.height * 2) / 2 } : null; };
+      const tabs = all('.live-tab');
+      const help = document.querySelector('.live-help');
+      const conv = document.querySelector('.live-conv');
+      const peek = document.querySelector('.live-peek');
+      const actions = all('.live-action');
+      return {
+        tab: ['transcript', 'help', 'conversation'][tabs.findIndex((t) => t.dataset.active === 'true')] ?? null,
+        tabLabels: tabs.map((t) => text(t.querySelector('span:not(.live-tab-icon):not(.tab-badge):not(.type-note-pulse)'))),
+        badges: all('.live-tab .tab-badge').map(text),
+        chip: text(document.querySelector('.live-chip-lead')),
+        stack: { controls: rect('.controls'), tabs: rect('.live-tabs-row'), views: rect('.live-views'), bar: rect('.live-bar-row'), island: rect('.island') },
+        cards: all('.live-item', help ?? document).filter((c) => !c.classList.contains('live-ask')).length,
+        lines: all('.live-item-line', help ?? document).length,
+        thinking: all('.help-drafting', help ?? document).length,
+        caret: !!help?.querySelector('.live-caret'),
+        say: text(help?.querySelector('.live-say')),
+        decision: text(help?.querySelector('.live-decision')),
+        gap: text(help?.querySelector('.live-gap')),
+        tag: text(help?.querySelector('.live-tag')),
+        folding: all('.live-item[data-phase="closing"]').length,
+        earlier: all('.live-earlier-row').length,
+        earlierOpen: document.querySelector('.live-earlier') ? document.querySelector('.live-earlier').dataset.open === 'true' : false,
+        unanswered: text(document.querySelector('.live-unanswered-count')),
+        outcomes: all('.live-outcome').map(text),
+        empty: text(document.querySelector('.live-pane[data-active="true"] :is(.live-help-empty, .live-empty)')),
+        name: text(conv?.querySelector('.live-path-name')),
+        count: text(conv?.querySelector('.live-path-count')),
+        now: text(conv?.querySelector('.live-now-label')),
+        rows: all('.live-list:not(.live-done) .live-todo', conv ?? document).length,
+        more: text(conv?.querySelector('.live-more')),
+        doneOpen: document.querySelector('.live-done') ? document.querySelector('.live-done').dataset.open === 'true' : false,
+        doneRows: all('.live-done .live-todo').length,
+        askOpen: !!conv?.querySelector('.live-todo-wrap[data-open="true"]'),
+        noPlaybook: text(conv?.querySelector('.live-noplaybook .lost-title')),
+        offline: text(document.querySelector('.live-pane[data-active="true"] .live-offline .lost-title')),
+        disabled: actions.filter((a) => a.disabled).map(text),
+        on: actions.filter((a) => a.dataset.on === 'true').map(text),
+        peek: !!peek,
+        peekCards: peek ? all('.live-item', peek).filter((c) => !c.classList.contains('live-ask')).length : 0,
+        peekNow: text(peek?.querySelector('.live-now-label')),
+        peekReading: text(peek?.querySelector('.help-drafting .dim')),
+        peekNothing: text(peek?.querySelector('.live-peek-empty:not(.help-drafting)')),
+        peekDone: text(peek?.querySelector('.live-peek-done')),
+        recapLines: peek ? all('.live-recap li:not(.live-recap-pending)', peek).length : 0,
+        recapPending: text(peek?.querySelector('.live-recap-pending')),
+        // Reading and writing in full: nothing the card says is cut by its box.
+        cut: all('.live-say, .live-now-say, .live-todo-ask, .live-recap li').filter((e) => e.scrollHeight > e.clientHeight + 1).length,
+      };
     })(),
     title: document.querySelector('.topbar')?.title ?? '',
     offer: (() => {
@@ -151,6 +205,11 @@ for (const fixture of fixtures) {
     if (!clicked) problems.push(`step target missing: ${selector}`);
     await (fixture.fit || fixture.natural ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
   }
+  // A second state pushed after the scene is set (a point that ends while its card is up).
+  if (fixture.next) {
+    await win.webContents.executeJavaScript(`window.__setIslandState(${JSON.stringify(fixture.next)}); true`);
+    await frame();
+  }
   const m = await measure(win, fixture);
   if (m.missing) problems.push("island did not render");
   else {
@@ -209,6 +268,17 @@ for (const fixture of fixtures) {
       if (fixture.expect[key] !== undefined && m[key] !== fixture.expect[key]) problems.push(`${key} is ${JSON.stringify(m[key])}, expected ${JSON.stringify(fixture.expect[key])}`);
     }
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);
+    if (m.live) {
+      // The vertical stack the spec fixes: controls 38, tabs row 34 under them, the bar 40 at the foot.
+      const st = m.live.stack;
+      if (st.tabs?.top !== 70 || st.tabs?.height !== 34) problems.push(`tabs row at ${st.tabs?.top}/${st.tabs?.height}, expected 70/34`);
+      if (st.bar?.height !== 40 || st.bar?.top + st.bar?.height !== st.island?.height) problems.push(`bar at ${st.bar?.top}/${st.bar?.height}, expected 40 high at the foot of the ${st.island?.height}px island`);
+      if (st.views?.top !== 104.5) problems.push(`views start at ${st.views?.top}, expected 104.5`);
+      if (m.live.cut) problems.push(`${m.live.cut} text(s) cut by their box`);
+      for (const [key, want] of Object.entries(fixture.expect.live ?? {})) {
+        if (JSON.stringify(m.live[key] ?? null) !== JSON.stringify(want)) problems.push(`live ${key} is ${JSON.stringify(m.live[key] ?? null)}, expected ${JSON.stringify(want)}`);
+      }
+    } else if (fixture.expect.live) problems.push("the live assistant did not render");
   }
   if (errors.length) problems.push(`console errors: ${errors.join(" | ")}`);
   // A hidden window can hand back a blank frame the first time; ask again before calling it empty.
@@ -229,6 +299,10 @@ for (const test of interactions) {
   const { win } = await open(fixture);
   for (const selector of fixture.steps ?? []) {
     await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).click(); true`);
+    await frame();
+  }
+  if (fixture.next) {
+    await win.webContents.executeJavaScript(`window.__setIslandState(${JSON.stringify(fixture.next)}); true`);
     await frame();
   }
   // Clicks that set the scene first (untick a change...), then the click whose action is checked.

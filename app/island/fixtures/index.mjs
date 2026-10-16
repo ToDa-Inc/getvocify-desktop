@@ -1,5 +1,7 @@
 // Island states, one per screen the Mac island can show. `expect` sizes are worked out by hand
 // from the Swift rules in IslandGeometry.size, so they check the port rather than repeat it.
+import { liveFixtures, liveInteractions } from "./live.mjs";
+
 export const NOW = 1_700_000_000_000;
 
 const NOTCH = { notchWidth: 185, barHeight: 32, screenHeight: 982 };
@@ -32,6 +34,8 @@ const base = {
   material: "vibrancy",
   reduceMotion: true,
   language: "es",
+  live: null,
+  liveTab: "transcript",
 };
 
 const clock = (seconds, extra = {}) => ({ startedAt: NOW - seconds * 1000, pausedMs: 0, pausedAt: null, ...extra });
@@ -354,3 +358,7 @@ export const interactions = [
   { name: "keypad-sends-digit", fixture: "in-call-muted-keypad", click: ".dial-key", expect: [{ name: "digit", digit: "1" }] },
   { name: "pick-type", fixture: "recording-open-type-list", click: ".option-row:nth-child(2)", expect: [{ name: "pickCallType", key: "demo" }], after: true },
 ];
+
+// The live call assistant's states live in their own file (the island with the live brain flag on).
+fixtures.push(...liveFixtures);
+interactions.push(...liveInteractions);

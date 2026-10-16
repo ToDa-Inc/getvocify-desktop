@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
     // Types by channel: the channel the rep switched to in the island ({ kind: "call" | "meeting" }).
     onCallChannel: on("call:channel"),
     onPostCallAction: on("postcall:action"),
+    // The live call assistant's asks and marks from the island ({ type: "responder" | "preguntar" | "resumen" | "tick" | "untick" | "dismiss" | "tab", ... }).
+    onLiveAction: on("livebrain:action"),
   },
   // Vocify calling on this computer: off, the island's Call opens on the rep's phone ({ onPhone, phoneApp }).
   calling: {

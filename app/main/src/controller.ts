@@ -5,9 +5,9 @@ import { StopGrace, type StopStep } from "../../core/stopGrace.ts";
 import { TypeMenu } from "../../core/typeMenu.ts";
 import { TypeProposal, type Language } from "../../core/typeProposal.ts";
 import { WaveSide } from "../../core/waveSide.ts";
-import type { Assist, Geometry, IslandAction, IslandState, Levels, Mode, PostCallData } from "../../island/src/types.ts";
+import type { Assist, Geometry, IslandAction, IslandState, Levels, LiveAction, Mode, PostCallData } from "../../island/src/types.ts";
 import { postCallPending } from "../../island/src/types.ts";
-import { parseAssist, parseClock, parseContact, parseFinish, parseLiveType, parsePostCall, parseTurns, type LiveChannelKind, type LiveType } from "./parse.ts";
+import { parseAssist, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parsePostCall, parseTurns, type LiveChannelKind, type LiveType } from "./parse.ts";
 
 /**
  * The island's brain: what it shows and what each click does. A port of `MeetingPillController` and
@@ -144,6 +144,8 @@ export class IslandController {
       lastHelp: null,
       typeMenu: null,
       liveHelp: null,
+      live: null,
+      liveTab: "transcript",
       countdown: null,
       geometry,
       postCall: null,
@@ -256,6 +258,10 @@ export class IslandController {
     }
     if ((update.language === "es" || update.language === "en") && update.language !== this.current.language) patch.language = update.language;
     if (typeof update.liveHelp === "boolean" && update.liveHelp !== this.current.liveHelp) patch.liveHelp = update.liveHelp;
+    if (has("liveBrain")) {
+      const next = parseLiveBrain(update.liveBrain);
+      if (JSON.stringify(next) !== JSON.stringify(this.current.live)) patch.live = next;
+    }
     if (has("liveType")) {
       const next = parseLiveType(update.liveType);
       if (JSON.stringify(next) !== JSON.stringify(this.liveType)) {
@@ -403,6 +409,11 @@ export class IslandController {
         return this.effects.emit("shell:command", this.current.liveHelp === false ? "assist-on" : "assist-off");
       case "postCall":
         return this.postCallAction(action.type, action.details ?? {});
+      case "liveTab":
+      case "liveAsk":
+      case "liveTick":
+      case "liveDismiss":
+        return this.liveAction(action);
       case "openDialConfirm":
         return this.openDialConfirm();
       case "dial":
@@ -1028,9 +1039,27 @@ export class IslandController {
   }
 
   /** `mode` and `expanded` change together; any open countdown and its timer end with the old shape. */
+  /** The live assistant's asks and marks go to the dashboard (`livebrain:action`), which owns its state; the open tab stays
+   * here too, because the island's height follows it. */
+  private liveAction(action: LiveAction): void {
+    if (this.mode !== "recording" || !this.current.live) return;
+    switch (action.name) {
+      case "liveTab":
+        if (action.tab !== this.current.liveTab) this.set({ liveTab: action.tab });
+        return this.effects.emit("livebrain:action", { type: "tab", tab: action.tab });
+      case "liveAsk":
+        return this.effects.emit("livebrain:action", { type: action.ask === "respond" ? "responder" : action.ask === "now" ? "preguntar" : "resumen" });
+      case "liveTick":
+        return this.effects.emit("livebrain:action", { type: action.on ? "tick" : "untick", id: action.id, kind: action.kind });
+      case "liveDismiss":
+        return this.effects.emit("livebrain:action", { type: "dismiss", id: action.id });
+    }
+  }
+
   private transition(mode: Mode, expanded: boolean): void {
     this.stopTimer("autoClose");
-    this.set({ mode, expanded, countdown: null });
+    // Every recording starts on its transcript.
+    this.set({ mode, expanded, countdown: null, ...(mode.kind !== "recording" && this.current.liveTab !== "transcript" ? { liveTab: "transcript" as const } : {}) });
     // A meeting that came up while a call, a recording or a card held the island is announced once it is back at rest.
     if (mode.kind === "idle" && !expanded) this.meetingChanged();
   }

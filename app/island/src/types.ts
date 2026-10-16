@@ -47,6 +47,88 @@ export type TypeMenuView = { title: string; placeholder: boolean; proposed: bool
 /** Where the recording that just ended is, as the dashboard reports it. */
 export type Finish = { step: "stopping" | "uploading" | "failed" | "skipped"; message: string | null };
 
+/* ---------- the live call assistant (spec 2026-10-16-live-call-assistant-design.md) ---------- */
+
+/** The three views of the open recording. UI state the controller keeps only because the window must be as tall. */
+export type LiveTab = "transcript" | "help" | "conversation";
+
+/** How a point ends; "open" is not ended. */
+export type LiveOutcome = "open" | "answered" | "promised" | "unanswered" | "gone" | "dismissed";
+export type LiveDecision = "responder" | "reconducir" | "aplazar" | "cerrar";
+
+/** What the prospect said that needs handling, with what to say. The shell resolves it from the dashboard's LiveState. */
+export type LivePoint = {
+  id: string;
+  kind: "question" | "objection";
+  /** The playbook entry's name; null: the island names the kind (`tagKey`, "Pregunta" for a question). */
+  tag: string | null;
+  /** "question", an objection type (price, timing...) or a playbook entry's id. */
+  tagKey: string;
+  /** Their words, short. */
+  title: string;
+  /** Seconds into the call when it was said. */
+  saidAt: number;
+  decision: LiveDecision | null;
+  /** The decision line above what to say; shown only when the decision is not a plain answer. */
+  decisionNote: string | null;
+  /** What to say; null when the knowledge has nothing (then `fallback`). */
+  answer: string | null;
+  /** The honest line to say meanwhile when the fact is not in the knowledge. */
+  fallback: string | null;
+  /** What is not written (the tooltip of a card with no answer). */
+  gap: string | null;
+  /** Where the answer comes from (the tooltip of a card). */
+  source: string | null;
+  /** thinking: nothing written yet; writing: the text is still arriving; ready. */
+  phase: "thinking" | "writing" | "ready";
+  outcome: LiveOutcome;
+  /** They came back to it ("Lo repite"). */
+  repeated: boolean;
+  /** Being written from the model's stream: no tag yet, the point lands later with its final words. */
+  draft: boolean;
+};
+
+export type LiveStep = { id: string; label: string; concept: string | null; criterion: string | null; example: string | null; done: boolean; byRep: boolean; quote: string | null };
+export type LiveData = { id: string; label: string; good: string | null; question: string | null; done: boolean; byRep: boolean; value: string | null; quote: string | null; reread: boolean };
+/** `label` null: the playbook has no wording for the goal ("The call's goal"). */
+export type LiveGoal = { label: string | null; done: boolean; byRep: boolean; value: string | null; quote: string | null };
+export type LiveNow = { kind: "step" | "data" | "goal"; id: string; say: string | null };
+
+/** Where the call is against the playbook: the playbook's own steps and data, resolved with the call's progress. */
+export type LiveProgress = {
+  playbook: { key: string | null; name: string | null };
+  hasPlaybook: boolean;
+  steps: LiveStep[];
+  data: LiveData[];
+  goal: LiveGoal | null;
+  /** The brain's picks, most important first (ids of steps, data or "goal"). */
+  missing: string[];
+  now: LiveNow | null;
+};
+
+/** The answers to the rep's asks. `seq` grows by one per tap, so a new ask is told from an old answer. */
+export type LiveResponder = { seq: number; status: "reading" | "found" | "nothing"; pointId: string | null };
+export type LiveRecap = { seq: number; status: "reading" | "ready"; upTo: number | null; lines: string[]; unknown: string[] };
+
+/** What the dashboard pushes under `liveBrain` while the live-brain flag is on; null, and the island is today's. */
+export type LiveView = {
+  /** The brain is reading for this call (flag on and live help on). */
+  on: boolean;
+  /** Open and ended points, oldest first, then the drafts being written. */
+  points: LivePoint[];
+  progress: LiveProgress;
+  asks: { responder: LiveResponder | null; recap: LiveRecap | null };
+  /** ms since the epoch of the last good reading, once the brain stopped answering; null when it answers. */
+  offlineSince: number | null;
+};
+
+/** A rep's ask or action in the live assistant, forwarded to the dashboard (`shell.onLiveAction`). */
+export type LiveAction =
+  | { name: "liveAsk"; ask: "respond" | "now" | "recap" }
+  | { name: "liveTick"; kind: "step" | "data" | "goal"; id: string; on: boolean }
+  | { name: "liveDismiss"; id: string }
+  | { name: "liveTab"; tab: LiveTab };
+
 export type Clock = { startedAt: number; pausedMs: number; pausedAt: number | null };
 
 export type Levels = { you: number; them: number; side: "you" | "them"; at: number };
@@ -142,6 +224,9 @@ export type IslandState = {
   lastHelp: Assist | null;
   typeMenu: TypeMenuView | null;
   liveHelp: boolean | null;
+  /** The live call assistant (tabs, bar, peek); null: the flag is off and the island is today's. */
+  live: LiveView | null;
+  liveTab: LiveTab;
   countdown: Countdown | null;
   geometry: Geometry;
   postCall: PostCallData | null;
@@ -180,6 +265,7 @@ export type IslandAction =
   | { name: "undoCallType" }
   | { name: "pickChannel"; kind: "call" | "meeting" }
   | { name: "toggleLiveHelp" }
+  | LiveAction
   | { name: "pointer"; inside: boolean }
   /** Calling the contact on screen (sent to the dashboard as the bridge contract's commands). */
   | { name: "openDialConfirm" }

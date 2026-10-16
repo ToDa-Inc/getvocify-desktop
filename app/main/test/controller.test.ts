@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { IslandState, Levels } from "../../island/src/types.ts";
+import { islandSize, showsConversation } from "../../island/src/geometry.ts";
 import { IslandController, type Caller, type Effects } from "../src/controller.ts";
 
 /** A clock and timer queue the tests move by hand, plus a record of everything the controller does outside itself. */
@@ -1390,4 +1391,125 @@ test("a call app that takes the mic while the island waits for a memo is offered
   assert.equal(t.mode(), "finishing");
   t.advance(31);
   assert.equal(t.mode(), "call");
+});
+
+/* ---------- the live call assistant ---------- */
+
+// A payload as the dashboard pushes it under `liveBrain` (live-state-shell-contract.md).
+const wirePoint = (extra: Record<string, unknown> = {}) => ({
+  id: "p1", kind: "question", tag_key: "question", tag: null, title: "¿se integra con HubSpot?", said_at: 40, decision: "responder", decision_note: null,
+  answer: "Sí.", fallback: null, gap: null, source: { id: "knowledge", label: "Conocimiento" }, repeated: false, outcome: "open", ...extra,
+});
+const wire = (extra: Record<string, unknown> = {}) => ({
+  on: true, call_id: "c1",
+  state: {
+    version: 3, points: [wirePoint()],
+    progress: {
+      playbook: { key: "cold", name: "Llamada en frío" }, has_playbook: true, goal: null, missing: ["b", "d"],
+      steps: { a: { id: "a", status: "done", by: "rep", quote: null } },
+      data: { d1: { id: "d1", value: "HubSpot", quote: "usamos HubSpot", reread: true, by: "brain" } },
+      now: { kind: "step", id: "b", say: "Cuéntame más." },
+    },
+  },
+  playbook: {
+    key: "cold", name: "Llamada en frío", has_playbook: true,
+    steps: [{ id: "a", label: "Apertura", criterion: "c", example: "Hola", concept: "Preséntate", live: true }, { id: "b", label: "Problema", criterion: "c", example: null, concept: null, live: true }, { id: "x", label: "Tono", criterion: "c", example: null, concept: null, live: false }],
+    data: [{ id: "d1", label: "CRM", good: "Qué CRM", question: "¿Qué CRM?" }, { id: "d2", label: "Comerciales", good: null, question: null }],
+  },
+  drafts: [], reading: { points: false, progress: false, recap: false }, offline_since: null, asks: { responder: null, recap: null }, type_changed: false,
+  ...extra,
+});
+
+test("the live view the dashboard pushes becomes the island's; none, and the island is today's", () => {
+  const t = recording();
+  assert.equal(t.controller.state.live, null);
+  t.controller.applyShellState({ liveBrain: wire() });
+  assert.equal(t.controller.state.live?.on, true);
+  assert.equal(t.controller.state.live?.points[0].title, "¿se integra con HubSpot?");
+  assert.equal(t.controller.state.live?.points[0].source, "Conocimiento");
+  t.controller.applyShellState({ liveBrain: null });
+  assert.equal(t.controller.state.live, null);
+});
+
+test("the playbook's words are joined with what the call has done; coaching-only steps are never drawn", () => {
+  const t = recording();
+  t.controller.applyShellState({ liveBrain: wire() });
+  const progress = t.controller.state.live!.progress;
+  assert.deepEqual(progress.steps.map((s) => [s.id, s.done, s.byRep, s.example]), [["a", true, true, "Hola"], ["b", false, false, null]]);
+  assert.deepEqual(progress.data.map((d) => [d.id, d.done, d.value, d.reread, d.question]), [["d1", true, "HubSpot", true, "¿Qué CRM?"], ["d2", false, null, false, null]]);
+  assert.deepEqual(progress.missing, ["b", "d"]);
+  assert.deepEqual(progress.now, { kind: "step", id: "b", say: "Cuéntame más." });
+  assert.equal(progress.goal, null, "the goal is drawn once it is named");
+});
+
+test("the goal is named when it is reached, picked or the one to do now", () => {
+  const t = recording();
+  const withProgress = (progress: Record<string, unknown>) => wire({ state: { ...wire().state, progress: { ...wire().state.progress, ...progress } } });
+  t.controller.applyShellState({ liveBrain: withProgress({ missing: ["b", "goal"] }) });
+  assert.deepEqual(t.controller.state.live!.progress.goal, { label: null, done: false, byRep: false, value: null, quote: null });
+  t.controller.applyShellState({ liveBrain: withProgress({ goal: { reached: true, value: "Jueves 10:00", quote: "vale", by: "brain" } }) });
+  assert.equal(t.controller.state.live!.progress.goal?.done, true);
+  assert.equal(t.controller.state.live!.progress.goal?.value, "Jueves 10:00");
+});
+
+test("a malformed point is dropped, a point with nothing written is thinking, drafts come after the points", () => {
+  const t = recording();
+  t.controller.applyShellState({
+    liveBrain: wire({
+      state: { ...wire().state, points: [wirePoint({ id: "" }), wirePoint({ id: "p2", answer: null, fallback: null }), wirePoint({ id: "p3", outcome: "later" }), wirePoint({ id: "p4", answer: null, fallback: "Te lo confirmo.", gap: "No está" })] },
+      drafts: [{ title: "¿y el precio?", say: "Depende", grounded: null }, { title: null, say: null, grounded: null }],
+    }),
+  });
+  assert.deepEqual(t.controller.state.live?.points.map((p) => [p.id, p.phase, p.draft]), [["p2", "thinking", false], ["p4", "ready", false], ["draft:0", "writing", true], ["draft:1", "thinking", true]]);
+});
+
+test("the answers to the asks are kept with their seq", () => {
+  const t = recording();
+  t.controller.applyShellState({
+    liveBrain: wire({
+      asks: { responder: { seq: 2, status: "found", point_id: "p1" }, recap: { seq: 1, status: "ready", up_to_t: 61, lines: ["Marta."], unknown: ["CRM"] } },
+      offline_since: 1_700_000_000_000,
+    }),
+  });
+  const live = t.controller.state.live!;
+  assert.deepEqual(live.asks.responder, { seq: 2, status: "found", pointId: "p1" });
+  assert.deepEqual(live.asks.recap, { seq: 1, status: "ready", upTo: 61, lines: ["Marta."], unknown: ["CRM"] });
+  assert.equal(live.offlineSince, 1_700_000_000_000);
+});
+
+test("the open tab is the island's, goes to the dashboard, and every recording starts on its transcript", () => {
+  const t = recording();
+  t.controller.applyShellState({ liveBrain: wire() });
+  assert.equal(t.controller.state.liveTab, "transcript");
+  t.controller.act({ name: "liveTab", tab: "conversation" });
+  assert.equal(t.controller.state.liveTab, "conversation");
+  assert.deepEqual(t.last("livebrain:action"), { type: "tab", tab: "conversation" });
+  t.controller.stop(false);
+  t.advance(10);
+  assert.equal(t.controller.state.liveTab, "transcript");
+});
+
+test("asks, ticks and dismissals reach the dashboard as its contract names them; without the live view they go nowhere", () => {
+  const t = recording();
+  t.controller.act({ name: "liveAsk", ask: "respond" });
+  assert.equal(t.last("livebrain:action"), undefined);
+  t.controller.applyShellState({ liveBrain: wire() });
+  const sent = (action: Parameters<typeof t.controller.act>[0]) => (t.controller.act(action), t.last("livebrain:action"));
+  assert.deepEqual(sent({ name: "liveAsk", ask: "respond" }), { type: "responder" });
+  assert.deepEqual(sent({ name: "liveAsk", ask: "now" }), { type: "preguntar" });
+  assert.deepEqual(sent({ name: "liveAsk", ask: "recap" }), { type: "resumen" });
+  assert.deepEqual(sent({ name: "liveTick", kind: "step", id: "apertura", on: true }), { type: "tick", id: "apertura", kind: "step" });
+  assert.deepEqual(sent({ name: "liveTick", kind: "data", id: "crm", on: false }), { type: "untick", id: "crm", kind: "data" });
+  assert.deepEqual(sent({ name: "liveDismiss", id: "p1" }), { type: "dismiss", id: "p1" });
+});
+
+test("the open recording is 400 high, and 460 only while Conversación is open (never over half the screen)", () => {
+  const g = { notchWidth: 185, barHeight: 32, screenHeight: 982 };
+  assert.equal(islandSize(g, "recording", true).height, 400);
+  assert.equal(islandSize(g, "recording", true, undefined, 0, false, true).height, 460);
+  assert.equal(islandSize({ ...g, screenHeight: 800 }, "recording", true, undefined, 0, false, true).height, 400);
+  assert.equal(islandSize(g, "recording", false, undefined, 0, false, true).height, 32);
+  assert.equal(showsConversation({ mode: { kind: "recording" }, live: {}, liveTab: "conversation" }), true);
+  assert.equal(showsConversation({ mode: { kind: "recording" }, live: null, liveTab: "conversation" }), false, "today's island never grows");
+  assert.equal(showsConversation({ mode: { kind: "recording" }, live: {}, liveTab: "help" }), false);
 });

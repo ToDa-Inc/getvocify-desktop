@@ -4,7 +4,7 @@ import { CallSource } from "../../core/callSource.ts";
 import { ProposalWording } from "../../core/typeProposal.ts";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { islandSize, offerBriefLines, showsMeeting } from "../../island/src/geometry.ts";
+import { islandSize, offerBriefLines, showsConversation, showsMeeting } from "../../island/src/geometry.ts";
 import type { Geometry, IslandAction, IslandState } from "../../island/src/types.ts";
 import { createBridge } from "./bridge.ts";
 import { CallSoundWatch } from "./call-sound.ts";
@@ -390,7 +390,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     // same kind of island counts, so the card's height never leaks onto the next offer.
     const natural = state.mode.kind === "postCall" || offerBriefLines(state) > 0;
     if (open && natural && reportedSize && reportedKind === state.mode.kind) return reportedSize;
-    return islandSize(state.geometry, state.mode.kind, open, undefined, offerBriefLines(state), showsMeeting(state));
+    return islandSize(state.geometry, state.mode.kind, open, undefined, offerBriefLines(state), showsMeeting(state), showsConversation(state));
   };
 
   const initial = islandSize(placement.geometry, "idle", false);

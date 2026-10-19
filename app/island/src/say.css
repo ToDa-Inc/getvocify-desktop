@@ -155,3 +155,48 @@
 .island[data-reduce-motion="true"] .help-outline-line { opacity: 0.85; }
 .island[data-reduce-motion="true"] .rim-light::before, .island[data-reduce-motion="true"] .rim-light::after { animation: none; offset-distance: 12%; }
 .island[data-reduce-motion="true"] .rim-light::after { offset-distance: 62%; }
+
+/* ---------- at the side: a strip that keeps its size, and the panel growing out of it to its left ----------
+ * The window is a column as tall as the screen's work area; the strip's centre sits 12 px from its right edge. */
+html:has(.side-stage), body:has(.side-stage) { overflow: hidden; }
+.side-stage.island { position: fixed; inset: 0; width: auto; height: auto; overflow: visible; border-radius: 0; transition: none; background: transparent;
+  --strip: 40px; --strip-h: 104px; --gap: 8px; --open-w: 460px; }
+.side-dock { position: absolute; right: 12px; width: 0; height: 0; }
+/* Centred with a negative top, not a transform: the island presses every button with transform: scale(0.93), which would
+   replace a translate and make the strip jump down by half its height. */
+.side-strip { position: absolute; right: 0; top: calc(var(--strip-h) / -2); width: var(--strip); height: var(--strip-h); border-radius: calc(var(--strip) / 2);
+  --rim-r: calc(var(--strip) / 2);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; touch-action: none;
+  background: linear-gradient(180deg, rgb(31, 31, 35) 0%, rgb(17, 17, 20) 100%); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: background 160ms; }
+.side-strip:hover { background: linear-gradient(180deg, rgb(37, 37, 41) 0%, rgb(21, 21, 24) 100%); }
+.side-dock[data-dragging="true"] .side-strip { cursor: grabbing; }
+/* Dark glass with a metal rim: a real 1 px border (snapped, so both sides are equal at any scale), lighter at the top, one
+   colour for both sides; two soft highlights travel along it at a constant speed; brighter on hover; still while open. */
+.strip-metal, .strip-sheen { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+.strip-metal { border: 1px solid; border-color: rgba(214, 214, 222, 0.55) rgba(122, 122, 130, 0.45) rgba(168, 168, 176, 0.45); transition: border-color 200ms; }
+.side-strip:hover .strip-metal { border-color: rgba(230, 230, 236, 0.7) rgba(150, 150, 158, 0.55) rgba(190, 190, 198, 0.55); }
+.side-dock[data-open="true"] .strip-metal { border-color: rgba(224, 224, 230, 0.65) rgba(140, 140, 148, 0.5) rgba(180, 180, 188, 0.5); }
+.side-strip > .rim-light { pointer-events: none; }
+.side-dock[data-open="true"] .side-strip > .rim-light::before, .side-dock[data-open="true"] .side-strip > .rim-light::after { animation-play-state: paused; }
+.strip-sheen { background: radial-gradient(ellipse 80% 22% at 50% 0%, rgba(255, 255, 255, 0.1), transparent 70%); }
+.side-time { font-size: 9.5px; font-weight: 500; letter-spacing: 0; font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, 0.9); margin-top: -3px; white-space: nowrap; }
+.side-paused { height: 16px; line-height: 16px; font-size: 10px; color: var(--secondary); }
+.side-strip .wave { height: 16px; transform: scale(0.85); }
+/* The marker on the strip: the capsule's own shape, no screen edge to fade under, its light a little faster. */
+.side-strip .help-outline { border-radius: calc(var(--strip) / 2); --rim-r: calc(var(--strip) / 2); -webkit-mask-image: none; mask-image: none; }
+.side-strip .help-outline .rim-light::before, .side-strip .help-outline .rim-light::after { width: 28px; height: 28px; animation-duration: 6s; }
+.side-strip .help-outline .rim-light::after { animation-delay: -3s; }
+/* Closed, the panel is a sliver the strip's height right next to it; open, it grows left and evenly up and down. */
+.side-panel { position: absolute; right: calc(var(--strip) + var(--gap)); top: calc(var(--strip-h) / -2); overflow: hidden;
+  width: 0; height: var(--strip-h); border-radius: calc(var(--strip) / 2); opacity: 0;
+  background: rgb(24, 24, 27); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.5), inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+  transition: width 340ms var(--ease) 90ms, height 340ms var(--ease) 90ms, top 340ms var(--ease) 90ms, border-radius 340ms var(--ease) 90ms, opacity 120ms ease-out 330ms;
+  pointer-events: none; }
+.side-dock[data-open="true"] .side-panel { width: var(--open-w); height: var(--open-h); top: calc(var(--open-h) / -2); border-radius: 22px; opacity: 1; pointer-events: auto;
+  transition: width 340ms var(--ease), height 340ms var(--ease), top 340ms var(--ease), border-radius 340ms var(--ease), opacity 80ms ease-out; }
+.side-content { position: absolute; top: 0; bottom: 0; right: 0; width: var(--open-w); display: flex; flex-direction: column; padding-top: 6px; }
+.side-content .open-island { flex: 1; min-height: 0; }
+.side-stage[data-reduce-motion="true"] .side-panel { transition-duration: 120ms; transition-delay: 0s; }
+.side-stage[data-reduce-motion="true"] .side-strip > .rim-light::before, .side-stage[data-reduce-motion="true"] .side-strip > .rim-light::after { animation: none; offset-distance: 12%; }
+.side-stage[data-reduce-motion="true"] .side-strip > .rim-light::after { offset-distance: 62%; }

@@ -16,9 +16,10 @@ const WALLPAPER = "linear-gradient(160deg,#27324a 0%,#5b4a6e 45%,#c98f6b 100%)";
 const frame = () => new Promise((resolve) => setTimeout(resolve, 60));
 
 async function open(fixture) {
-  const width = Math.max(520, fixture.expect.width + 60);
+  // At the side the island is the window itself (a column at the screen's edge): it gets exactly that size.
+  const width = fixture.side ? fixture.expect.width : Math.max(520, fixture.expect.width + 60);
   // A card that is as tall as its content has no fixed expected height: give its window room.
-  const height = fixture.fit ? 760 : fixture.expect.height + 40;
+  const height = fixture.side ? fixture.expect.height : fixture.fit ? 760 : fixture.expect.height + 40;
   const win = new BrowserWindow({
     show: false, width, height, useContentSize: true, frame: false, resizable: false,
     backgroundColor: "#27324a",
@@ -138,6 +139,18 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
         cut: all('.live-say, .live-now-say, .live-todo-ask, .live-recap li').filter((e) => e.scrollHeight > e.clientHeight + 1).length,
       };
     })(),
+    // At the side: the strip (its size and place never change), whether its panel is open, and what the panel shows.
+    side: (() => {
+      const stage = document.querySelector('.side-stage');
+      if (!stage) return null;
+      const strip = document.querySelector('.side-strip')?.getBoundingClientRect();
+      return {
+        strip: strip ? { width: Math.round(strip.width), height: Math.round(strip.height), right: Math.round(innerWidth - strip.right) } : null,
+        open: document.querySelector('.side-dock')?.dataset.open === 'true',
+        view: !!document.querySelector('.side-panel .say-feed'),
+        marker: !!document.querySelector('.side-strip .help-marker'),
+      };
+    })(),
     // The closed island's marker in the Qué decir view: the dot, and the line around the whole island.
     marker: (() => {
       const dot = document.querySelector('.help-marker .help-dot');
@@ -181,7 +194,8 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
         stepQ: text(peek?.querySelector('.say-step-q')),
         briefLines: all('.say-line', peek).length,
         offline: text(document.querySelector('.say-offline .lost-title')),
-        stack: { feed: rect('.say-feed'), views: rect('.say-views'), bar: rect('.say-bar'), island: rect('.island') },
+        // At the side the view is in the panel, not the whole window.
+        stack: { feed: rect('.say-feed'), views: rect('.say-views'), bar: rect('.say-bar'), island: rect('.side-panel') ?? rect('.island') },
         spill: (() => {
           const bar = document.querySelector('.say-bar')?.getBoundingClientRect();
           const wrap = document.querySelector('.say-views .transcript-wrap')?.getBoundingClientRect();
@@ -317,7 +331,7 @@ for (const fixture of fixtures) {
     }
     if (fixture.expect.briefRows !== undefined && m.briefRows !== fixture.expect.briefRows) problems.push(`${m.briefRows} row(s) in the call's brief, expected ${fixture.expect.briefRows}`);
     if (fixture.expect.briefMaxHeight !== undefined && m.briefHeight > fixture.expect.briefMaxHeight) problems.push(`the call's brief is ${m.briefHeight}px tall, expected at most ${fixture.expect.briefMaxHeight}px`);
-    for (const key of ["briefOpen", "listening", "keypad", "bubbleText", "copyButtons", "ticked", "saveLabel", "crmLink", "marker"]) {
+    for (const key of ["briefOpen", "listening", "keypad", "bubbleText", "copyButtons", "ticked", "saveLabel", "crmLink", "marker", "side"]) {
       if (fixture.expect[key] !== undefined && JSON.stringify(m[key] ?? null) !== JSON.stringify(fixture.expect[key])) problems.push(`${key} is ${JSON.stringify(m[key])}, expected ${JSON.stringify(fixture.expect[key])}`);
     }
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);
@@ -325,7 +339,7 @@ for (const fixture of fixtures) {
       // The stack the spec fixes: Qué decir 100 high under the controls, the bar 40 at the foot, the transcript between.
       const st = m.say.stack;
       if (st.feed?.height !== 100) problems.push(`Qué decir is ${st.feed?.height}px high, expected 100`);
-      if (st.bar?.height !== 40 || st.bar?.top + st.bar?.height !== st.island?.height) problems.push(`bar at ${st.bar?.top}/${st.bar?.height}, expected 40 high at the foot of the ${st.island?.height}px island`);
+      if (st.bar?.height !== 40 || st.bar?.top + st.bar?.height !== st.island?.top + st.island?.height) problems.push(`bar at ${st.bar?.top}/${st.bar?.height}, expected 40 high at the foot of the ${st.island?.height}px island`);
       if (m.say.cut) problems.push(`${m.say.cut} text(s) cut by their box`);
       // The transcript stays between Qué decir and the bar: no bubble is drawn over the bar.
       if (m.say.spill) problems.push(`the transcript reaches ${m.say.spill}px past the top of the bar`);

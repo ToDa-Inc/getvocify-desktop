@@ -274,6 +274,7 @@ function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | n
     takeRunningLoopback: () => options.runningLoopback === true,
     phone,
     callOnPhone: { get: () => store.get("callOnPhone") === true, set: (on) => void store.set("callOnPhone", on) },
+    islandPlacement: { get: () => (store.get("islandPlacement") === "side" ? "side" : "notch"), set: (placement) => void store.set("islandPlacement", placement) },
     readCrmPages: async () => ({ urls: ["https://app.hubspot.com/contacts/1/contact/2"], browsers: [{ name: "chrome", bundleId: "chrome", access: "granted" }] }),
     platform: options.platform ?? "win32",
     askMicrophone: options.askMicrophone,
@@ -502,6 +503,14 @@ test("bridge: Vocify calling is on until the rep turns it off on this computer, 
   assert.deepEqual(await t.call("calling:set", { onPhone: true }), { onPhone: true, phoneApp: "Phone Link" });
   assert.deepEqual(await t.call("calling:get", {}), { onPhone: true, phoneApp: "Phone Link" });
   assert.deepEqual(await bridgeSetup({ phoneApp: null }).call("calling:get", {}), { onPhone: false, phoneApp: null });
+});
+
+test("bridge: the island sits under the notch until the rep puts it at the side; nothing else is taken", async () => {
+  const t = bridgeSetup();
+  assert.deepEqual(await t.call("island:get", {}), { placement: "notch" });
+  assert.deepEqual(await t.call("island:setPlacement", { placement: "side" }), { placement: "side" });
+  assert.deepEqual(await t.call("island:get", {}), { placement: "side" });
+  assert.deepEqual(await t.call("island:setPlacement", { placement: "left" }), { placement: "side" }, "an unknown place changes nothing");
 });
 
 test("bridge: a call on the phone opens it there, and the island waits for it to connect", async () => {

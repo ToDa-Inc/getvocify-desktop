@@ -1557,6 +1557,15 @@ test("the Qué decir view's asks reach the dashboard as the contract names them"
   assert.deepEqual(sent({ name: "liveEvent", event: "marker_seen", id: "p1" }), { type: "event", kind: "marker_seen", id: "p1" });
 });
 
+test("where the recording sits: the saved choice from the start, and a change shows at once", () => {
+  const t = recording();
+  assert.equal(t.controller.state.placement, "notch");
+  t.controller.setPlacement("side");
+  assert.equal(t.controller.state.placement, "side");
+  t.controller.setPlacement("notch");
+  assert.equal(t.controller.state.placement, "notch");
+});
+
 test("the open recording is 400 high, and 460 only while Conversación is open (never over half the screen)", () => {
   const g = { notchWidth: 185, barHeight: 32, screenHeight: 982 };
   assert.equal(islandSize(g, "recording", true).height, 400);

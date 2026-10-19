@@ -127,7 +127,7 @@ export class IslandController {
   /** True when a native recorder draws the transcript itself; the dashboard's overlay then must not overwrite it. */
   nativeTranscript = false;
 
-  constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean; language?: Language }) {
+  constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean; language?: Language; placement?: "notch" | "side" }) {
     this.effects = effects;
     this.current = {
       mode: { kind: "idle" },
@@ -146,7 +146,7 @@ export class IslandController {
       liveHelp: null,
       live: null,
       liveTab: "transcript",
-      placement: "notch",
+      placement: options.placement ?? "notch",
       countdown: null,
       geometry,
       postCall: null,

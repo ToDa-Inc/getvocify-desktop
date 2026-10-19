@@ -28,6 +28,8 @@ export type BridgeDeps = {
   phone: PhoneDialer;
   /** Whether the island's Call goes to the rep's phone on this computer (off: through Vocify), kept across launches. */
   callOnPhone: { get(): boolean; set(on: boolean): void };
+  /** Where the recording sits: under the notch, or as a strip at the side of the screen (spec 2026-10-16, revised 2026-10-19). */
+  islandPlacement: { get(): "notch" | "side"; set(placement: "notch" | "side"): void };
   /** To the dashboard page (`__vocifyEmit`). */
   emit(channel: string, payload: unknown): void;
   showMainWindow(): void;
@@ -149,6 +151,11 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
           deps.log(`calls go ${args.onPhone ? `to the rep's phone (${deps.phone.app() ?? "no app for calls"})` : "through Vocify"}`);
         }
         return calling();
+      case "island:get":
+        return { placement: deps.islandPlacement.get() };
+      case "island:setPlacement":
+        if (args.placement === "notch" || args.placement === "side") deps.islandPlacement.set(args.placement);
+        return { placement: deps.islandPlacement.get() };
       case "calling:setup":
         await deps.phone.setup();
         return { ok: true };

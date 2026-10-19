@@ -300,6 +300,18 @@ sayFixtures.push(
   { name: "say-closed-tabs-keep-sparkle", state: recording(view([HUBSPOT]), { expanded: false }), expect: { ...CLOSED, marker: null } },
 );
 
+// At the side (the setting): a strip 40 x 104, 12 px from the right edge of a column as tall as the screen's work area.
+const COLUMN = { width: 540, height: 640 };
+const STRIP = { width: 40, height: 104, right: 12 };
+sayFixtures.push(
+  { name: "side-closed", side: true, state: recording(sayView([{ ...S_HUBSPOT, outcome: "answered" }]), { expanded: false, placement: "side" }), expect: { ...COLUMN, side: { strip: STRIP, open: false, view: false, marker: false } } },
+  { name: "side-closed-marker", side: true, state: recording(sayView([S_HUBSPOT]), { expanded: false, placement: "side" }), expect: { ...COLUMN, side: { strip: STRIP, open: false, view: false, marker: true } } },
+  { name: "side-open", side: true, state: recording(sayView([S_DEEPEN, S_HUBSPOT]), { placement: "side" }), expect: { ...COLUMN, side: { strip: STRIP, open: true, view: true, marker: false } } },
+  { name: "side-open-steps", side: true, state: recording(sayView([S_HUBSPOT]), { placement: "side" }), steps: [".say-bar .live-action:nth-child(3)"], expect: { ...COLUMN, side: { strip: STRIP, open: true, view: true, marker: false }, say: { peek: "steps" } } },
+  // Everything that is not a recording stays under the notch.
+  { name: "side-not-recording", state: { ...recording(null, { placement: "side" }), mode: { kind: "idle" }, expanded: false }, expect: { width: 257, height: 32, side: null } },
+);
+
 export const sayInteractions = [
   { name: "say-respond-points-at-fresh", fixture: "say-fresh", click: ".say-bar .live-action:nth-child(1)", expect: [{ name: "liveAsk", ask: "respond" }] },
   { name: "say-respond-rewrites", fixture: "say-answer", click: ".say-bar .live-action:nth-child(1)", expect: [{ name: "liveRewrite", id: "hubspot", version: 1 }] },
@@ -312,4 +324,6 @@ export const sayInteractions = [
   { name: "say-bubble-asks", fixture: "say-empty", click: ".bubble[data-tappable=\"true\"]", expect: [{ name: "liveRespondTurn", turnId: "t2" }] },
   { name: "say-bubble-with-card-points", fixture: "say-answer", click: ".bubble[data-source=\"true\"]", expect: [] },
   { name: "say-done", fixture: "say-answer", click: ".say-done", expect: [{ name: "liveDismiss", id: "hubspot" }] },
+  { name: "side-strip-opens", fixture: "side-closed", click: ".side-strip", expect: [{ name: "toggle" }] },
+  { name: "side-strip-closes", fixture: "side-open", click: ".side-strip", expect: [{ name: "toggle" }] },
 ];

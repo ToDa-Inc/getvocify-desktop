@@ -311,8 +311,19 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       },
     },
     placement.geometry,
-    { recorderReady: settings.get("recorderReady") === true, material: "opaque", reduceMotion: systemPreferences.getAnimationSettings().prefersReducedMotion, language: ProposalWording.language(app.getLocale()) },
+    {
+      recorderReady: settings.get("recorderReady") === true, material: "opaque", reduceMotion: systemPreferences.getAnimationSettings().prefersReducedMotion, language: ProposalWording.language(app.getLocale()),
+      placement: settings.get("islandPlacement") === "side" ? "side" : "notch",
+    },
   );
+  /** Where the recording sits (the rep's choice, kept across launches): the island follows it at once. */
+  const placementSetting = (): "notch" | "side" => (settings.get("islandPlacement") === "side" ? "side" : "notch");
+  const setPlacement = (next: "notch" | "side") => {
+    if (next === placementSetting() && controller.state.placement === next) return;
+    settings.set("islandPlacement", next);
+    log(`island: during a recording it sits ${next === "side" ? "at the side of the screen" : "under the notch"}`);
+    controller.setPlacement(next);
+  };
 
   /* ---------- the dashboard window ---------- */
 
@@ -400,6 +411,39 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     width,
     height,
   });
+
+  /* At the side (the setting, while recording), the window is a column at the right edge of the island's screen, as tall
+     as its work area: the strip and its panel are drawn inside it and moved up and down by the page, so the window never
+     moves or resizes while the rep drags or opens it. It lets clicks through except over the strip and the open panel. */
+  const SIDE_WIDTH = 540;
+  const sideNow = (state: IslandState = controller.state) => state.placement === "side" && state.mode.kind === "recording";
+  const sideFrame = () => {
+    const area = (chosenDisplay() ?? screen.getPrimaryDisplay()).workArea;
+    return { x: area.x + area.width - SIDE_WIDTH, y: area.y, width: SIDE_WIDTH, height: area.height };
+  };
+  let sideActive = false;
+  /** Into the side column, or back to the notch; true while at the side. */
+  const followPlacement = (state: IslandState): boolean => {
+    const side = sideNow(state);
+    if (side && !sideActive) {
+      sideActive = true;
+      lastKey = "side";
+      if (fitTimer) clearTimeout(fitTimer);
+      if (platform === "win32" && clipped) {
+        island.setShape([]);
+        clipped = false;
+      }
+      place(sideFrame());
+      island.setIgnoreMouseEvents(true, { forward: true });
+      log("island: at the side of the screen for this recording");
+    } else if (!side && sideActive) {
+      sideActive = false;
+      lastKey = "";
+      island.setIgnoreMouseEvents(false);
+      log("island: back under the notch");
+    }
+    return side;
+  };
 
   const targetSize = (state: IslandState) => {
     const open = state.expanded && state.mode.kind !== "starting";
@@ -509,7 +553,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
    * because a island that drifts sideways cannot be told apart from the outside.
    */
   const checkCentred = async (target: { width: number; height: number }) => {
-    if (island.isDestroyed()) return;
+    if (island.isDestroyed() || sideActive) return;
     const want = frameFor(target.width, target.height);
     const got = island.getBounds();
     const page = await island.webContents
@@ -524,6 +568,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   let fitTimer: ReturnType<typeof setTimeout> | null = null;
   let lastKey = "";
   const fit = (target: { width: number; height: number }, force: boolean) => {
+    // At the side the window is the column: it is placed again only when the screen changes.
+    if (sideActive) {
+      if (force && !island.isDestroyed()) place(sideFrame());
+      return;
+    }
     const key = `${target.width}x${target.height}`;
     if (!force && key === lastKey) return;
     lastKey = key;
@@ -587,7 +636,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     followSpeakers(state);
     if (island.isDestroyed()) return;
     // The window first, so it is already big enough when the page starts drawing the bigger island.
-    fit(targetSize(state), false);
+    if (!followPlacement(state)) fit(targetSize(state), false);
     island.webContents.send("island:state", state);
     tray?.setContextMenu(buildTrayMenu(state));
     dashboard.releaseIfIdle();
@@ -683,6 +732,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     phone: os.phone,
     takeRunningLoopback: () => callSound?.handOver() ?? false,
     callOnPhone: { get: () => settings.get("callOnPhone") === true, set: (on) => settings.set("callOnPhone", on) },
+    islandPlacement: { get: placementSetting, set: setPlacement },
     emit: (channel, payload) => dashboard.emit(channel, payload),
     showMainWindow: () => dashboard.show(),
     microphoneAccess: () => systemPreferences.getMediaAccessStatus("microphone"),
@@ -777,6 +827,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (!fromIsland(event.sender) || typeof text !== "string" || text.length === 0 || text.length > 1_000_000) return false;
     await clipboard.writeText(text);
     return true;
+  });
+  ipcMain.on("island:interactive", (event, on: unknown) => {
+    if (!fromIsland(event.sender) || !sideActive || island.isDestroyed()) return;
+    island.setIgnoreMouseEvents(on !== true, { forward: true });
   });
   ipcMain.on("island:resize", (event, size: { width: number; height: number }) => {
     if (!fromIsland(event.sender) || !size || !(size.width > 0) || !(size.height > 0)) return;
@@ -983,6 +1037,21 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     return tray;
   }
 
+  /** "During a recording": the island under the notch, or as a strip at the side of the screen. */
+  function placementChoices(): Electron.MenuItemConstructorOptions[] {
+    const current = placementSetting();
+    return [
+      {
+        label: "During a recording",
+        submenu: [
+          { label: "At the top (notch)", type: "radio" as const, checked: current === "notch", click: () => setPlacement("notch") },
+          { label: "At the side", type: "radio" as const, checked: current === "side", click: () => setPlacement("side") },
+        ],
+      },
+      { type: "separator" as const },
+    ];
+  }
+
   /** "Show island on": one entry per connected screen, the main one first. Absent with a single screen. */
   function screenChoices(): Electron.MenuItemConstructorOptions[] {
     const displays = screen.getAllDisplays();
@@ -1024,7 +1093,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       return { label: item.label, enabled: item.enabled, click };
     });
     // Before "Check for updates" and "Quit", which end the menu.
-    entries.splice(Math.max(0, entries.length - 2), 0, ...screenChoices());
+    entries.splice(Math.max(0, entries.length - 2), 0, ...placementChoices(), ...screenChoices());
     return Menu.buildFromTemplate(entries);
   }
 }

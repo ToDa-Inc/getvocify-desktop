@@ -10,6 +10,7 @@ import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { LiveBody } from "./live/LiveBody.tsx";
 import { SayBody, type TranscriptMarks } from "./say/SayBody.tsx";
 import { HelpMarker, useHelpMarker } from "./say/Marker.tsx";
+import { SideDock } from "./side/SideDock.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
 import { TypingDots } from "./TypingDots.tsx";
 import { useNow } from "./useNow.ts";
@@ -18,6 +19,12 @@ import { postCallCrmName, postCallPending, type Assist, type IslandAction, type 
 type Act = (action: IslandAction) => void;
 
 export function Island({ state, act }: { state: IslandState; act: Act }) {
+  // At the side (the rep's setting), a recording is a strip at the screen's edge with its panel; everything else stays here.
+  if (state.placement === "side" && state.mode.kind === "recording") return <SideDock state={state} act={act} />;
+  return <NotchIsland state={state} act={act} />;
+}
+
+function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
   const kind = state.mode.kind;
   const open = state.expanded && kind !== "starting";
   // The after-call card is as tall as its content, which only the page can measure (fonts differ by OS).
@@ -855,7 +862,7 @@ function KeypadPopover({ anchor, onDigit, onClose }: { anchor: Anchor; onDigit: 
 
 /* ---------- open recording ---------- */
 
-function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
+export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
   const [typeAnchor, setTypeAnchor] = useState<Anchor | null>(null);
   const closeType = useCallback(() => setTypeAnchor(null), []);
   const keypadButton = useRef<HTMLButtonElement>(null);
@@ -1270,7 +1277,7 @@ function TurnBubble({ turn, arrives, source = false, onTap = null, tapHelp = nul
 
 /* ---------- small pieces ---------- */
 
-function Elapsed({ state }: { state: IslandState }) {
+export function Elapsed({ state }: { state: IslandState }) {
   const clock = state.clock;
   const running = clock !== null && clock.pausedAt === null;
   const fixed = (window as unknown as { __fixedNow?: number }).__fixedNow;
@@ -1295,7 +1302,7 @@ const REST = [3, 4.5, 6, 4.5, 3];
 const WAVE_FRAME_MS = 42;
 const SILENT = 0.002;
 
-function VoiceWave({ state }: { state: IslandState }) {
+export function VoiceWave({ state }: { state: IslandState }) {
   const root = useRef<HTMLDivElement>(null);
   const { reduceMotion } = state;
 
@@ -1339,7 +1346,7 @@ function VoiceWave({ state }: { state: IslandState }) {
   );
 }
 
-function RecordingDot({ paused, reduceMotion }: { paused: boolean; reduceMotion: boolean }) {
+export function RecordingDot({ paused, reduceMotion }: { paused: boolean; reduceMotion: boolean }) {
   return (
     <span
       className="rec-dot"

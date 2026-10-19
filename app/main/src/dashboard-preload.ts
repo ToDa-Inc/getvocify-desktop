@@ -66,6 +66,11 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
     // The live call assistant's asks and marks from the island ({ type: "responder" | "preguntar" | "resumen" | "tick" | "untick" | "dismiss" | "tab", ... }).
     onLiveAction: on("livebrain:action"),
   },
+  // Where the live call island sits during a recording ({ placement: "notch" | "side" }).
+  island: {
+    get: () => call("island:get"),
+    setPlacement: (placement: "notch" | "side") => call("island:setPlacement", { placement }),
+  },
   // Vocify calling on this computer: off, the island's Call opens on the rep's phone ({ onPhone, phoneApp }).
   calling: {
     get: () => call("calling:get"),

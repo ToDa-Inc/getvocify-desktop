@@ -23,6 +23,11 @@ contextBridge.exposeInMainWorld("vocifyIsland", {
   act(action: IslandAction) {
     ipcRenderer.send("island:act", action);
   },
+  /** At the side, the window is a tall column that lets clicks through to the app under it except where the strip and
+   * its panel are: the page says when the pointer is over them. */
+  interactive(on: boolean) {
+    ipcRenderer.send("island:interactive", on);
+  },
   copy(text: string): Promise<boolean> {
     return ipcRenderer.invoke("island:copy", text);
   },

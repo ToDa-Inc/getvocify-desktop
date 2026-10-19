@@ -105,8 +105,7 @@ function measureMac(helperPath: string): Promise<Placement | null> {
 }
 
 
-function measureElectron(): Placement {
-  const display = screen.getPrimaryDisplay();
+function measureElectron(display: Electron.Display = screen.getPrimaryDisplay()): Placement {
   const menuBar = display.workArea.y - display.bounds.y;
   return {
     geometry: { notchWidth: 0, barHeight: Math.max(menuBar, 30), screenHeight: display.bounds.height },
@@ -146,6 +145,24 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const macHelper = platform === "darwin" ? (app.isPackaged ? join(process.resourcesPath, "mac-helper", "vocify-mac-helper") : join(here, "../../native/mac-helper/dist/vocify-mac-helper")) : null;
   const macPanel = platform === "darwin" ? (app.isPackaged ? join(process.resourcesPath, "mac-panel", "mac_panel.node") : join(here, "../../native/mac-panel/dist/mac_panel.node")) : null;
   const placement = (macHelper ? await measureMac(macHelper) : null) ?? measureElectron();
+  // The Mac's own screen, with its notch, as the helper measured it: where the island sits unless the rep moved it.
+  const macOwn: Placement | null = platform === "darwin" ? { ...placement, geometry: { ...placement.geometry } } : null;
+  /** The screen the rep moved the island to, while it is still connected. Nothing chosen (or gone) means the main screen. */
+  const chosenDisplay = (): Electron.Display | null => {
+    const id = settings.get("islandDisplayId");
+    return typeof id === "number" ? screen.getAllDisplays().find((display) => display.id === id) ?? null : null;
+  };
+  const measureNow = (): Placement => {
+    const chosen = chosenDisplay();
+    return chosen ? measureElectron(chosen) : macOwn ?? measureElectron();
+  };
+  const takePlacement = (next: Placement) => {
+    placement.geometry = next.geometry;
+    placement.midX = next.midX;
+    placement.originX = next.originX;
+    placement.originY = next.originY;
+  };
+  takePlacement(measureNow());
   const offsetY = options.islandOffsetY ?? 0;
   const dashboardHolder: { host: DashboardHost | null } = { host: null };
   // The CRM record last on screen in a browser and when it was last seen there. A call app in front (Zoom, Teams) hides
@@ -824,13 +841,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   app.on("will-quit", () => os.callDetector?.stop());
 
   const reposition = () => {
-    const next = platform === "darwin" ? placement : measureElectron();
-    placement.geometry = next.geometry;
-    placement.midX = next.midX;
-    placement.originX = next.originX;
-    placement.originY = next.originY;
+    const next = measureNow();
+    takePlacement(next);
     controller.setGeometry(next.geometry);
     fit(targetSize(controller.state), true);
+    tray?.setContextMenu(buildTrayMenu(controller.state));
   };
   screen.on("display-metrics-changed", reposition);
   screen.on("display-added", reposition);
@@ -862,6 +877,35 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   powerMonitor.on("unlock-screen", () => setTimeout(() => redraw("screen unlocked"), 3000).unref());
   app.on("child-process-gone", (_event, details) => {
     if (details.type === "GPU") redraw(`the graphics process is gone (${details.reason})`);
+  });
+  // Windows can lose the island without telling anyone: another always-on-top window takes its place in the stack, a
+  // "show the desktop" hides or minimises it, a screen is unplugged with the window on it. Every 15 s it is shown again,
+  // raised again, and put back when it is no longer on any screen.
+  const keepOnScreen = setInterval(() => {
+    if (island.isDestroyed()) return;
+    if (island.isMinimized()) island.restore();
+    if (!island.isVisible()) {
+      log("island: the window was hidden, showing it again");
+      island.showInactive();
+    }
+    island.setAlwaysOnTop(true, "screen-saver");
+    island.moveTop();
+    const bounds = island.getBounds();
+    const onAScreen = screen.getAllDisplays().some((display) => {
+      const area = display.bounds;
+      return bounds.x < area.x + area.width && bounds.x + bounds.width > area.x && bounds.y < area.y + area.height && bounds.y + bounds.height > area.y;
+    });
+    if (!onAScreen) {
+      log(`island: the window at ${bounds.x},${bounds.y} is on no screen, placing it again`);
+      reposition();
+    }
+  }, 15_000);
+  keepOnScreen.unref();
+  island.on("minimize", () => island.restore());
+  island.on("hide", () => {
+    if (island.isDestroyed() || quitting) return;
+    log("island: the system hid the window, showing it again");
+    setTimeout(() => !island.isDestroyed() && !island.isVisible() && island.showInactive(), 500).unref();
   });
   const periodicRedraw = setInterval(() => redraw("up for hours"), 4 * 60 * 60 * 1000);
   periodicRedraw.unref();
@@ -939,21 +983,49 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     return tray;
   }
 
+  /** "Show island on": one entry per connected screen, the main one first. Absent with a single screen. */
+  function screenChoices(): Electron.MenuItemConstructorOptions[] {
+    const displays = screen.getAllDisplays();
+    if (displays.length < 2) return [];
+    const main = screen.getPrimaryDisplay();
+    const shownOn = chosenDisplay() ?? main;
+    const ordered = [main, ...displays.filter((display) => display.id !== main.id)];
+    return [
+      {
+        label: "Show island on",
+        submenu: ordered.map((display, index) => ({
+          label: `${display.id === main.id ? "Main screen" : `Screen ${index + 1}`}${display.label ? ` · ${display.label}` : ""} (${display.bounds.width}×${display.bounds.height})`,
+          type: "radio" as const,
+          checked: display.id === shownOn.id,
+          click: () => {
+            // The main screen is stored as "nothing chosen", so the island follows it if the rep changes which screen is main.
+            settings.set("islandDisplayId", display.id === main.id ? null : display.id);
+            log(`island: moved to ${display.id === main.id ? "the main screen" : `screen ${display.id}`}`);
+            reposition();
+          },
+        })),
+      },
+      { type: "separator" as const },
+    ];
+  }
+
   function buildTrayMenu(state: IslandState): Menu {
-    return Menu.buildFromTemplate(
-      trayItems(state, `Vocify ${app.getVersion()} · ${dashboardHost}`, microphoneLabel(systemPreferences.getMediaAccessStatus("microphone"))).map((item) => {
-        if (item.id === "separator") return { type: "separator" as const };
-        const click = () => {
-          if (item.id === "open") dashboard.show();
-          else if (item.id === "record") controller.shortcutPressed();
-          else if (item.id === "stop") controller.act({ name: "stop" });
-          else if (item.id === "update") checkForUpdates?.();
-          else if (item.id === "permissions") void shell.openExternal(microphoneSettingsUrl(platform));
-          else app.quit();
-        };
-        return { label: item.label, enabled: item.enabled, click };
-      }),
-    );
+    const items = trayItems(state, `Vocify ${app.getVersion()} · ${dashboardHost}`, microphoneLabel(systemPreferences.getMediaAccessStatus("microphone")));
+    const entries: Electron.MenuItemConstructorOptions[] = items.map((item) => {
+      if (item.id === "separator") return { type: "separator" as const };
+      const click = () => {
+        if (item.id === "open") dashboard.show();
+        else if (item.id === "record") controller.shortcutPressed();
+        else if (item.id === "stop") controller.act({ name: "stop" });
+        else if (item.id === "update") checkForUpdates?.();
+        else if (item.id === "permissions") void shell.openExternal(microphoneSettingsUrl(platform));
+        else app.quit();
+      };
+      return { label: item.label, enabled: item.enabled, click };
+    });
+    // Before "Check for updates" and "Quit", which end the menu.
+    entries.splice(Math.max(0, entries.length - 2), 0, ...screenChoices());
+    return Menu.buildFromTemplate(entries);
   }
 }
 

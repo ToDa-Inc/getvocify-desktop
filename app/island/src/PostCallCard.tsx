@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
-import { ArrowUpRight, Calendar, Check, ChevronDown, Close, ExclamationCircle, FileText, IdCard, Mail, Users } from "./icons.tsx";
+import { ArrowUpRight, Calendar, Check, ChevronDown, Close, ExclamationCircle, FileText, IdCard, Mail, Plus, Users } from "./icons.tsx";
 import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallData, type PostCallMeeting } from "./types.ts";
 
 /**
@@ -12,6 +12,8 @@ import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallD
 
 type Act = (action: IslandAction) => void;
 type Tab = "crm" | "email" | "notes";
+/** A task the rep added here: its title and the day it is due (YYYY-MM-DD, the rep's own calendar). */
+type NewTask = { title: string; due: string };
 
 const L = { inset: 16, top: 6, header: 26, tabs: 26, gap: 8, line: 30, groupLabel: 20, listMax: 236, actions: 40, meeting: 26, bottom: 10, label: 104, noteLines: 8, noteMinLines: 3 } as const;
 const GROUPS = [
@@ -50,6 +52,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const [activeTab, setActiveTab] = useState<Tab>("crm");
   const [options, setOptions] = useState<{ key: string; anchor: Anchor } | null>(null);
   const [typeMenu, setTypeMenu] = useState<Anchor | null>(null);
+  const [tasks, setTasks] = useState<NewTask[]>([]);
 
   // A new call: its own ticks, picks and note.
   useEffect(() => {
@@ -59,6 +62,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
     setActiveTab("crm");
     setOptions(null);
     setTypeMenu(null);
+    setTasks([]);
   }, [postCall.memoId]);
 
   // Past its changes (applying, done...), a value's options no longer apply.
@@ -78,7 +82,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const isKept = (key: string) => !dropped.has(key) && !(postCall.changes.find((c) => c.key === key)?.pending && edited[key] === undefined);
   const keptCount = postCall.changes.filter((c) => isKept(c.key)).length;
   const hasNote = noteDraft !== null && noteDraft.trim() !== "";
-  const canSave = keptCount > 0 || hasNote;
+  const canSave = keptCount > 0 || hasNote || tasks.length > 0;
   const crm = postCallCrmName(postCall);
 
   // The island never takes the keyboard (a click must not take it from the call), except while this card can still save:
@@ -126,11 +130,17 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
     const omit = postCall.changes.map((c) => c.key).filter((key) => !isKept(key));
     if (!canSave) return;
     const edits = Object.fromEntries(Object.entries(edited).filter(([key, value]) => postCall.changes.some((c) => c.key === key && c.value !== value)));
-    act({ name: "postCall", type: "approve", details: { omit, edits, ...(noteDraft !== null ? { note: noteDraft } : {}) } });
+    act({ name: "postCall", type: "approve", details: { omit, edits, ...(noteDraft !== null ? { note: noteDraft } : {}), ...(tasks.length > 0 ? { tasks } : {}) } });
   };
 
   const send = (type: string, details?: Record<string, unknown>) => act({ name: "postCall", type, details });
   const review = <TextAction title="Review in Vocify" arrow onClick={() => send("review")} />;
+  const saveButton = (
+    <button type="button" className="primary-action" disabled={!canSave} title={`Writes the ticked changes, the new tasks and the note to ${crm}`} onClick={approve}>
+      <Check size={9} />
+      <span>{saveLabel(keptCount + tasks.length, hasNote, postCall.crm ?? "the CRM")}</span>
+    </button>
+  );
 
   const count = (t: Tab) => (t === "crm" ? (postCall.stage === "ready" ? keptCount : postCall.stage === "review" ? 1 : 0) : t === "email" && postCall.email?.state === "ready" ? 1 : 0);
 
@@ -176,9 +186,19 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
           <>
             {postCall.stage === "writing" && <Line busy><span className="dim">Writing the update…</span></Line>}
             {postCall.stage === "ready" && nothingSure && (
-              <Line icon={<ExclamationCircle />} trailing={review}>
+              <Line icon={<ExclamationCircle />} trailing={postCall.canApprove ? undefined : review}>
                 <span>Nothing clear enough to write from here</span>
               </Line>
+            )}
+            {postCall.stage === "ready" && nothingSure && postCall.canApprove && (
+              <>
+                <AddTask tasks={tasks} onChange={setTasks} />
+                <div className="postcall-actions" style={{ height: L.actions }}>
+                  {saveButton}
+                  <div className="grow" />
+                  {review}
+                </div>
+              </>
             )}
             {postCall.stage === "ready" && !nothingSure && (
               <>
@@ -208,13 +228,11 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
                     </div>
                   ))}
                 </ChangesList>
+                {postCall.canApprove && <AddTask tasks={tasks} onChange={setTasks} />}
                 <div className="postcall-actions" style={{ height: L.actions }}>
                   {postCall.canApprove ? (
                     <>
-                      <button type="button" className="primary-action" disabled={!canSave} title={`Writes the ticked changes and the note to ${crm}`} onClick={approve}>
-                        <Check size={9} />
-                        <span>{saveLabel(keptCount, hasNote, postCall.crm ?? "the CRM")}</span>
-                      </button>
+                      {saveButton}
                       <div className="grow" />
                       {review}
                     </>
@@ -305,10 +323,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
             )}
             <div className="postcall-actions" style={{ height: L.actions }}>
               {noteEditable ? (
-                <button type="button" className="primary-action" disabled={!canSave} title={`Writes the ticked changes and the note to ${crm}`} onClick={approve}>
-                  <Check size={9} />
-                  <span>{saveLabel(keptCount, hasNote, postCall.crm ?? "the CRM")}</span>
-                </button>
+                saveButton
               ) : null}
               <div className="grow" />
               <TextAction title="Open in Vocify" arrow onClick={() => send("openNotes")} />
@@ -516,6 +531,97 @@ function ValueEditor({ text, onDone }: { text: string; onDone: (text: string | n
         releaseKeyboardSoon();
       }}
     />
+  );
+}
+
+const DAYS = [
+  { label: "Today", offset: 0 },
+  { label: "Tomorrow", offset: 1 },
+  { label: "Next week", offset: 7 },
+] as const;
+
+/** The day `offset` days from today, as YYYY-MM-DD on the rep's own calendar. */
+function dayAfter(offset: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + offset);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+/** Tasks the rep adds by hand: a title and a day, listed under the changes and written to the CRM with Save. */
+function AddTask({ tasks, onChange }: { tasks: NewTask[]; onChange: (tasks: NewTask[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [offset, setOffset] = useState<number>(1);
+  const input = useRef<HTMLInputElement>(null);
+  const close = () => {
+    setOpen(false);
+    setTitle("");
+    releaseKeyboardSoon();
+  };
+  const add = () => {
+    const text = title.replace(/\s+/g, " ").trim();
+    if (!text) return;
+    onChange([...tasks, { title: text, due: dayAfter(offset) }]);
+    close();
+  };
+  useEffect(() => {
+    if (!open) return;
+    void window.vocifyIsland?.keyboard?.("now");
+    input.current?.focus();
+  }, [open]);
+  const dayLabel = (due: string) => DAYS.find((day) => dayAfter(day.offset) === due)?.label ?? due;
+  return (
+    <div className="task-add">
+      {tasks.map((task, index) => (
+        <div key={`${task.title}-${index}`} className="task-row">
+          <span className="meeting-icon"><Check size={10} stroke={3} /></span>
+          <span className="task-title">{task.title}</span>
+          <span className="when-text">{dayLabel(task.due)}</span>
+          <button type="button" className="icon-button" title="Remove this task" aria-label="Remove this task" onClick={() => onChange(tasks.filter((_, i) => i !== index))}>
+            <Close size={9} />
+          </button>
+        </div>
+      ))}
+      {open ? (
+        <div className="task-form">
+          <input
+            ref={input}
+            className="task-input"
+            value={title}
+            placeholder="Task, e.g. Send the proposal"
+            spellCheck={false}
+            autoComplete="off"
+            maxLength={200}
+            onMouseEnter={keyboardOver}
+            onMouseDown={keyboardNow}
+            onChange={(event) => setTitle(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                add();
+              } else if (event.key === "Escape") {
+                close();
+              }
+            }}
+          />
+          <div className="task-days" role="radiogroup" aria-label="Due day">
+            {DAYS.map((day) => (
+              <button key={day.label} type="button" role="radio" aria-checked={offset === day.offset} className="small-action task-day" data-active={offset === day.offset} onClick={() => setOffset(day.offset)}>
+                {day.label}
+              </button>
+            ))}
+            <div className="grow" />
+            <button type="button" className="small-action" disabled={title.trim() === ""} onClick={add}>Add</button>
+            <TextAction title="Cancel" onClick={close} />
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="text-action task-open" onClick={() => setOpen(true)}>
+          <Plus size={9} />
+          <span>Add task</span>
+        </button>
+      )}
+    </div>
   );
 }
 

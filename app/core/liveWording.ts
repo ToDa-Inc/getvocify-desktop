@@ -56,6 +56,47 @@ type Strings = {
   offlineTitle: string;
   offlineBody: (seconds: number) => string;
   views: string;
+  /** The Qué decir view (spec revised 2026-10-19). */
+  say: SayStrings;
+};
+
+type SayStrings = {
+  kinds: { answer: string; unknown: string; explore: string; next: string };
+  ended: { answered: string; asked: string; promised: string };
+  again: string;
+  otherWay: string;
+  repeats: string;
+  done: string;
+  quiet: string;
+  fresh: string;
+  freshHelp: string;
+  readingMinute: string;
+  readingTurn: string;
+  nothing: (from: string) => string;
+  lastMinute: string;
+  thatTurn: string;
+  respond: { label: string; help: string };
+  recap: { label: string; help: string };
+  steps: { label: string; help: string };
+  contactHelp: string;
+  recapTitle: (at: string) => string;
+  recapReading: string;
+  known: string;
+  knownNone: string;
+  unknown: (names: string[]) => string;
+  happened: string;
+  happenedNone: string;
+  briefTitle: (name: string, company: string | null) => string;
+  before: string;
+  firstTime: string;
+  stepsTitle: (done: number, all: number) => string;
+  stepHint: string;
+  stillUnknown: (parts: string[], need: number, all: number) => string;
+  preparing: string;
+  askThis: string;
+  markedByYou: string;
+  tapBubble: string;
+  newHelp: string;
 };
 
 const ES: Strings = {
@@ -107,6 +148,44 @@ const ES: Strings = {
   offlineTitle: "Sin conexión con Vocify",
   offlineBody: (seconds) => `Lo que ves es de hace ${seconds} s. Reintentando.`,
   views: "Vistas de la llamada",
+  say: {
+    kinds: { answer: "Respuesta", unknown: "No está en tu conocimiento", explore: "Puedes preguntar", next: "Te falta saber" },
+    ended: { answered: "Respondido", asked: "Preguntado", promised: "Apuntado para el seguimiento" },
+    again: "otra forma",
+    otherWay: "Otra forma…",
+    repeats: "Lo repite",
+    done: "Ya está",
+    quiet: "Aquí sale qué decir cuando el cliente pregunta, objeta o cuenta algo importante.",
+    fresh: "Nuevo ↓",
+    freshHelp: "Hay algo nuevo abajo",
+    readingMinute: "Leyendo el último minuto",
+    readingTurn: "Leyendo esa frase",
+    nothing: (from) => `No hay una pregunta ni una objeción en ${from}.`,
+    lastMinute: "el último minuto",
+    thatTurn: "esa frase",
+    respond: { label: "Responder", help: "Qué digo ahora" },
+    recap: { label: "Resumen", help: "Lo que sabes y lo que ha pasado" },
+    steps: { label: "Pasos", help: "Los pasos del playbook" },
+    contactHelp: "Quién es, antes de esta llamada",
+    recapTitle: (at) => `Resumen · hasta el ${at}`,
+    recapReading: "Resumiendo",
+    known: "Lo que sabes",
+    knownNone: "Todavía nada de lo que pide tu playbook.",
+    unknown: (names) => `Aún no sabes: ${names.slice(0, 4).join(", ")}${names.length > 4 ? "…" : "."}`,
+    happened: "Lo que ha pasado",
+    happenedNone: "Aún no hay nada que resumir.",
+    briefTitle: (name, company) => (company ? `${name} · ${company}` : name),
+    before: "Antes de esta llamada",
+    firstTime: "Es la primera vez que habláis.",
+    stepsTitle: (done, all) => `Pasos · ${done} de ${all}`,
+    stepHint: "Toca un paso pendiente y te preparo una pregunta con lo que ha dicho.",
+    stillUnknown: (parts, need, all) => `Aún no sabes: ${parts.join(", ")} · bastan ${need} de ${all}`,
+    preparing: "Preparando una pregunta con lo que ha dicho",
+    askThis: "Dame una pregunta para esto",
+    markedByYou: "Marcado por ti",
+    tapBubble: "Toca para que Vocify responda a esta frase",
+    newHelp: "Hay algo nuevo",
+  },
 };
 
 const EN: Strings = {
@@ -158,6 +237,44 @@ const EN: Strings = {
   offlineTitle: "No connection to Vocify",
   offlineBody: (seconds) => `What you see is from ${seconds} s ago. Retrying.`,
   views: "Call views",
+  say: {
+    kinds: { answer: "Answer", unknown: "Not in your knowledge", explore: "You could ask", next: "Still to find out" },
+    ended: { answered: "Answered", asked: "Asked", promised: "Noted for the follow-up" },
+    again: "another way",
+    otherWay: "Another way…",
+    repeats: "Said again",
+    done: "Done",
+    quiet: "What to say shows up here when they ask, object or say something important.",
+    fresh: "New ↓",
+    freshHelp: "Something new below",
+    readingMinute: "Reading the last minute",
+    readingTurn: "Reading that line",
+    nothing: (from) => `No question or objection in ${from}.`,
+    lastMinute: "the last minute",
+    thatTurn: "that line",
+    respond: { label: "Respond", help: "What do I say now" },
+    recap: { label: "Recap", help: "What you know and what happened" },
+    steps: { label: "Steps", help: "The playbook's steps" },
+    contactHelp: "Who they are, before this call",
+    recapTitle: (at) => `Recap · up to ${at}`,
+    recapReading: "Summing up",
+    known: "What you know",
+    knownNone: "Nothing your playbook asks for yet.",
+    unknown: (names) => `You don't know yet: ${names.slice(0, 4).join(", ")}${names.length > 4 ? "…" : "."}`,
+    happened: "What happened",
+    happenedNone: "Nothing to sum up yet.",
+    briefTitle: (name, company) => (company ? `${name} · ${company}` : name),
+    before: "Before this call",
+    firstTime: "It's the first time you talk.",
+    stepsTitle: (done, all) => `Steps · ${done} of ${all}`,
+    stepHint: "Tap a pending step and I'll prepare a question from what they said.",
+    stillUnknown: (parts, need, all) => `You don't know yet: ${parts.join(", ")} · ${need} of ${all} is enough`,
+    preparing: "Preparing a question from what they said",
+    askThis: "Give me a question for this",
+    markedByYou: "Marked by you",
+    tapBubble: "Tap and Vocify answers this line",
+    newHelp: "Something new",
+  },
 };
 
 export const LiveWording = {

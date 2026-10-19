@@ -221,3 +221,87 @@ export const liveInteractions = [
   { name: "live-tick-from-peek", fixture: "live-transcript-chip-missing", before: [".live-chip"], click: ".live-peek .live-now .live-close", expect: [{ name: "liveTick", kind: "step", id: "plantear_el_problema", on: true }] },
   { name: "live-peek-close-sends-nothing", fixture: "live-peek-point", click: ".live-peek-close", expect: [] },
 ];
+
+/* ---------- the Qué decir view (spec revised 2026-10-19): the same invented call ---------- */
+
+/** A point as the Qué decir view gets it: the bubbles it comes from and every version of what to say. */
+const sayPoint = (p, turnIds, versions = [p.answer ?? p.fallback].filter(Boolean)) => ({ ...p, turnIds, versions });
+const S_HUBSPOT = sayPoint(HUBSPOT, ["t6"]);
+const S_HUBSPOT_TWO = sayPoint(HUBSPOT, ["t6"], [HUBSPOT.answer, "Sí, con HubSpot. Antes dime: ¿qué parte de vuestro HubSpot no queréis que se toque?"]);
+const S_TIMING = sayPoint(TIMING, ["t2"]);
+const S_SINCE = sayPoint(SINCE_OPEN, ["t4"]);
+const S_DEEPEN = sayPoint(point("deepen", "deepen", "Dolor", "el CRM se rellena tarde o nunca", 132, {
+  answer: "¿Y cuánto tiempo os lleva a la semana perseguirles para que lo rellenen?",
+  source: "Playbook · Dejar hablar y profundizar",
+}), ["t4"]);
+const S_FRESH = sayPoint({ ...HUBSPOT, id: "fresh", saidAt: 148 }, ["t6"]);
+const S_DRAFT = { ...draft("¿y cuánto cuesta?", "Depende del número de comerciales. ¿Cuántos so"), turnIds: [], versions: [] };
+
+/** Cualificar el encaje with its parts (bastan 3 de 5), two of them heard. */
+const S_STEPS = STEPS.map((s) =>
+  s.id === "cualificar_el_encaje"
+    ? { ...s, parts: [
+        { id: "n_comerciales", label: "Comerciales", done: false, quote: null },
+        { id: "calle_u_oficina", label: "Calle o teléfono", done: false, quote: null },
+        { id: "crm_que_usan", label: "CRM", done: true, quote: "«Usamos HubSpot»" },
+        { id: "visitas_al_dia", label: "Visitas al día", done: false, quote: null },
+        { id: "quien_decide", label: "Quién decide", done: true, quote: "«se lo reenvío a la directora comercial»" },
+      ], need: 3 }
+    : { ...s, parts: null, need: null },
+);
+const CONTACT = { name: "Marta Ruiz", company: "Acme Logistics", first: false, lines: ["Hablasteis hace dos semanas: pidió que la llamaras cuando tuvieras precios.", "En HubSpot: directora de operaciones, 40 comerciales."] };
+const sayView = (points = [], extra = {}) => ({
+  ...view(points),
+  progress: progress({ steps: S_STEPS }),
+  asks: { responder: null, recap: null, next: null, step: null, rewrite: null },
+  view: "say",
+  contact: CONTACT,
+  ...extra,
+});
+const sayAsks = (extra) => ({ asks: { responder: null, recap: null, next: null, step: null, rewrite: null, ...extra } });
+const SAY = { width: 460, height: 400 };
+const NEXT = { kind: "data", id: "n_comerciales", label: "N.º de comerciales", question: "¿Cuántos comerciales sois, y cuántos están en la calle?" };
+
+export const sayFixtures = [
+  { name: "say-empty", state: recording(sayView()), expect: { ...SAY, say: { cards: 0, quiet: "Aquí sale qué decir cuando el cliente pregunta, objeta o cuenta algo importante.", bar: ["Responder", "Resumen", "Pasos"], contact: "Marta Ruiz", peek: null } } },
+  { name: "say-answer", state: recording(sayView([S_HUBSPOT])), expect: { ...SAY, say: { cards: 1, kinds: ["Respuesta"], text: HUBSPOT.answer, sources: ["t6"] } } },
+  { name: "say-kinds", state: recording(sayView([S_TIMING, S_DEEPEN, S_SINCE, S_HUBSPOT])), expect: { ...SAY, say: { cards: 4, kinds: ["No está en tu conocimiento", "Respuesta", "Puedes preguntar", "Respuesta"], faded: 1 } } },
+  { name: "say-writing", state: recording(sayView([S_HUBSPOT, S_DRAFT])), expect: { ...SAY, say: { cards: 2, caret: true } } },
+  { name: "say-rewrite-next-version", state: recording(sayView([S_HUBSPOT_TWO])), steps: [".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { cards: 1, again: true, text: S_HUBSPOT_TWO.versions[1] } } },
+  { name: "say-rewrite-asked", state: recording(sayView([S_HUBSPOT])), steps: [".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { cards: 1, otherWay: "Otra forma…" } } },
+  { name: "say-rewrite-arrives", state: recording(sayView([S_HUBSPOT])), steps: [".say-bar .live-action:nth-child(1)"], next: recording(sayView([S_HUBSPOT_TWO], sayAsks({ rewrite: { seq: 1, pointId: "hubspot", status: "ready" } }))), expect: { ...SAY, say: { cards: 1, again: true, text: S_HUBSPOT_TWO.versions[1] } } },
+  { name: "say-rewrite-none", state: recording(sayView([S_HUBSPOT])), steps: [".say-bar .live-action:nth-child(1)"], next: recording(sayView([S_HUBSPOT], sayAsks({ rewrite: { seq: 1, pointId: "hubspot", status: "none" } }))), expect: { ...SAY, say: { cards: 1, again: false, text: HUBSPOT.answer } } },
+  { name: "say-respond-reading", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { note: "Leyendo el último minuto", on: ["Responder"] } } },
+  { name: "say-respond-next", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(1)"], next: recording(sayView([], sayAsks({ responder: { seq: 1, status: "nothing", pointId: null }, next: NEXT }))), expect: { ...SAY, say: { cards: 1, kinds: ["Te falta saber"], text: NEXT.question } } },
+  { name: "say-respond-next-from-playbook", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(1)"], next: recording(sayView([], sayAsks({ responder: { seq: 1, status: "nothing", pointId: null } }))), expect: { ...SAY, say: { cards: 1, kinds: ["Te falta saber"] } } },
+  { name: "say-respond-reopens", state: recording(sayView([{ ...S_HUBSPOT, outcome: "answered" }])), steps: [".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { cards: 1, faded: 0 } } },
+  { name: "say-recap-reading", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(2)"], expect: { ...SAY, say: { peek: "recap", peekReading: "Resumiendo", on: ["Resumen"] } } },
+  { name: "say-recap", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(2)"], next: recording(sayView([], sayAsks({ recap: RECAP }))), expect: { ...SAY, say: { peek: "recap", facts: 2, recapLines: 4, title: "Resumen · hasta el 02:20" } } },
+  { name: "say-steps", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(3)"], expect: { ...SAY, say: { peek: "steps", title: "Pasos · 2 de 7", rows: 8, hint: "Toca un paso pendiente y te preparo una pregunta con lo que ha dicho." } } },
+  { name: "say-steps-asking", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(3)", ".say-step-ask"], expect: { ...SAY, say: { peek: "steps", stepQ: "Preparando una pregunta con lo que ha dicho" } } },
+  { name: "say-steps-question", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(3)", ".say-step-ask"], next: recording(sayView([], sayAsks({ step: { seq: 1, kind: "step", id: "plantear_el_problema", status: "ready", question: "Con tantos en la calle, ¿cuándo lo apuntan, al final del día?" } }))), expect: { ...SAY, say: { peek: "steps", stepQ: "Con tantos en la calle, ¿cuándo lo apuntan, al final del día?" } } },
+  { name: "say-brief", state: recording(sayView()), steps: [".say-contact"], expect: { ...SAY, say: { peek: "brief", title: "Marta Ruiz · Acme Logistics", briefLines: 2 } } },
+  { name: "say-brief-first", state: recording(sayView([], { contact: { ...CONTACT, first: true, lines: [] } })), steps: [".say-contact"], expect: { ...SAY, say: { peek: "brief", briefLines: 1 } } },
+  { name: "say-no-contact", state: recording(sayView([], { contact: null })), expect: { ...SAY, say: { contact: null } } },
+  { name: "say-offline", state: recording(sayView([S_HUBSPOT], { offlineSince: NOW - 12_000 })), expect: { ...SAY, say: { offline: "Sin conexión con Vocify", cards: 1 } } },
+  { name: "say-off", state: recording(sayView([S_HUBSPOT]), { liveHelp: false }), expect: { ...SAY, say: { quiet: "La ayuda en vivo está apagada en esta llamada.", disabled: ["Responder", "Resumen", "Pasos"] } } },
+  { name: "say-english", state: recording(sayView([S_DEEPEN, S_HUBSPOT]), { language: "en" }), expect: { ...SAY, say: { kinds: ["You could ask", "Answer"], bar: ["Respond", "Recap", "Steps"] } } },
+  { name: "say-fresh", state: recording(sayView([S_FRESH])), expect: { ...SAY, say: { cards: 1, again: false } } },
+  // A card said two seconds ago: the first press points at it (it may not have been read); the second writes it again.
+  { name: "say-fresh-pointed", state: recording(sayView([S_FRESH])), steps: [".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { cards: 1, again: false } } },
+  { name: "say-fresh-pressed-again", state: recording(sayView([S_FRESH])), steps: [".say-bar .live-action:nth-child(1)", ".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { cards: 1, otherWay: "Otra forma…" } } },
+];
+
+export const sayInteractions = [
+  { name: "say-respond-points-at-fresh", fixture: "say-fresh", click: ".say-bar .live-action:nth-child(1)", expect: [{ name: "liveAsk", ask: "respond" }] },
+  { name: "say-respond-rewrites", fixture: "say-answer", click: ".say-bar .live-action:nth-child(1)", expect: [{ name: "liveRewrite", id: "hubspot", version: 1 }] },
+  { name: "say-respond-asks", fixture: "say-empty", click: ".say-bar .live-action:nth-child(1)", expect: [{ name: "liveAsk", ask: "respond" }] },
+  { name: "say-recap-asks", fixture: "say-empty", click: ".say-bar .live-action:nth-child(2)", expect: [{ name: "liveAsk", ask: "recap" }] },
+  { name: "say-steps-opens", fixture: "say-empty", click: ".say-bar .live-action:nth-child(3)", expect: [{ name: "liveEvent", event: "open_steps" }] },
+  { name: "say-step-asks", fixture: "say-empty", before: [".say-bar .live-action:nth-child(3)"], click: ".say-step-ask", expect: [{ name: "liveAskStep", kind: "step", id: "plantear_el_problema" }] },
+  { name: "say-step-tick", fixture: "say-empty", before: [".say-bar .live-action:nth-child(3)"], click: ".say-step[data-done=\"false\"] .live-node", expect: [{ name: "liveTick", kind: "step", id: "plantear_el_problema", on: true }] },
+  { name: "say-brief-opens", fixture: "say-empty", click: ".say-contact", expect: [{ name: "liveEvent", event: "open_brief" }] },
+  { name: "say-bubble-asks", fixture: "say-empty", click: ".bubble[data-tappable=\"true\"]", expect: [{ name: "liveRespondTurn", turnId: "t2" }] },
+  { name: "say-bubble-with-card-points", fixture: "say-answer", click: ".bubble[data-source=\"true\"]", expect: [] },
+  { name: "say-done", fixture: "say-answer", click: ".say-done", expect: [{ name: "liveDismiss", id: "hubspot" }] },
+];

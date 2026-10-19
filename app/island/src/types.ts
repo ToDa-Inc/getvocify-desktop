@@ -59,7 +59,8 @@ export type LiveDecision = "responder" | "reconducir" | "aplazar" | "cerrar";
 /** What the prospect said that needs handling, with what to say. The shell resolves it from the dashboard's LiveState. */
 export type LivePoint = {
   id: string;
-  kind: "question" | "objection";
+  /** "deepen": something important they said, with one question to go deeper (the Qué decir view only). */
+  kind: "question" | "objection" | "deepen";
   /** The playbook entry's name; null: the island names the kind (`tagKey`, "Pregunta" for a question). */
   tag: string | null;
   /** "question", an objection type (price, timing...) or a playbook entry's id. */
@@ -86,9 +87,20 @@ export type LivePoint = {
   repeated: boolean;
   /** Being written from the model's stream: no tag yet, the point lands later with its final words. */
   draft: boolean;
+  /** The transcript turns it comes from (the bubbles it outlines). */
+  turnIds: string[];
+  /** What to say, every version so far: the first answer (or honest line), then each "otra forma" the rep asked for. */
+  versions: string[];
 };
 
-export type LiveStep = { id: string; label: string; concept: string | null; criterion: string | null; example: string | null; done: boolean; byRep: boolean; quote: string | null };
+/** A part of a step whose criterion lists several things to find out ("al menos tres de estos datos"). */
+export type LivePart = { id: string; label: string; done: boolean; quote: string | null };
+export type LiveStep = {
+  id: string; label: string; concept: string | null; criterion: string | null; example: string | null; done: boolean; byRep: boolean; quote: string | null;
+  /** Only for a step with parts: the parts, and how many are enough. */
+  parts: LivePart[] | null;
+  need: number | null;
+};
 export type LiveData = { id: string; label: string; good: string | null; question: string | null; done: boolean; byRep: boolean; value: string | null; quote: string | null; reread: boolean };
 /** `label` null: the playbook has no wording for the goal ("The call's goal"). */
 export type LiveGoal = { label: string | null; done: boolean; byRep: boolean; value: string | null; quote: string | null };
@@ -109,6 +121,14 @@ export type LiveProgress = {
 /** The answers to the rep's asks. `seq` grows by one per tap, so a new ask is told from an old answer. */
 export type LiveResponder = { seq: number; status: "reading" | "found" | "nothing"; pointId: string | null };
 export type LiveRecap = { seq: number; status: "reading" | "ready"; upTo: number | null; lines: string[]; unknown: string[] };
+/** Responder with nothing to answer: the missing item that matters most, with its question. */
+export type LiveNext = { kind: "step" | "data"; id: string; label: string; question: string };
+/** A question for one pending step or data item, asked for from Pasos. */
+export type LiveStepAsk = { seq: number; kind: "step" | "data"; id: string; status: "reading" | "ready"; question: string | null };
+/** "Otra forma" for one point: being written, written (a new version), or none (no other honest angle). */
+export type LiveRewrite = { seq: number; pointId: string; status: "reading" | "ready" | "none" };
+/** Who they are before this call: `first` when there was no earlier interaction. */
+export type LiveContact = { name: string; company: string | null; first: boolean; lines: string[] };
 
 /** What the dashboard pushes under `liveBrain` while the live-brain flag is on; null, and the island is today's. */
 export type LiveView = {
@@ -117,9 +137,12 @@ export type LiveView = {
   /** Open and ended points, oldest first, then the drafts being written. */
   points: LivePoint[];
   progress: LiveProgress;
-  asks: { responder: LiveResponder | null; recap: LiveRecap | null };
+  asks: { responder: LiveResponder | null; recap: LiveRecap | null; next: LiveNext | null; step: LiveStepAsk | null; rewrite: LiveRewrite | null };
   /** ms since the epoch of the last good reading, once the brain stopped answering; null when it answers. */
   offlineSince: number | null;
+  /** "say": the Qué decir view (spec revised 2026-10-19); "tabs": the tabs view of 2026-10-16. */
+  view: "say" | "tabs";
+  contact: LiveContact | null;
 };
 
 /** A rep's ask or action in the live assistant, forwarded to the dashboard (`shell.onLiveAction`). */
@@ -127,7 +150,17 @@ export type LiveAction =
   | { name: "liveAsk"; ask: "respond" | "now" | "recap" }
   | { name: "liveTick"; kind: "step" | "data" | "goal"; id: string; on: boolean }
   | { name: "liveDismiss"; id: string }
-  | { name: "liveTab"; tab: LiveTab };
+  | { name: "liveTab"; tab: LiveTab }
+  /** Qué decir: another version of a point's answer (`version`: how many the island already has). */
+  | { name: "liveRewrite"; id: string; version: number }
+  /** Pasos: a question for one pending item. */
+  | { name: "liveAskStep"; kind: "step" | "data"; id: string }
+  /** Responder about one tapped bubble of theirs. */
+  | { name: "liveRespondTurn"; turnId: string }
+  /** What the rep did, for the events log (never changes anything). */
+  | { name: "liveEvent"; event: LiveEventKind; id?: string };
+
+export type LiveEventKind = "open_recap" | "open_steps" | "open_brief" | "marker_shown" | "marker_seen" | "shown";
 
 export type Clock = { startedAt: number; pausedMs: number; pausedAt: number | null };
 
@@ -227,6 +260,8 @@ export type IslandState = {
   /** The live call assistant (tabs, bar, peek); null: the flag is off and the island is today's. */
   live: LiveView | null;
   liveTab: LiveTab;
+  /** Where the recording sits: under the notch (today's island) or as a strip at the side of the screen (setting). */
+  placement: "notch" | "side";
   countdown: Countdown | null;
   geometry: Geometry;
   postCall: PostCallData | null;

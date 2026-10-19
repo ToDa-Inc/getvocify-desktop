@@ -8,6 +8,7 @@ import { MeetingWording, type IslandMeeting } from "../../core/meetingHeadsUp.ts
 import { ProposalWording, type Language } from "../../core/typeProposal.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { LiveBody } from "./live/LiveBody.tsx";
+import { SayBody, type TranscriptMarks } from "./say/SayBody.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
 import { TypingDots } from "./TypingDots.tsx";
 import { useNow } from "./useNow.ts";
@@ -929,7 +930,19 @@ function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
         <KeypadPopover anchor={keypadAnchor} onDigit={(digit) => act({ name: "digit", digit })} onClose={closeKeypad} />
       )}
       {state.micSilent && !state.paused ? <MicSilentLine /> : state.callAudioLost && !state.paused && <CallAudioLostLine />}
-      {state.live ? (
+      {state.live?.view === "say" ? (
+        // The live assistant, "Qué decir": what to say on top, the transcript, and the asks at the foot.
+        <SayBody
+          state={state}
+          act={act}
+          transcript={(marks) => (
+            <>
+              {hasBrief && state.dial && <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} talking={state.turns.length > 0} />}
+              <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} marks={marks} />
+            </>
+          )}
+        />
+      ) : state.live ? (
         // The live assistant: tabs, views and the bar. The transcript is its first view, as it was.
         <LiveBody
           state={state}
@@ -1017,7 +1030,7 @@ const GLIDE_LIMIT_MS = 400;
  * instead of snapping a line at a time, and only the rep's own scrolling (wheel, scrollbar) lets go of the latest line:
  * the view's own movement never does.
  */
-function TranscriptScroll({ turns, reduceMotion }: { turns: Turn[]; reduceMotion: boolean }) {
+function TranscriptScroll({ turns, reduceMotion, marks }: { turns: Turn[]; reduceMotion: boolean; marks?: TranscriptMarks }) {
   const ref = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const [following, setFollowing] = useState(true);
@@ -1126,7 +1139,14 @@ function TranscriptScroll({ turns, reduceMotion }: { turns: Turn[]; reduceMotion
           {turns.length === 0 && <div className="listening">Listening…</div>}
           <div className="bubbles">
             {turns.map((turn) => (
-              <TurnBubble key={turn.id} turn={turn} arrives={opened.current && !reduceMotion} />
+              <TurnBubble
+                key={turn.id}
+                turn={turn}
+                arrives={opened.current && !reduceMotion}
+                source={marks?.sources.has(turn.id) ?? false}
+                onTap={marks?.onTap && !turn.you ? () => marks.onTap!(turn.id) : null}
+                tapHelp={marks?.tapHelp ?? null}
+              />
             ))}
           </div>
           <div style={{ height: 12 }} />
@@ -1186,7 +1206,7 @@ function CopyButton({ text, help, className }: { text: string; help: string; cla
  * words several times a second, and a bubble that followed every rewrite would shrink and stretch under the reader.
  * It takes its real size again once the turn has settled.
  */
-function TurnBubble({ turn, arrives }: { turn: Turn; arrives: boolean }) {
+function TurnBubble({ turn, arrives, source = false, onTap = null, tapHelp = null }: { turn: Turn; arrives: boolean; source?: boolean; onTap?: (() => void) | null; tapHelp?: string | null }) {
   const parts = turnParts(turn);
   const bubble = useRef<HTMLDivElement>(null);
   const floor = useRef({ width: 0, height: 0 });
@@ -1207,10 +1227,24 @@ function TurnBubble({ turn, arrives }: { turn: Turn; arrives: boolean }) {
     el.style.minHeight = `${floor.current.height}px`;
   }, [parts.text, parts.tail, parts.dots]);
   return (
-    <div className="turn" data-you={turn.you} data-entering={entering}>
+    <div className="turn" data-you={turn.you} data-entering={entering} data-turn-id={turn.id}>
       {!turn.you && turn.label && <div className="turn-label">{turn.label}</div>}
       <div className="bubble-row" data-you={turn.you}>
-        <div className="bubble" ref={bubble} data-you={turn.you}>
+        {/* Live help: the line a card came from carries a thin beige outline; a tap on one of theirs asks about it. */}
+        <div
+          className="bubble"
+          ref={bubble}
+          data-you={turn.you}
+          data-source={source || undefined}
+          data-tappable={onTap ? true : undefined}
+          title={onTap ? tapHelp ?? undefined : undefined}
+          onClick={onTap ? (event) => {
+            // Selecting words to copy is not a tap.
+            if (window.getSelection()?.toString()) return;
+            event.stopPropagation();
+            onTap();
+          } : undefined}
+        >
           <span className="words">{parts.text}</span>
           {parts.tail !== "" && <span className="dim">{(parts.joined ? "" : " ") + parts.tail}</span>}
           {/* Held to the last word (no-break space), so the dots never drop to a line of their own. */}

@@ -1,6 +1,6 @@
 // Island states, one per screen the Mac island can show. `expect` sizes are worked out by hand
 // from the Swift rules in IslandGeometry.size, so they check the port rather than repeat it.
-import { liveFixtures, liveInteractions } from "./live.mjs";
+import { liveFixtures, liveInteractions, sayFixtures, sayInteractions } from "./live.mjs";
 
 export const NOW = 1_700_000_000_000;
 
@@ -360,5 +360,5 @@ export const interactions = [
 ];
 
 // The live call assistant's states live in their own file (the island with the live brain flag on).
-fixtures.push(...liveFixtures);
-interactions.push(...liveInteractions);
+fixtures.push(...liveFixtures, ...sayFixtures);
+interactions.push(...liveInteractions, ...sayInteractions);

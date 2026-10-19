@@ -1503,6 +1503,60 @@ test("asks, ticks and dismissals reach the dashboard as its contract names them;
   assert.deepEqual(sent({ name: "liveDismiss", id: "p1" }), { type: "dismiss", id: "p1" });
 });
 
+test("the Qué decir view: its view, the cards' source turns and versions, a deepen card, step parts, the new asks and the contact", () => {
+  const t = recording();
+  t.controller.applyShellState({ liveBrain: wire() });
+  assert.equal(t.controller.state.live?.view, "tabs", "a dashboard that names no view keeps the tabs");
+  assert.deepEqual(t.controller.state.live?.points[0].versions, ["Sí."], "with no versions sent, the answer is the one version");
+  assert.deepEqual(t.controller.state.live?.points[0].turnIds, []);
+  assert.equal(t.controller.state.live?.contact, null);
+  const say = wire({
+    view: "say",
+    state: {
+      ...wire().state,
+      points: [
+        wirePoint({ turn_ids: ["t6"], versions: ["Sí.", "Sí, ¿qué no queréis que se toque?", " "] }),
+        wirePoint({ id: "p2", kind: "deepen", tag: "Dolor", title: "se rellena tarde", answer: "¿Cuánto tiempo os lleva?", turn_ids: ["t4"] }),
+        wirePoint({ id: "p3", kind: "advice", title: "nunca" }),
+      ],
+      progress: { ...wire().state.progress, parts: { b: { crm: { quote: "usamos HubSpot" } } } },
+    },
+    playbook: { ...wire().playbook, steps: [...wire().playbook.steps.slice(0, 1), { id: "b", label: "Cualificar", criterion: "c", example: null, concept: null, live: true, need: 9, parts: [{ id: "crm", label: "CRM" }, { id: "n", label: "Comerciales" }, { id: "", label: "sin id" }] }] },
+    asks: {
+      responder: { seq: 2, status: "nothing", point_id: null, next: { kind: "data", id: "d2", label: "Comerciales", question: "¿Cuántos sois?" } },
+      recap: null,
+      step: { seq: 1, kind: "step", id: "b", status: "ready", question: "¿Qué CRM usáis?" },
+      rewrite: { seq: 4, point_id: "p1", status: "none" },
+    },
+    contact: { name: "Marta Ruiz", company: "Acme", first: false, lines: ["Hablasteis hace dos semanas.", ""] },
+  });
+  t.controller.applyShellState({ liveBrain: say });
+  const live = t.controller.state.live!;
+  assert.equal(live.view, "say");
+  assert.deepEqual(live.points.map((p) => [p.id, p.kind, p.turnIds, p.versions.length]), [["p1", "question", ["t6"], 2], ["p2", "deepen", ["t4"], 1]], "an unknown kind is dropped, never guessed");
+  const step = live.progress.steps.find((s) => s.id === "b")!;
+  assert.deepEqual(step.parts, [{ id: "crm", label: "CRM", done: true, quote: "usamos HubSpot" }, { id: "n", label: "Comerciales", done: false, quote: null }]);
+  assert.equal(step.need, 2, "never more parts needed than there are");
+  assert.equal(live.progress.steps[0].parts, null);
+  assert.deepEqual(live.asks.next, { kind: "data", id: "d2", label: "Comerciales", question: "¿Cuántos sois?" });
+  assert.deepEqual(live.asks.step, { seq: 1, kind: "step", id: "b", status: "ready", question: "¿Qué CRM usáis?" });
+  assert.deepEqual(live.asks.rewrite, { seq: 4, pointId: "p1", status: "none" });
+  assert.deepEqual(live.contact, { name: "Marta Ruiz", company: "Acme", first: false, lines: ["Hablasteis hace dos semanas."] });
+  t.controller.applyShellState({ liveBrain: wire({ view: "say", contact: { name: " ", first: true } }) });
+  assert.equal(t.controller.state.live?.contact, null, "a contact with no name has no brief");
+});
+
+test("the Qué decir view's asks reach the dashboard as the contract names them", () => {
+  const t = recording();
+  t.controller.applyShellState({ liveBrain: wire({ view: "say" }) });
+  const sent = (action: Parameters<typeof t.controller.act>[0]) => (t.controller.act(action), t.last("livebrain:action"));
+  assert.deepEqual(sent({ name: "liveRewrite", id: "p1", version: 1 }), { type: "rewrite", id: "p1", version: 1 });
+  assert.deepEqual(sent({ name: "liveAskStep", kind: "step", id: "b" }), { type: "ask_step", kind: "step", id: "b" });
+  assert.deepEqual(sent({ name: "liveRespondTurn", turnId: "t6" }), { type: "responder_turn", turn_id: "t6" });
+  assert.deepEqual(sent({ name: "liveEvent", event: "open_steps" }), { type: "event", kind: "open_steps" });
+  assert.deepEqual(sent({ name: "liveEvent", event: "marker_seen", id: "p1" }), { type: "event", kind: "marker_seen", id: "p1" });
+});
+
 test("the open recording is 400 high, and 460 only while Conversación is open (never over half the screen)", () => {
   const g = { notchWidth: 185, barHeight: 32, screenHeight: 982 };
   assert.equal(islandSize(g, "recording", true).height, 400);

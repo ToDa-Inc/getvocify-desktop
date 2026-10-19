@@ -146,6 +146,7 @@ export class IslandController {
       liveHelp: null,
       live: null,
       liveTab: "transcript",
+      placement: "notch",
       countdown: null,
       geometry,
       postCall: null,
@@ -413,6 +414,10 @@ export class IslandController {
       case "liveAsk":
       case "liveTick":
       case "liveDismiss":
+      case "liveRewrite":
+      case "liveAskStep":
+      case "liveRespondTurn":
+      case "liveEvent":
         return this.liveAction(action);
       case "openDialConfirm":
         return this.openDialConfirm();
@@ -1053,7 +1058,20 @@ export class IslandController {
         return this.effects.emit("livebrain:action", { type: action.on ? "tick" : "untick", id: action.id, kind: action.kind });
       case "liveDismiss":
         return this.effects.emit("livebrain:action", { type: "dismiss", id: action.id });
+      case "liveRewrite":
+        return this.effects.emit("livebrain:action", { type: "rewrite", id: action.id, version: action.version });
+      case "liveAskStep":
+        return this.effects.emit("livebrain:action", { type: "ask_step", kind: action.kind, id: action.id });
+      case "liveRespondTurn":
+        return this.effects.emit("livebrain:action", { type: "responder_turn", turn_id: action.turnId });
+      case "liveEvent":
+        return this.effects.emit("livebrain:action", { type: "event", kind: action.event, ...(action.id ? { id: action.id } : {}) });
     }
+  }
+
+  /** Where the recording sits (the desktop setting): the window follows it. */
+  setPlacement(placement: "notch" | "side"): void {
+    if (placement !== this.current.placement) this.set({ placement });
   }
 
   private transition(mode: Mode, expanded: boolean): void {

@@ -1,5 +1,5 @@
 import type {
-  Assist, Clock, Finish, LiveData, LiveDecision, LiveGoal, LiveNow, LiveOutcome, LivePoint, LiveProgress, LiveRecap, LiveResponder, LiveStep, LiveView,
+  Assist, Clock, Finish, LiveContact, LiveData, LiveDecision, LiveGoal, LiveNext, LiveNow, LiveOutcome, LivePart, LivePoint, LiveProgress, LiveRecap, LiveResponder, LiveRewrite, LiveStep, LiveStepAsk, LiveView,
   PostCallChange, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn,
 } from "../../island/src/types.ts";
 
@@ -211,7 +211,7 @@ const DECISIONS: readonly LiveDecision[] = ["responder", "reconducir", "aplazar"
 
 function parsePoint(raw: Raw): LivePoint | null {
   const id = nonEmpty(raw.id);
-  const kind = raw.kind === "question" || raw.kind === "objection" ? raw.kind : null;
+  const kind = raw.kind === "question" || raw.kind === "objection" || raw.kind === "deepen" ? raw.kind : null;
   const title = nonBlank(raw.title);
   const outcome = OUTCOMES.find((o) => o === raw.outcome);
   if (!id || !kind || !title || !outcome) return null;
@@ -230,7 +230,16 @@ function parsePoint(raw: Raw): LivePoint | null {
     phase: answer === null && fallback === null ? "thinking" : "ready",
     repeated: bool(raw.repeated) ?? false,
     draft: false,
+    turnIds: strings(raw.turn_ids),
+    versions: versionsOf(raw.versions, answer ?? fallback),
   };
+}
+
+/** Every version of what to say: the first is the point's own words; a dashboard that sends none has just that one. */
+function versionsOf(raw: unknown, first: string | null): string[] {
+  const sent = strings(raw).map((text) => text.trim()).filter(Boolean);
+  if (sent.length > 0) return sent;
+  return first ? [first] : [];
 }
 
 /** What the model is writing right now, from its stream: after the open points. It has no tag yet and no kind. */
@@ -240,6 +249,7 @@ function parseDraft(raw: Raw, index: number): LivePoint {
     id: `draft:${index}`, kind: "question", tag: null, tagKey: "question", title: nonBlank(raw.title) ?? "", saidAt: Number.MAX_SAFE_INTEGER,
     decision: null, decisionNote: null, answer: say, fallback: null, gap: null, source: null,
     phase: say === null ? "thinking" : "writing", outcome: "open", repeated: false, draft: true,
+    turnIds: [], versions: say ? [say] : [],
   };
 }
 
@@ -247,6 +257,7 @@ function parseProgress(state: Raw, playbook: Raw | null): LiveProgress {
   const progress = isRaw(state.progress) ? state.progress : {};
   const doneSteps = isRaw(progress.steps) ? progress.steps : {};
   const doneData = isRaw(progress.data) ? progress.data : {};
+  const heardParts = isRaw(progress.parts) ? progress.parts : {};
   const by = (item: unknown) => isRaw(item) && item.by === "rep";
   const quote = (item: unknown) => (isRaw(item) ? nonBlank(item.quote) : null);
   const named = isRaw(progress.playbook) ? progress.playbook : {};
@@ -257,7 +268,18 @@ function parseProgress(state: Raw, playbook: Raw | null): LiveProgress {
     const label = nonBlank(item.label);
     if (!id || !label || item.live === false) return [];
     const done = isRaw(doneSteps[id]);
-    return [{ id, label, concept: nonBlank(item.concept), criterion: nonBlank(item.criterion), example: nonBlank(item.example), done, byRep: done && by(doneSteps[id]), quote: quote(doneSteps[id]) }];
+    // A step with parts: the parts the playbook lists, each heard (with the words) or not.
+    const heard = isRaw(heardParts[id]) ? heardParts[id] : {};
+    const parts: LivePart[] = list(item.parts).flatMap((part) => {
+      const partId = nonEmpty(part.id);
+      const partLabel = nonBlank(part.label);
+      return partId && partLabel ? [{ id: partId, label: partLabel, done: isRaw(heard[partId]), quote: quote(heard[partId]) }] : [];
+    });
+    const need = num(item.need);
+    return [{
+      id, label, concept: nonBlank(item.concept), criterion: nonBlank(item.criterion), example: nonBlank(item.example), done, byRep: done && by(doneSteps[id]), quote: quote(doneSteps[id]),
+      parts: parts.length > 0 ? parts : null, need: parts.length > 0 && need !== undefined ? Math.max(1, Math.min(parts.length, need)) : null,
+    }];
   });
   const data: LiveData[] = list(playbook?.data).flatMap((item) => {
     const id = nonEmpty(item.id);
@@ -307,6 +329,40 @@ function parseRecap(raw: unknown): LiveRecap | null {
   return seq === undefined || !status ? null : { seq, status, upTo: num(raw.up_to_t) ?? null, lines: strings(raw.lines), unknown: strings(raw.unknown) };
 }
 
+function parseNext(raw: unknown): LiveNext | null {
+  if (!isRaw(raw)) return null;
+  const kind = raw.kind === "step" || raw.kind === "data" ? raw.kind : null;
+  const id = nonEmpty(raw.id);
+  const label = nonBlank(raw.label);
+  const question = nonBlank(raw.question);
+  return kind && id && label && question ? { kind, id, label, question } : null;
+}
+
+function parseStepAsk(raw: unknown): LiveStepAsk | null {
+  if (!isRaw(raw)) return null;
+  const seq = num(raw.seq);
+  const kind = raw.kind === "step" || raw.kind === "data" ? raw.kind : null;
+  const id = nonEmpty(raw.id);
+  const status = raw.status === "reading" || raw.status === "ready" ? raw.status : null;
+  return seq === undefined || !kind || !id || !status ? null : { seq, kind, id, status, question: nonBlank(raw.question) };
+}
+
+function parseRewrite(raw: unknown): LiveRewrite | null {
+  if (!isRaw(raw)) return null;
+  const seq = num(raw.seq);
+  const pointId = nonEmpty(raw.point_id);
+  const status = raw.status === "reading" || raw.status === "ready" || raw.status === "none" ? raw.status : null;
+  return seq === undefined || !pointId || !status ? null : { seq, pointId, status };
+}
+
+/** Who they are before this call; only a named contact has a brief. */
+function parseLiveContact(raw: unknown): LiveContact | null {
+  if (!isRaw(raw)) return null;
+  const name = nonBlank(raw.name);
+  if (!name) return null;
+  return { name, company: nonBlank(raw.company), first: bool(raw.first) ?? false, lines: strings(raw.lines).map((line) => line.trim()).filter(Boolean) };
+}
+
 /** What the dashboard pushes under `liveBrain` (null or malformed: the island is today's). A malformed point is dropped,
  * never guessed. */
 export function parseLiveBrain(raw: unknown): LiveView | null {
@@ -322,7 +378,15 @@ export function parseLiveBrain(raw: unknown): LiveView | null {
     on: bool(raw.on) ?? false,
     points: [...points, ...drafts],
     progress: parseProgress(state, isRaw(raw.playbook) ? raw.playbook : null),
-    asks: { responder: parseResponder(asks.responder), recap: parseRecap(asks.recap) },
+    asks: {
+      responder: parseResponder(asks.responder),
+      recap: parseRecap(asks.recap),
+      next: isRaw(asks.responder) ? parseNext(asks.responder.next) : null,
+      step: parseStepAsk(asks.step),
+      rewrite: parseRewrite(asks.rewrite),
+    },
     offlineSince: num(raw.offline_since) ?? null,
+    view: raw.view === "say" ? "say" : "tabs",
+    contact: parseLiveContact(raw.contact),
   };
 }

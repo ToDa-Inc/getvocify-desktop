@@ -1,0 +1,120 @@
+/* The live call assistant's "Qué decir" view (spec 2026-10-16-live-call-assistant-design.md, revised 2026-10-19, "UI
+   specification"). Values are the approved prototype's, in the island's own tokens (island.css) and on top of live.css
+   (scroll, peek, recap, nodes, bar). No new colours. */
+
+/* ---------- Qué decir: a fixed height, one card and a glimpse of the one before ---------- */
+.say-feed { position: relative; flex: none; height: 100px; display: flex; flex-direction: column; padding: 6px 0; }
+.say-feed .live-scroll { flex: 1; min-height: 0; padding: 0 14px; overflow-anchor: none; }
+.say-list { display: flex; flex-direction: column; gap: 6px; }
+.say-quiet { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; margin: 0 14px; padding: 0 16px; border-radius: 10px;
+  border: 0.5px dashed rgba(255, 255, 255, 0.12); font-size: 11.5px; line-height: 1.35; color: var(--secondary); text-align: center; }
+.say-offline { margin: 0 14px 6px; }
+.say-note { padding: 4px 2px 2px; font-size: 11.5px; color: rgba(255, 255, 255, 0.45); }
+.say-note .help-drafting { display: inline-flex; align-items: center; gap: 6px; }
+
+/* A card: their words (small), then what to say. */
+.say-card { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 7px 11px 8px; border-radius: 10px; overflow: hidden;
+  background: rgba(255, 255, 255, 0.06); user-select: text; animation: turn-in 220ms var(--ease);
+  transition: opacity 420ms ease-out 650ms, background 420ms ease-out 650ms, box-shadow 420ms ease-out 650ms; }
+/* Dealt with, or moved on from: faded where it is (after its check, if it had one), its text at most two lines. */
+.say-card[data-live="false"] { opacity: 0.36; background: rgba(255, 255, 255, 0.03); }
+.say-card[data-live="false"][data-ended="none"] { transition-delay: 0s; }
+.say-card[data-live="false"] .say-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.say-said { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; color: var(--secondary); }
+.say-words { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: rgba(255, 255, 255, 0.5); }
+.say-text { font-size: 12px; font-weight: 500; line-height: 1.36; color: var(--text); }
+.say-card .help-drafting { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+
+/* One fixed map: the kind of help, always in the same place and with the same look. */
+.say-kind { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.1px; }
+.say-kind svg { flex: none; }
+.say-kind[data-kind="answer"] { color: var(--beige); }
+.say-kind[data-kind="unknown"] { color: var(--warning); }
+.say-kind[data-kind="explore"] { color: rgba(255, 255, 255, 0.62); }
+.say-kind.say-next { color: var(--beige); }
+.say-again { font-weight: 400; color: rgba(255, 255, 255, 0.45); }
+/* Answer and unknown: a full card (unknown with an amber edge). An opportunity: an outlined card, lighter, never a task. */
+.say-card[data-kind="unknown"] { box-shadow: inset 2px 0 0 rgba(242, 187, 92, 0.6); }
+.say-card[data-kind="explore"] { background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.13); }
+.say-card[data-kind="explore"] .say-text { font-weight: 400; color: rgba(255, 255, 255, 0.86); }
+.say-card[data-kind="explore"][data-live="false"] { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
+/* The rep's ✓ ("ya está"), on hover. */
+.say-done { flex: none; margin-left: auto; opacity: 0; transition: opacity 120ms, background 120ms; color: var(--beige); }
+.say-card:hover .say-done, .say-done:focus-visible { opacity: 1; }
+.say-card-pulse { inset: 0; border-radius: 10px; }
+/* Dealt with: a light sweeps across once and the check pops in where the kind was. */
+.say-ended { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--beige); font-weight: 600; }
+.say-ended svg { animation: say-pop 460ms var(--ease) both; }
+.say-sweep { position: absolute; inset: 0; border-radius: 10px; pointer-events: none; background: linear-gradient(90deg, transparent, rgba(219, 192, 154, 0.28), transparent);
+  transform: translateX(-100%); animation: say-sweep 700ms var(--ease) forwards; }
+@keyframes say-sweep { to { transform: translateX(100%); } }
+@keyframes say-pop { 0% { transform: scale(0.4); } 60% { transform: scale(1.25); } 100% { transform: scale(1); } }
+/* "Nuevo ↓": the list does not move under a rep who is reading something older. */
+.say-fresh { position: absolute; z-index: 2; left: 50%; bottom: 8px; transform: translateX(-50%); height: 22px; padding: 0 10px; border-radius: 11px;
+  font-size: 11px; font-weight: 600; color: rgba(0, 0, 0, 0.85); background: var(--beige); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4); }
+.say-fresh:hover { background: #e6cfae; }
+.say-fresh:active { transform: translateX(-50%) scale(0.93); }
+
+/* ---------- the transcript: the line a card came from, and a tap on one of theirs ---------- */
+.bubble[data-source="true"] { box-shadow: inset 0 0 0 1px rgba(219, 192, 154, 0.5); }
+.bubble[data-tappable="true"] { cursor: pointer; transition: background 120ms; }
+.bubble[data-tappable="true"]:hover { background: rgba(255, 255, 255, 0.13); }
+
+/* ---------- the bar ---------- */
+.say-bar .live-action { position: relative; }
+.say-pulse { inset: -2px; border-radius: 14px; }
+.say-contact { flex: none; min-width: 0; max-width: 130px; display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px 0 8px; border-radius: 12px;
+  font-size: 11.5px; color: var(--text); background: rgba(255, 255, 255, 0.08); transition: background 120ms; }
+.say-contact span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.say-contact svg { flex: none; color: var(--beige); }
+.say-contact svg:last-child { color: var(--secondary); }
+.say-contact:hover { background: rgba(255, 255, 255, 0.13); }
+.say-contact[data-on="true"] { background: rgba(219, 192, 154, 0.18); color: var(--beige); }
+
+/* ---------- what rises over the transcript: never taller than the space above the bar ---------- */
+.say-views { container-type: size; display: flex; flex-direction: column; overflow: hidden; }
+.say-views .transcript-wrap { flex: 1; min-height: 0; }
+.say-peek .live-peek-card { max-height: min(220px, calc(100cqh - 8px)); }
+.say-panel-head { display: flex; align-items: center; min-height: 18px; padding: 1px 24px 6px 3px; }
+.say-resumen { display: flex; flex-direction: column; gap: 5px; padding: 0 3px 2px; }
+.say-section { margin-top: 4px; font-size: 9.5px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: rgba(255, 255, 255, 0.45); }
+.say-section:first-child { margin-top: 0; }
+.say-fact { display: flex; align-items: baseline; gap: 8px; font-size: 12px; line-height: 1.35; }
+.say-fact-label { flex: none; color: var(--secondary); }
+.say-fact-value { color: var(--text); font-weight: 500; }
+.say-line { font-size: 12px; line-height: 1.38; color: var(--text); user-select: text; }
+.say-missing { color: var(--secondary); }
+
+/* Pasos: the steps scroll on their own, so the line under them is in view at any height. */
+.say-steps-list { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 2px 3px 0; max-height: min(170px, calc(100cqh - 104px));
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.say-steps-list::-webkit-scrollbar { display: none; }
+.say-step { min-height: 20px; }
+.say-step .live-node { transition: background 240ms, border-color 240ms; }
+.say-step[data-done="true"] .live-node svg { animation: say-pop 420ms var(--ease); }
+.say-step-label { flex: none; max-width: 62%; padding: 0; text-align: left; color: var(--secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.say-step[data-done="true"] .say-step-label { color: rgba(255, 255, 255, 0.5); }
+.say-step[data-hover="true"] .say-step-label { color: var(--text); }
+/* Done: a line drawn left to right through the step's name. */
+.say-step-text { position: relative; }
+.say-step-text::after { content: ""; position: absolute; left: -1px; right: -1px; top: 55%; height: 1.2px; border-radius: 1px; background: rgba(219, 192, 154, 0.85);
+  transform: scaleX(0); transform-origin: left; transition: transform 420ms var(--ease); }
+.say-step[data-done="true"] .say-step-text::after { transform: scaleX(1); }
+.say-step-ask { cursor: pointer; }
+.say-step-ask:hover .say-step-text { text-decoration: underline; text-decoration-color: rgba(219, 192, 154, 0.5); text-underline-offset: 3px; }
+.say-step-detail { flex: 1; min-width: 0; text-align: right; font-size: 11px; color: rgba(255, 255, 255, 0.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A question for a pending step, under the step that was tapped. */
+.say-step-q { margin: 4px 0 2px 22px; padding: 6px 9px; border-radius: 8px; background: rgba(219, 192, 154, 0.08); box-shadow: inset 0 0 0 0.5px rgba(219, 192, 154, 0.22);
+  font-size: 12px; line-height: 1.4; color: var(--text); user-select: text; }
+.say-step-q .help-drafting { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; }
+/* One fixed line at the foot: what the step under the pointer still needs. */
+.say-step-hint { margin: 8px 3px 0; padding-top: 7px; border-top: 0.5px solid rgba(255, 255, 255, 0.08); min-height: 30px; font-size: 11px; line-height: 1.35; color: rgba(255, 255, 255, 0.4); }
+.say-step-hint[data-on="true"] { color: rgba(255, 255, 255, 0.75); }
+
+:root[data-platform="win32"] :is(.say-card, .say-line, .say-step-q) { user-select: none; }
+
+/* reduced motion: nothing sweeps, pops or glides; it just appears */
+.island[data-reduce-motion="true"] :is(.say-card, .say-ended svg, .say-step .live-node svg) { animation: none; }
+.island[data-reduce-motion="true"] .say-sweep { display: none; }
+.island[data-reduce-motion="true"] .say-card { transition: none; }
+.island[data-reduce-motion="true"] .say-step-text::after { transition: none; }

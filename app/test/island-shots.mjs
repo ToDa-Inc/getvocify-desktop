@@ -138,6 +138,51 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
         cut: all('.live-say, .live-now-say, .live-todo-ask, .live-recap li').filter((e) => e.scrollHeight > e.clientHeight + 1).length,
       };
     })(),
+    // The Qué decir view (spec revised 2026-10-19).
+    say: (() => {
+      if (!document.querySelector('.say-feed')) return null;
+      const text = (el) => el?.textContent.trim() ?? null;
+      const all = (sel, root = document) => (root ? [...root.querySelectorAll(sel)] : []);
+      const peek = document.querySelector('.say-peek');
+      const cards = all('.say-card');
+      const actions = all('.say-bar .live-action');
+      const label = (b) => text(b.querySelector('span:not(.type-note-pulse)'));
+      const rect = (sel) => { const b = document.querySelector(sel)?.getBoundingClientRect(); return b ? { top: Math.round(b.top * 2) / 2, height: Math.round(b.height * 2) / 2 } : null; };
+      return {
+        cards: cards.length,
+        kinds: cards.map((c) => text(c.querySelector('.say-kind, .say-ended'))?.replace(/ · .*$/, '') ?? null),
+        text: text([...cards].reverse().find((c) => c.dataset.live === 'true')?.querySelector('.say-text')),
+        faded: cards.filter((c) => c.dataset.live === 'false').length,
+        caret: !!document.querySelector('.say-card .live-caret'),
+        again: !!document.querySelector('.say-again'),
+        otherWay: text(document.querySelector('.say-card .help-drafting .dim')),
+        quiet: text(document.querySelector('.say-quiet')),
+        note: text(document.querySelector('.say-note .help-drafting span') ?? document.querySelector('.say-note')),
+        sources: all('.bubble[data-source="true"]').map((b) => b.closest('.turn')?.dataset.turnId ?? null),
+        bar: actions.map(label),
+        on: actions.filter((a) => a.dataset.on === 'true').map(label),
+        disabled: actions.filter((a) => a.disabled).map(label),
+        contact: text(document.querySelector('.say-contact span')),
+        peek: peek?.dataset.peek ?? null,
+        peekReading: text(peek?.querySelector('.help-drafting .dim')),
+        title: text(peek?.querySelector('.say-panel-head')),
+        facts: all('.say-fact', peek).length,
+        recapLines: all('.live-recap li', peek).length,
+        rows: all('.say-step', peek).length,
+        hint: text(peek?.querySelector('.say-step-hint')),
+        stepQ: text(peek?.querySelector('.say-step-q')),
+        briefLines: all('.say-line', peek).length,
+        offline: text(document.querySelector('.say-offline .lost-title')),
+        stack: { feed: rect('.say-feed'), views: rect('.say-views'), bar: rect('.say-bar'), island: rect('.island') },
+        spill: (() => {
+          const bar = document.querySelector('.say-bar')?.getBoundingClientRect();
+          const wrap = document.querySelector('.say-views .transcript-wrap')?.getBoundingClientRect();
+          return bar && wrap ? Math.max(0, Math.round(wrap.bottom - bar.top)) : 0;
+        })(),
+        // Nothing the view writes is cut by its box (the faded history clamps on purpose).
+        cut: all('.say-card[data-live="true"] .say-text, .say-step-q, .say-line, .live-recap li').filter((e) => e.scrollHeight > e.clientHeight + 1).length,
+      };
+    })(),
     title: document.querySelector('.topbar')?.title ?? '',
     offer: (() => {
       const offer = document.querySelector('.offer');
@@ -268,7 +313,19 @@ for (const fixture of fixtures) {
       if (fixture.expect[key] !== undefined && m[key] !== fixture.expect[key]) problems.push(`${key} is ${JSON.stringify(m[key])}, expected ${JSON.stringify(fixture.expect[key])}`);
     }
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);
-    if (m.live) {
+    if (m.say) {
+      // The stack the spec fixes: Qué decir 100 high under the controls, the bar 40 at the foot, the transcript between.
+      const st = m.say.stack;
+      if (st.feed?.height !== 100) problems.push(`Qué decir is ${st.feed?.height}px high, expected 100`);
+      if (st.bar?.height !== 40 || st.bar?.top + st.bar?.height !== st.island?.height) problems.push(`bar at ${st.bar?.top}/${st.bar?.height}, expected 40 high at the foot of the ${st.island?.height}px island`);
+      if (m.say.cut) problems.push(`${m.say.cut} text(s) cut by their box`);
+      // The transcript stays between Qué decir and the bar: no bubble is drawn over the bar.
+      if (m.say.spill) problems.push(`the transcript reaches ${m.say.spill}px past the top of the bar`);
+      for (const [key, want] of Object.entries(fixture.expect.say ?? {})) {
+        if (JSON.stringify(m.say[key] ?? null) !== JSON.stringify(want)) problems.push(`say ${key} is ${JSON.stringify(m.say[key] ?? null)}, expected ${JSON.stringify(want)}`);
+      }
+    } else if (fixture.expect.say) problems.push("the Qué decir view did not render");
+    if (m.live && !m.say) {
       // The vertical stack the spec fixes: controls 38, tabs row 34 under them, the bar 40 at the foot.
       const st = m.live.stack;
       if (st.tabs?.top !== 70 || st.tabs?.height !== 34) problems.push(`tabs row at ${st.tabs?.top}/${st.tabs?.height}, expected 70/34`);

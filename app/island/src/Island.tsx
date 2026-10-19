@@ -9,6 +9,7 @@ import { ProposalWording, type Language } from "../../core/typeProposal.ts";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { LiveBody } from "./live/LiveBody.tsx";
 import { SayBody, type TranscriptMarks } from "./say/SayBody.tsx";
+import { HelpMarker, useHelpMarker } from "./say/Marker.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
 import { TypingDots } from "./TypingDots.tsx";
 import { useNow } from "./useNow.ts";
@@ -202,6 +203,8 @@ function liveHelpReady(state: IslandState): boolean {
 
 function RightEar({ state, open, lifted, act }: { state: IslandState; open: boolean; lifted: boolean; act: Act }) {
   const mode = state.mode;
+  // The Qué decir view's marker: something new the rep has not seen (the sparkle's place, and a line around the island).
+  const marker = useHelpMarker(state, open, act);
   switch (mode.kind) {
     case "recording":
       return (
@@ -219,7 +222,9 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
                   <AlertCircle size={12} />
                 </span>
               )}
-              {liveHelpReady(state) && !open && (
+              {state.live?.view === "say" ? (
+                marker && <span className="help-dot-slot"><HelpMarker key={marker} language={state.language} /></span>
+              ) : liveHelpReady(state) && !open && (
                 <span title="Live help is ready" className="help-ready">
                   <Sparkle size={10} />
                 </span>

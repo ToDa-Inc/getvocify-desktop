@@ -292,6 +292,14 @@ export const sayFixtures = [
   { name: "say-fresh-pressed-again", state: recording(sayView([S_FRESH])), steps: [".say-bar .live-action:nth-child(1)", ".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { cards: 1, otherWay: "Otra forma…" } } },
 ];
 
+// Closed: something new the rep has not seen marks the island (each fixture starts with nothing seen); nothing open, no mark.
+const CLOSED = { width: 349, height: 32 };
+sayFixtures.push(
+  { name: "say-closed-marker", state: recording(sayView([S_HUBSPOT]), { expanded: false }), expect: { ...CLOSED, marker: { dot: true, wraps: true } } },
+  { name: "say-closed-nothing-new", state: recording(sayView([{ ...S_HUBSPOT, outcome: "answered" }]), { expanded: false }), expect: { ...CLOSED, marker: null } },
+  { name: "say-closed-tabs-keep-sparkle", state: recording(view([HUBSPOT]), { expanded: false }), expect: { ...CLOSED, marker: null } },
+);
+
 export const sayInteractions = [
   { name: "say-respond-points-at-fresh", fixture: "say-fresh", click: ".say-bar .live-action:nth-child(1)", expect: [{ name: "liveAsk", ask: "respond" }] },
   { name: "say-respond-rewrites", fixture: "say-answer", click: ".say-bar .live-action:nth-child(1)", expect: [{ name: "liveRewrite", id: "hubspot", version: 1 }] },

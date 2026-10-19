@@ -12,7 +12,7 @@ import { ChevronRight, ConversationIcon, RecapIcon, ShieldIcon } from "../live/i
 import { initialSayUi, Say, useSay, type SayContext, type SayPoint, type SayUi } from "./context.ts";
 import { Feed } from "./Feed.tsx";
 import { SayPeeks } from "./Peeks.tsx";
-import { markSeen, openIds, pickOf, setPick } from "./memory.ts";
+import { markSeen, openIds, pickOf, setPick, unseen } from "./memory.ts";
 
 type Act = (action: IslandAction) => void;
 
@@ -45,6 +45,11 @@ export function SayBody({ state, act, transcript }: { state: IslandState; act: A
   );
 
   // Everything open while the view is in front of the rep counts as seen: the closed island's marker is for what is new.
+  // Opened with something new waiting: logged once, as the marker doing its job.
+  useEffect(() => {
+    const waiting = unseen(state, openIds(live, liveHelp));
+    if (waiting) act({ name: "liveEvent", event: "marker_seen", id: waiting });
+  }, []);
   useEffect(() => markSeen(state, openIds(live, liveHelp)), [state, live, liveHelp]);
 
   // What the rep did on their own is dropped once the dashboard's state says the same.

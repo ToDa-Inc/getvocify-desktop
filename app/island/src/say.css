@@ -118,3 +118,40 @@
 .island[data-reduce-motion="true"] .say-sweep { display: none; }
 .island[data-reduce-motion="true"] .say-card { transition: none; }
 .island[data-reduce-motion="true"] .say-step-text::after { transition: none; }
+
+/* ---------- the closed island's marker: a dot and a warm metal line around the island, for something new ----------
+ * The line is a real CSS border (the browser snaps it to whole screen pixels, so both sides are equal at any scale); its
+ * light is a separate layer, two soft spots travelling along the edge at a constant speed (a CSS motion path), clipped to
+ * the border's ring. On the notch it fades out under the top screen edge. Reduced motion: still. */
+.help-dot-slot { display: inline-flex; align-items: center; justify-content: center; width: 12px; height: 12px; }
+.help-marker { display: inline-flex; }
+.help-dot { position: relative; width: 7px; height: 7px; border-radius: 50%; background: var(--beige); }
+.help-dot::after { content: ""; position: absolute; inset: -2px; border-radius: 50%; border: 1.5px solid var(--beige); animation: help-dot-ring 1.1s ease-out 1 both; }
+@keyframes help-dot-ring { from { opacity: 0.9; transform: scale(1); } to { opacity: 0; transform: scale(2.6); } }
+.help-outline { position: absolute; inset: 0; pointer-events: none; border-radius: 0 0 var(--radius) var(--radius); --rim-r: 0 0 var(--radius) var(--radius);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px); mask-image: linear-gradient(to bottom, transparent 0, #000 14px); }
+.help-outline-glow, .help-outline-line, .rim-light { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+.help-outline-line { border: 1.5px solid #d6bb92; animation: help-outline-line 1.2s ease-out 1 both; }
+.help-outline-glow { animation: help-outline-glow 1.2s ease-out 1 both; }
+@keyframes help-outline-line { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0.85; } }
+@keyframes help-outline-glow { 0% { box-shadow: inset 0 0 0 0 rgba(219, 192, 154, 0); } 20% { box-shadow: inset 0 0 14px 3px rgba(219, 192, 154, 0.55); } 100% { box-shadow: inset 0 0 6px 0 rgba(219, 192, 154, 0); } }
+/* The light's layer: the same border box, shown only on the border's ring (border-box minus padding-box). */
+.rim-light { border: 1px solid transparent;
+  -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0) border-box; -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0) border-box; }
+.rim-light::before, .rim-light::after { content: ""; position: absolute; top: 0; left: 0; width: 28px; height: 28px; border-radius: 50%;
+  offset-path: inset(0 round var(--rim-r)); offset-rotate: 0deg;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.3) 35%, rgba(255, 255, 255, 0) 68%);
+  animation: rim-travel 12s linear infinite; }
+.rim-light::after { animation-delay: -6s; }
+@keyframes rim-travel { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+.help-outline .rim-light { border-width: 1.5px; animation: help-outline-line 1.2s ease-out 1 both; }
+/* Warm on the marker, a little faster; the notch is much longer around, so its light covers more ground per second. */
+.help-outline .rim-light::before, .help-outline .rim-light::after { width: 44px; height: 44px; animation-duration: 14s;
+  background: radial-gradient(circle, rgba(255, 246, 228, 1) 0%, rgba(255, 238, 205, 0.45) 35%, rgba(255, 238, 205, 0) 68%); }
+.help-outline .rim-light::after { animation-delay: -7s; }
+.island[data-reduce-motion="true"] .help-dot::after { animation: none; display: none; }
+.island[data-reduce-motion="true"] :is(.help-outline-line, .help-outline-glow, .help-outline .rim-light) { animation: none; }
+.island[data-reduce-motion="true"] .help-outline-line { opacity: 0.85; }
+.island[data-reduce-motion="true"] .rim-light::before, .island[data-reduce-motion="true"] .rim-light::after { animation: none; offset-distance: 12%; }
+.island[data-reduce-motion="true"] .rim-light::after { offset-distance: 62%; }

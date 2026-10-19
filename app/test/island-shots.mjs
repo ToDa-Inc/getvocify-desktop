@@ -138,6 +138,14 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
         cut: all('.live-say, .live-now-say, .live-todo-ask, .live-recap li').filter((e) => e.scrollHeight > e.clientHeight + 1).length,
       };
     })(),
+    // The closed island's marker in the Qué decir view: the dot, and the line around the whole island.
+    marker: (() => {
+      const dot = document.querySelector('.help-marker .help-dot');
+      const line = document.querySelector('.help-outline-line')?.getBoundingClientRect();
+      const island = document.querySelector('.island')?.getBoundingClientRect();
+      if (!dot) return null;
+      return { dot: true, wraps: !!(line && island && Math.abs(line.width - island.width) < 1 && Math.abs(line.height - island.height) < 1) };
+    })(),
     // The Qué decir view (spec revised 2026-10-19).
     say: (() => {
       if (!document.querySelector('.say-feed')) return null;
@@ -309,8 +317,8 @@ for (const fixture of fixtures) {
     }
     if (fixture.expect.briefRows !== undefined && m.briefRows !== fixture.expect.briefRows) problems.push(`${m.briefRows} row(s) in the call's brief, expected ${fixture.expect.briefRows}`);
     if (fixture.expect.briefMaxHeight !== undefined && m.briefHeight > fixture.expect.briefMaxHeight) problems.push(`the call's brief is ${m.briefHeight}px tall, expected at most ${fixture.expect.briefMaxHeight}px`);
-    for (const key of ["briefOpen", "listening", "keypad", "bubbleText", "copyButtons", "ticked", "saveLabel", "crmLink"]) {
-      if (fixture.expect[key] !== undefined && m[key] !== fixture.expect[key]) problems.push(`${key} is ${JSON.stringify(m[key])}, expected ${JSON.stringify(fixture.expect[key])}`);
+    for (const key of ["briefOpen", "listening", "keypad", "bubbleText", "copyButtons", "ticked", "saveLabel", "crmLink", "marker"]) {
+      if (fixture.expect[key] !== undefined && JSON.stringify(m[key] ?? null) !== JSON.stringify(fixture.expect[key])) problems.push(`${key} is ${JSON.stringify(m[key])}, expected ${JSON.stringify(fixture.expect[key])}`);
     }
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);
     if (m.say) {

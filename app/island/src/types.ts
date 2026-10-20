@@ -2,6 +2,7 @@
 import type { DialIslandState, OnScreenCall } from "../../core/callIsland.ts";
 import type { IslandMeeting } from "../../core/meetingHeadsUp.ts";
 import type { Language } from "../../core/typeProposal.ts";
+import type { PillSpot } from "../../core/pill.ts";
 
 export type { DialIslandState, OnScreenCall };
 
@@ -260,8 +261,10 @@ export type IslandState = {
   /** The live call assistant (tabs, bar, peek); null: the flag is off and the island is today's. */
   live: LiveView | null;
   liveTab: LiveTab;
-  /** Where the recording sits: under the notch (today's island) or as a strip at the side of the screen (setting). */
+  /** Where the island sits (the rep's setting): under the notch, or "side": a pill on any edge of any screen. */
   placement: "notch" | "side";
+  /** The pill's edge and place along it (placement "side"), as the rep left it. */
+  pill: PillSpot;
   countdown: Countdown | null;
   geometry: Geometry;
   postCall: PostCallData | null;
@@ -331,8 +334,12 @@ export type IslandHost = {
    * The page reports the island's size in px and the window follows.
    */
   resize(size: { width: number; height: number }): void;
-  /** At the side, the window lets clicks through except over the strip and its open panel: the page says which. */
+  /** As a pill, the window lets clicks through except over the pill and its open panel: the page says which. */
   interactive?(on: boolean): void;
+  /** The pill is being dragged: where the pointer is on the whole desktop (the window follows it onto another screen). */
+  pillDrag?(screenX: number, screenY: number): void;
+  /** The pill was let go: its edge and place, remembered with the screen it is on. */
+  pillDrop?(spot: PillSpot): void;
   /**
    * The island never takes the keyboard (a click must not take it from the call) unless the rep types in it:
    * "available" while a card with fields is shown, "over" while the pointer is over a field (so the click in it focuses

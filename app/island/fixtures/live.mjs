@@ -300,17 +300,36 @@ sayFixtures.push(
   { name: "say-closed-tabs-keep-sparkle", state: recording(view([HUBSPOT]), { expanded: false }), expect: { ...CLOSED, marker: null } },
 );
 
-// At the side (the setting): a strip 40 x 104, 12 px from the right edge of a column as tall as the screen's work area.
-const COLUMN = { width: 540, height: 640 };
-const STRIP = { width: 40, height: 104, right: 12 };
+// As a pill (the setting): the window is the screen (1100 x 720 here); the pill stands 12 px from a side edge (40 x 104) or
+// lies 12 px from the top or bottom one (104 x 40); the island opens out of it away from its edge, whole on the screen.
+const STAGE = { width: 1100, height: 720 };
+const STRIP = { width: 40, height: 104, edge: "right", gap: 12 };
+const PILL = (kind = "recording", more = {}) => ({ strip: STRIP, open: false, view: false, marker: false, panel: null, inside: null, glyph: kind !== "recording", action: null, ...more });
 sayFixtures.push(
-  { name: "side-closed", side: true, state: recording(sayView([{ ...S_HUBSPOT, outcome: "answered" }]), { expanded: false, placement: "side" }), expect: { ...COLUMN, side: { strip: STRIP, open: false, view: false, marker: false } } },
-  { name: "side-closed-marker", side: true, state: recording(sayView([S_HUBSPOT]), { expanded: false, placement: "side" }), expect: { ...COLUMN, side: { strip: STRIP, open: false, view: false, marker: true } } },
-  { name: "side-open", side: true, state: recording(sayView([S_DEEPEN, S_HUBSPOT]), { placement: "side" }), expect: { ...COLUMN, side: { strip: STRIP, open: true, view: true, marker: false } } },
-  { name: "side-open-steps", side: true, state: recording(sayView([S_HUBSPOT]), { placement: "side" }), steps: [".say-bar .live-action:nth-child(3)"], expect: { ...COLUMN, side: { strip: STRIP, open: true, view: true, marker: false }, say: { peek: "steps" } } },
-  // Everything that is not a recording stays under the notch.
-  { name: "side-not-recording", state: { ...recording(null, { placement: "side" }), mode: { kind: "idle" }, expanded: false }, expect: { width: 257, height: 32, side: null } },
+  { name: "side-closed", side: true, state: recording(sayView([{ ...S_HUBSPOT, outcome: "answered" }]), { expanded: false, placement: "side" }), expect: { ...STAGE, side: PILL() } },
+  { name: "side-closed-marker", side: true, state: recording(sayView([S_HUBSPOT]), { expanded: false, placement: "side" }), expect: { ...STAGE, side: PILL("recording", { marker: true }) } },
+  { name: "side-open", side: true, state: recording(sayView([S_DEEPEN, S_HUBSPOT]), { placement: "side" }), expect: { ...STAGE, side: PILL("recording", { open: true, view: true, panel: "left", inside: true }) } },
+  { name: "side-open-steps", side: true, state: recording(sayView([S_HUBSPOT]), { placement: "side" }), steps: [".say-bar .live-action:nth-child(3)"], expect: { ...STAGE, side: PILL("recording", { open: true, view: true, panel: "left", inside: true }), say: { peek: "steps" } } },
+  // On the left edge it opens to the right; low on the screen the island slides up to stay whole.
+  { name: "side-left-open", side: true, state: recording(sayView([S_HUBSPOT]), { placement: "side", pill: { edge: "left", at: 0.95 } }), expect: { ...STAGE, side: PILL("recording", { strip: { ...STRIP, edge: "left" }, open: true, view: true, panel: "right", inside: true }) } },
+  // Lying on the top edge, and on the bottom one with the island above it.
+  { name: "side-top-closed", side: true, state: recording(sayView([S_HUBSPOT]), { expanded: false, placement: "side", pill: { edge: "top", at: 0.5 } }), expect: { ...STAGE, side: PILL("recording", { strip: { width: 104, height: 40, edge: "top", gap: 12 }, marker: true }) } },
+  { name: "side-bottom-open", side: true, state: recording(sayView([S_HUBSPOT]), { placement: "side", pill: { edge: "bottom", at: 0.2 } }), expect: { ...STAGE, side: PILL("recording", { strip: { width: 104, height: 40, edge: "bottom", gap: 12 }, open: true, view: true, panel: "above", inside: true }) } },
+  // Not recording, it is still the pill: the notch's icon (the Vocify mark at rest, the caller's app on a detected call).
+  { name: "side-idle", side: true, state: { ...recording(null, { placement: "side" }), mode: { kind: "idle" }, expanded: false }, expect: { ...STAGE, side: PILL("idle") } },
+  { name: "side-idle-open", side: true, state: { ...recording(null, { placement: "side" }), mode: { kind: "idle" }, expanded: true }, expect: { ...STAGE, side: PILL("idle", { open: true, panel: "left", inside: true, glyph: true }) } },
+  { name: "side-call", side: true, state: { ...recording(null, { placement: "side" }), mode: { kind: "call", caller: { name: "Zoom", appId: "us.zoom.xos", holding: true, icon: null } }, expanded: false }, expect: { ...STAGE, side: PILL("call", { action: "record-dot" }) } },
 );
+
+// Dragging the pill (window 1100 x 720, from where the fixture rests): where it rests after it is let go, and what the page
+// tells the app (the spot to remember). The click that ends a drag neither opens nor closes the island.
+export const pillDrags = [
+  { name: "pill-to-top", fixture: "side-idle", to: { x: 400, y: 30 }, expect: { strip: { width: 104, height: 40, edge: "top", gap: 12 }, open: false, drop: { edge: "top", at: 0.364 } } },
+  { name: "pill-to-left-low", fixture: "side-idle", to: { x: 25, y: 690 }, expect: { strip: { width: 40, height: 104, edge: "left", gap: 12 }, open: false, drop: { edge: "left", at: 0.928 } } },
+  { name: "pill-to-bottom", fixture: "side-closed", to: { x: 700, y: 712 }, expect: { strip: { width: 104, height: 40, edge: "bottom", gap: 12 }, open: false, drop: { edge: "bottom", at: 0.636 } } },
+  // Let go in the middle of the screen, it still goes to the nearest edge.
+  { name: "pill-from-the-middle", fixture: "side-idle", to: { x: 820, y: 360 }, expect: { strip: { width: 40, height: 104, edge: "right", gap: 12 }, open: false, drop: { edge: "right", at: 0.5 } } },
+];
 
 export const sayInteractions = [
   { name: "say-respond-points-at-fresh", fixture: "say-fresh", click: ".say-bar .live-action:nth-child(1)", expect: [{ name: "liveAsk", ask: "respond" }] },
@@ -326,4 +345,7 @@ export const sayInteractions = [
   { name: "say-done", fixture: "say-answer", click: ".say-done", expect: [{ name: "liveDismiss", id: "hubspot" }] },
   { name: "side-strip-opens", fixture: "side-closed", click: ".side-strip", expect: [{ name: "toggle" }] },
   { name: "side-strip-closes", fixture: "side-open", click: ".side-strip", expect: [{ name: "toggle" }] },
+  { name: "side-idle-opens", fixture: "side-idle", click: ".side-strip", expect: [{ name: "toggle" }] },
+  // The pill's own quick action is that action, not a toggle.
+  { name: "side-call-records", fixture: "side-call", click: ".side-strip .pill-action button", expect: [{ name: "record" }] },
 ];

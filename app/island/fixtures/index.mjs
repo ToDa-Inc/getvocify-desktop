@@ -1,6 +1,7 @@
 // Island states, one per screen the Mac island can show. `expect` sizes are worked out by hand
 // from the Swift rules in IslandGeometry.size, so they check the port rather than repeat it.
-import { liveFixtures, liveInteractions, sayFixtures, sayInteractions } from "./live.mjs";
+import { liveFixtures, liveInteractions, pillDrags, sayFixtures, sayInteractions } from "./live.mjs";
+export { pillDrags };
 
 export const NOW = 1_700_000_000_000;
 

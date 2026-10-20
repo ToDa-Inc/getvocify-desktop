@@ -4,7 +4,7 @@ import { app, BrowserWindow } from "electron";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { fixtures, interactions, NOW } from "../island/fixtures/index.mjs";
+import { fixtures, interactions, NOW, pillDrags } from "../island/fixtures/index.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = join(here, "../island/dist/index.html");
@@ -16,7 +16,7 @@ const WALLPAPER = "linear-gradient(160deg,#27324a 0%,#5b4a6e 45%,#c98f6b 100%)";
 const frame = () => new Promise((resolve) => setTimeout(resolve, 60));
 
 async function open(fixture) {
-  // At the side the island is the window itself (a column at the screen's edge): it gets exactly that size.
+  // As a pill the window is the screen itself (the pill and its panel are drawn inside it): it gets exactly that size.
   const width = fixture.side ? fixture.expect.width : Math.max(520, fixture.expect.width + 60);
   // A card that is as tall as its content has no fixed expected height: give its window room.
   const height = fixture.side ? fixture.expect.height : fixture.fit ? 760 : fixture.expect.height + 40;
@@ -39,8 +39,8 @@ async function open(fixture) {
   const started = await win.webContents.executeJavaScript(`new Promise(r=>{let n=0;const t=()=>window.__setIslandState?r(true):++n>300?r(false):setTimeout(t,10);t()})`);
   if (!started) errors.push("island script never started (window.__setIslandState missing)");
   if (started) await win.webContents.executeJavaScript(`window.__setIslandState(${JSON.stringify(fixture.state)}); true`);
-  // A card sized from its content animates to its height after it is measured.
-  await (fixture.fit || fixture.natural ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
+  // A card sized from its content animates to its height after it is measured; the pill's island grows out of it.
+  await (fixture.fit || fixture.natural || fixture.side ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
   return { win, errors };
 }
 
@@ -139,16 +139,27 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
         cut: all('.live-say, .live-now-say, .live-todo-ask, .live-recap li').filter((e) => e.scrollHeight > e.clientHeight + 1).length,
       };
     })(),
-    // At the side: the strip (its size and place never change), whether its panel is open, and what the panel shows.
+    // As a pill: its size, the edge it rests on and how far from it; whether the island is open, which side of the pill it
+    // opened on and whether it is whole on the screen; what the pill shows (the Qué decir marker, the notch's icon, its action).
     side: (() => {
       const stage = document.querySelector('.side-stage');
       if (!stage) return null;
       const strip = document.querySelector('.side-strip')?.getBoundingClientRect();
+      const gaps = strip ? { left: strip.left, right: innerWidth - strip.right, top: strip.top, bottom: innerHeight - strip.bottom } : null;
+      const edge = gaps ? Object.keys(gaps).reduce((a, b) => (gaps[b] < gaps[a] ? b : a)) : null;
+      const panel = document.querySelector('.side-panel[data-placed="true"]')?.getBoundingClientRect();
+      const where = !panel || !strip ? null
+        : panel.right <= strip.left ? 'left' : panel.left >= strip.right ? 'right' : panel.bottom <= strip.top ? 'above' : panel.top >= strip.bottom ? 'below' : 'over';
+      const action = document.querySelector('.side-strip .pill-action > *');
       return {
-        strip: strip ? { width: Math.round(strip.width), height: Math.round(strip.height), right: Math.round(innerWidth - strip.right) } : null,
+        strip: strip ? { width: Math.round(strip.width), height: Math.round(strip.height), edge, gap: Math.round(gaps[edge]) } : null,
         open: document.querySelector('.side-dock')?.dataset.open === 'true',
         view: !!document.querySelector('.side-panel .say-feed'),
         marker: !!document.querySelector('.side-strip .help-marker'),
+        panel: where,
+        inside: panel ? panel.left >= 0 && panel.top >= 0 && panel.right <= innerWidth && panel.bottom <= innerHeight : null,
+        glyph: !!document.querySelector('.side-strip .pill-glyph')?.querySelector('svg, img'),
+        action: action ? action.className.baseVal ?? action.className : null,
       };
     })(),
     // The closed island's marker in the Qué decir view: the dot, and the line around the whole island.
@@ -395,6 +406,40 @@ for (const test of interactions) {
   const ok = JSON.stringify(actions) === JSON.stringify(test.expect);
   report.push({ name: `click:${test.name}`, actions, problems: ok ? [] : [`sent ${JSON.stringify(actions)}, expected ${JSON.stringify(test.expect)}`] });
   if (!ok) failures.push(`click:${test.name}: sent ${JSON.stringify(actions)}, expected ${JSON.stringify(test.expect)}`);
+  win.destroy();
+}
+
+// Dragging the pill: real pointer events from where it rests to a point, then where it rests and what the app was told.
+for (const test of pillDrags) {
+  const fixture = fixtures.find((f) => f.name === test.fixture);
+  const { win } = await open(fixture);
+  const got = await win.webContents.executeJavaScript(`(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const drops = [];
+    window.vocifyIsland = { act: (a) => window.__islandActions.push(a), resize: () => {}, pillDrop: (spot) => drops.push(spot), pillDrag: () => {}, interactive: () => {} };
+    window.__islandActions.length = 0;
+    const el = document.querySelector('.side-strip');
+    const box = el.getBoundingClientRect();
+    const from = { x: box.left + box.width / 2, y: box.top + box.height / 2 }, to = ${JSON.stringify(test.to)};
+    const at = (x, y, buttons) => ({ bubbles: true, cancelable: true, pointerId: 9, pointerType: 'mouse', isPrimary: true, button: 0, buttons, clientX: x, clientY: y, screenX: x, screenY: y });
+    el.dispatchEvent(new PointerEvent('pointerdown', at(from.x, from.y, 1)));
+    for (let i = 1; i <= 10; i++) { el.dispatchEvent(new PointerEvent('pointermove', at(from.x + (to.x - from.x) * i / 10, from.y + (to.y - from.y) * i / 10, 1))); await wait(16); }
+    el.dispatchEvent(new PointerEvent('pointerup', at(to.x, to.y, 0)));
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: to.x, clientY: to.y }));
+    await wait(400);
+    const strip = document.querySelector('.side-strip').getBoundingClientRect();
+    const gaps = { left: strip.left, right: innerWidth - strip.right, top: strip.top, bottom: innerHeight - strip.bottom };
+    const edge = Object.keys(gaps).reduce((a, b) => (gaps[b] < gaps[a] ? b : a));
+    const drop = drops.at(-1);
+    return {
+      strip: { width: Math.round(strip.width), height: Math.round(strip.height), edge, gap: Math.round(gaps[edge]) },
+      open: window.__islandActions.some((a) => a.name === 'toggle'),
+      drop: drop ? { edge: drop.edge, at: Math.round(drop.at * 1000) / 1000 } : null,
+    };
+  })()`);
+  const ok = JSON.stringify(got) === JSON.stringify(test.expect);
+  report.push({ name: `drag:${test.name}`, measured: got, problems: ok ? [] : [`got ${JSON.stringify(got)}, expected ${JSON.stringify(test.expect)}`] });
+  if (!ok) failures.push(`drag:${test.name}: got ${JSON.stringify(got)}, expected ${JSON.stringify(test.expect)}`);
   win.destroy();
 }
 

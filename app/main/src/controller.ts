@@ -5,6 +5,7 @@ import { StopGrace, type StopStep } from "../../core/stopGrace.ts";
 import { TypeMenu } from "../../core/typeMenu.ts";
 import { TypeProposal, type Language } from "../../core/typeProposal.ts";
 import { WaveSide } from "../../core/waveSide.ts";
+import { DEFAULT_SPOT, type PillSpot } from "../../core/pill.ts";
 import type { Assist, Geometry, IslandAction, IslandState, Levels, LiveAction, Mode, PostCallData } from "../../island/src/types.ts";
 import { postCallPending } from "../../island/src/types.ts";
 import { parseAssist, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parsePostCall, parseTurns, type LiveChannelKind, type LiveType } from "./parse.ts";
@@ -127,7 +128,7 @@ export class IslandController {
   /** True when a native recorder draws the transcript itself; the dashboard's overlay then must not overwrite it. */
   nativeTranscript = false;
 
-  constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean; language?: Language; placement?: "notch" | "side" }) {
+  constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean; language?: Language; placement?: "notch" | "side"; pill?: PillSpot }) {
     this.effects = effects;
     this.current = {
       mode: { kind: "idle" },
@@ -147,6 +148,7 @@ export class IslandController {
       live: null,
       liveTab: "transcript",
       placement: options.placement ?? "notch",
+      pill: options.pill ?? DEFAULT_SPOT,
       countdown: null,
       geometry,
       postCall: null,
@@ -1069,9 +1071,14 @@ export class IslandController {
     }
   }
 
-  /** Where the recording sits (the desktop setting): the window follows it. */
+  /** Where the island sits (the desktop setting): the window follows it. */
   setPlacement(placement: "notch" | "side"): void {
     if (placement !== this.current.placement) this.set({ placement });
+  }
+
+  /** Where the rep left the pill. */
+  setPill(pill: PillSpot): void {
+    if (pill.edge !== this.current.pill.edge || pill.at !== this.current.pill.at) this.set({ pill });
   }
 
   private transition(mode: Mode, expanded: boolean): void {

@@ -19,12 +19,12 @@ import { postCallCrmName, postCallPending, type Assist, type IslandAction, type 
 type Act = (action: IslandAction) => void;
 
 export function Island({ state, act }: { state: IslandState; act: Act }) {
-  // At the side (the rep's setting), a recording is a strip at the screen's edge with its panel; everything else stays here.
-  if (state.placement === "side" && state.mode.kind === "recording") return <SideDock state={state} act={act} />;
+  // As a pill (the rep's setting) the island rests on an edge of the screen and opens out of it, whatever it is doing.
+  if (state.placement === "side") return <SideDock state={state} act={act} />;
   return <NotchIsland state={state} act={act} />;
 }
 
-function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
+export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
   const kind = state.mode.kind;
   const open = state.expanded && kind !== "starting";
   // The after-call card is as tall as its content, which only the page can measure (fonts differ by OS).
@@ -163,7 +163,7 @@ function CountdownLine({ countdown }: { countdown: NonNullable<IslandState["coun
   );
 }
 
-function LeftEar({ state, open, lifted }: { state: IslandState; open: boolean; lifted: boolean }) {
+export function LeftEar({ state, open, lifted }: { state: IslandState; open: boolean; lifted: boolean }) {
   const mode = state.mode;
   switch (mode.kind) {
     case "recording":
@@ -637,7 +637,7 @@ function dialLine(dial: DialIslandState | null): string | undefined {
 
 /** The phone beside the mark: the CRM contact on screen can be called. Dimmed when it can't; the confirm row says why. */
 /** Where the call icon would be: macOS won't let Vocify read the browser in front, so it can't offer a call. */
-function BlockedGlyph({ browser, onClick }: { browser: string; onClick: () => void }) {
+export function BlockedGlyph({ browser, onClick }: { browser: string; onClick: () => void }) {
   const help = `Vocify can't see your ${browser} tabs`;
   return (
     <button
@@ -671,7 +671,7 @@ function CrmBlockedMenu({ browser, act }: { browser: string; act: Act }) {
   );
 }
 
-function CallGlyph({ onScreen, onClick }: { onScreen: OnScreenCall; onClick: () => void }) {
+export function CallGlyph({ onScreen, onClick }: { onScreen: OnScreenCall; onClick: () => void }) {
   const help = CallWording.glyphHelp(onScreen);
   return (
     <button
@@ -812,7 +812,7 @@ function HangUpButton({ title, onClick }: { title: string; onClick: () => void }
 }
 
 /** The closed island while it rings: hang up without opening it. */
-function HangUpDot({ onClick }: { onClick: () => void }) {
+export function HangUpDot({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
@@ -1404,7 +1404,7 @@ function QuietRecordButton({ title, ready, besideCall = false, onClick }: { titl
   );
 }
 
-function RecordDot({ ready, title, onClick }: { ready: boolean; title: string; onClick: () => void }) {
+export function RecordDot({ ready, title, onClick }: { ready: boolean; title: string; onClick: () => void }) {
   return (
     <button
       type="button"

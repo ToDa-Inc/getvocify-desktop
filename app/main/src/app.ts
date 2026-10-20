@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, screen, shell, systemPreferences, Tray } from "electron";
 import { existsSync } from "node:fs";
 import { CallSource } from "../../core/callSource.ts";
+import { readSpot } from "../../core/pill.ts";
 import { ProposalWording } from "../../core/typeProposal.ts";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -314,14 +315,15 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     {
       recorderReady: settings.get("recorderReady") === true, material: "opaque", reduceMotion: systemPreferences.getAnimationSettings().prefersReducedMotion, language: ProposalWording.language(app.getLocale()),
       placement: settings.get("islandPlacement") === "side" ? "side" : "notch",
+      pill: readSpot(settings.get("islandPill")),
     },
   );
-  /** Where the recording sits (the rep's choice, kept across launches): the island follows it at once. */
+  /** Where the island sits (the rep's choice, kept across launches): the island follows it at once. */
   const placementSetting = (): "notch" | "side" => (settings.get("islandPlacement") === "side" ? "side" : "notch");
   const setPlacement = (next: "notch" | "side") => {
     if (next === placementSetting() && controller.state.placement === next) return;
     settings.set("islandPlacement", next);
-    log(`island: during a recording it sits ${next === "side" ? "at the side of the screen" : "under the notch"}`);
+    log(`island: ${next === "side" ? "a pill the rep can move anywhere" : "under the notch"}`);
     controller.setPlacement(next);
   };
 
@@ -412,15 +414,18 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     height,
   });
 
-  /* At the side (the setting, while recording), the window is a column at the right edge of the island's screen, as tall
-     as its work area: the strip and its panel are drawn inside it and moved up and down by the page, so the window never
-     moves or resizes while the rep drags or opens it. It lets clicks through except over the strip and the open panel. */
-  const SIDE_WIDTH = 540;
-  const sideNow = (state: IslandState = controller.state) => state.placement === "side" && state.mode.kind === "recording";
-  const sideFrame = () => {
-    const area = (chosenDisplay() ?? screen.getPrimaryDisplay()).workArea;
-    return { x: area.x + area.width - SIDE_WIDTH, y: area.y, width: SIDE_WIDTH, height: area.height };
-  };
+  /* As a pill (the setting), the window covers the work area of the pill's screen: the pill and its panel are drawn inside it
+     and moved by the page, so the window never moves or resizes while the rep drags or opens it, except to follow a pill
+     dragged onto another screen. It lets clicks through except over the pill and the open panel. */
+  const sideNow = (state: IslandState = controller.state) => state.placement === "side";
+  /** The pill's screen: the one it was left on while it is connected, else the island's screen. */
+  let pillDisplayId: number | null = (() => {
+    const saved = settings.get("islandPill") as { display?: unknown } | undefined;
+    return typeof saved?.display === "number" ? saved.display : null;
+  })();
+  const pillDisplay = (): Electron.Display =>
+    screen.getAllDisplays().find((display) => display.id === pillDisplayId) ?? chosenDisplay() ?? screen.getPrimaryDisplay();
+  const sideFrame = () => ({ ...pillDisplay().workArea });
   let sideActive = false;
   /** Into the side column, or back to the notch; true while at the side. */
   const followPlacement = (state: IslandState): boolean => {
@@ -435,7 +440,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       }
       place(sideFrame());
       island.setIgnoreMouseEvents(true, { forward: true });
-      log("island: at the side of the screen for this recording");
+      log(`island: a pill on the ${controller.state.pill.edge} edge of screen ${pillDisplay().id}`);
     } else if (!side && sideActive) {
       sideActive = false;
       lastKey = "";
@@ -832,6 +837,20 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (!fromIsland(event.sender) || !sideActive || island.isDestroyed()) return;
     island.setIgnoreMouseEvents(on !== true, { forward: true });
   });
+  // A pill dragged onto another screen takes the window with it: the page keeps drawing it under the pointer.
+  ipcMain.on("island:pill-drag", (event, x: unknown, y: unknown) => {
+    if (!fromIsland(event.sender) || !sideActive || island.isDestroyed() || typeof x !== "number" || typeof y !== "number") return;
+    const under = screen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) });
+    if (under.id === pillDisplay().id) return;
+    pillDisplayId = under.id;
+    place(sideFrame());
+  });
+  ipcMain.on("island:pill-drop", (event, raw: unknown) => {
+    if (!fromIsland(event.sender)) return;
+    const spot = readSpot(raw);
+    settings.set("islandPill", { ...spot, display: pillDisplay().id });
+    controller.setPill(spot);
+  });
   ipcMain.on("island:resize", (event, size: { width: number; height: number }) => {
     if (!fromIsland(event.sender) || !size || !(size.width > 0) || !(size.height > 0)) return;
     reportedSize = { width: Math.round(size.width), height: Math.round(size.height) };
@@ -1037,15 +1056,15 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     return tray;
   }
 
-  /** "During a recording": the island under the notch, or as a strip at the side of the screen. */
+  /** "Island": under the notch, or a pill the rep drags anywhere. */
   function placementChoices(): Electron.MenuItemConstructorOptions[] {
     const current = placementSetting();
     return [
       {
-        label: "During a recording",
+        label: "Island",
         submenu: [
           { label: "At the top (notch)", type: "radio" as const, checked: current === "notch", click: () => setPlacement("notch") },
-          { label: "At the side", type: "radio" as const, checked: current === "side", click: () => setPlacement("side") },
+          { label: "Pill (drag it anywhere)", type: "radio" as const, checked: current === "side", click: () => setPlacement("side") },
         ],
       },
       { type: "separator" as const },

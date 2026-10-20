@@ -122,16 +122,35 @@ export function Feed() {
   const seen = useRef<{ live: string[]; count: number }>({ live: [], count: 0 });
   const target = useRef<string | undefined>(undefined);
   const away = useRef(false);
+  // The pointer over the list: the rep is reading it, so nothing moves under them (a new card says "Nuevo ↓").
+  const hover = useRef(false);
+  const reading = () => away.current || hover.current;
+  const leaveTimer = useRef<number | undefined>(undefined);
+  // When each card arrived: it lights up once, so a new answer is seen.
+  const arrivedAt = useRef(new Map<string, number>());
+  // Marked while drawing, so the card that just came is drawn lit: the ones already there when the view opens are not.
+  const known = useRef<Set<string> | null>(null);
+  if (known.current === null) known.current = new Set(liveIds);
+  for (const id of liveIds) {
+    if (known.current.has(id)) continue;
+    known.current.add(id);
+    if (!id.startsWith("draft:")) arrivedAt.current.set(id, now);
+  }
   const holdUntil = useRef(0);
   const autoUntil = useRef(0);
   const [fresh, setFresh] = useState(false);
+  const freshRef = useRef(false);
+  freshRef.current = fresh;
   target.current = focusId;
   const scroller = () => ref.current?.querySelector<HTMLElement>(".live-scroll") ?? null;
   const show = (id: string | undefined, smooth: boolean) => {
     const box = scroller();
     if (!box) return;
     const el = id ? ref.current?.querySelector<HTMLElement>(`[data-id="${CSS.escape(id)}"]`) : null;
-    const top = el ? el.getBoundingClientRect().bottom - box.getBoundingClientRect().top + box.scrollTop - box.clientHeight + 2 : box.scrollHeight;
+    // The card whole, its bottom at the bottom; one taller than the list shows from its first line (what it is, their words).
+    const card = el?.getBoundingClientRect();
+    const offset = card ? card.top - box.getBoundingClientRect().top + box.scrollTop : 0;
+    const top = !card ? box.scrollHeight : card.height > box.clientHeight - 4 ? offset - 2 : offset + card.height - box.clientHeight + 2;
     autoUntil.current = nowMs() + 700;
     box.scrollTo({ top: Math.max(0, top), behavior: smooth && !still ? "smooth" : "auto" });
   };
@@ -141,7 +160,7 @@ export function Feed() {
     const list = ref.current?.querySelector(".say-list");
     if (!list) return;
     const observer = new ResizeObserver(() => {
-      if (!away.current && nowMs() >= holdUntil.current) show(target.current, false);
+      if (!reading() && nowMs() >= holdUntil.current) show(target.current, false);
     });
     observer.observe(list);
     return () => observer.disconnect();
@@ -151,12 +170,12 @@ export function Feed() {
     const arrived = liveIds.some((id) => !before.live.includes(id)) || points.length > before.count;
     seen.current = { live: liveIds, count: points.length };
     if (arrived) {
-      // The rep is reading something older: say there is something new, do not move the list under them.
-      if (away.current) return setFresh(true);
+      // The rep is reading (the pointer on the list, or scrolled up): say there is something new, do not move it under them.
+      if (reading()) return setFresh(true);
       return show(target.current, true);
     }
     // Something was dealt with: leave its check in view a moment, then move to what is still open.
-    if (away.current) return;
+    if (reading()) return;
     holdUntil.current = nowMs() + 1100;
     const timer = setTimeout(() => show(target.current, true), 1100);
     return () => clearTimeout(timer);
@@ -232,7 +251,25 @@ export function Feed() {
   }
 
   return (
-    <div className="say-feed" ref={ref} onWheel={(event) => { if (event.deltaY < 0) away.current = true; }}>
+    <div
+      className="say-feed"
+      ref={ref}
+      onWheel={(event) => { if (event.deltaY < 0) away.current = true; }}
+      onPointerEnter={() => {
+        hover.current = true;
+        window.clearTimeout(leaveTimer.current);
+      }}
+      onPointerLeave={() => {
+        hover.current = false;
+        // Not reading any more: what came meanwhile comes into view by itself, a moment later (a pointer only passing by stays put).
+        window.clearTimeout(leaveTimer.current);
+        leaveTimer.current = window.setTimeout(() => {
+          if (hover.current) return;
+          away.current = false;
+          if (freshRef.current) catchUp();
+        }, 800);
+      }}
+    >
       {live.offlineSince !== null && <Offline since={live.offlineSince} />}
       {fresh && (
         <button type="button" className="say-fresh" onClick={catchUp} title={say.freshHelp}>{say.fresh}</button>
@@ -248,7 +285,7 @@ export function Feed() {
                 key={point.id}
                 point={point}
                 ack={now - (endedAt.current.get(point.id) ?? -Infinity) < ACK_MS}
-                flash={ui.flashId === point.id && ui.flashAt !== null && now - ui.flashAt < 1200 ? ui.flashAt : null}
+                flash={ui.flashId === point.id && ui.flashAt !== null && now - ui.flashAt < 1200 ? ui.flashAt : (arrivedAt.current.get(point.id) ?? null)}
                 onDone={() => {
                   update({ dismissed: [...ui.dismissed, point.id], reopened: ui.reopened.filter((r) => r !== point.id) });
                   act({ name: "liveDismiss", id: point.id });

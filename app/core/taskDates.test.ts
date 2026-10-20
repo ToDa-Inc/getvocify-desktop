@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { dayAfter, dueLabel, dueOfMoment, monthGrid, parseTime } from "./taskDates.ts";
+import { dayAfter, dueLabel, dueOfMoment, monthGrid } from "./taskDates.ts";
 
 describe("task dates", () => {
   const now = new Date(2026, 9, 20, 10, 0);
@@ -13,7 +13,7 @@ describe("task dates", () => {
 
   it("reads a due day the way a rep says it", () => {
     assert.equal(dueLabel({ due: "2026-10-20" }, now), "Today");
-    assert.equal(dueLabel({ due: "2026-10-21", time: "15:30" }, now), "Tomorrow, 15:30");
+    assert.equal(dueLabel({ due: "2026-10-21", time: "15:30" }, now), "Tomorrow 15:30");
     assert.equal(dueLabel({ due: "2026-10-30" }, now), "Fri 30 Oct");
   });
 
@@ -22,16 +22,6 @@ describe("task dates", () => {
     assert.deepEqual(dueOfMoment(local), { due: "2026-10-30", time: "15:05" });
     assert.equal(dueOfMoment("nope"), null);
     assert.equal(dueOfMoment(null), null);
-  });
-
-  it("understands the hours a rep types, and nothing else", () => {
-    assert.equal(parseTime("9"), "09:00");
-    assert.equal(parseTime("9:5"), "09:05");
-    assert.equal(parseTime("0930"), "09:30");
-    assert.equal(parseTime("17.30"), "17:30");
-    assert.equal(parseTime("24:00"), null);
-    assert.equal(parseTime("12:60"), null);
-    assert.equal(parseTime("soon"), null);
   });
 
   it("lays a month out in six Monday-first weeks and marks the past", () => {

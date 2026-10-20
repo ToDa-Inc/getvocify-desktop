@@ -28,16 +28,6 @@ export function dueOfMoment(iso: string | null): TaskDue | null {
   return { due: isoDay(at), time: `${two(at.getHours())}:${two(at.getMinutes())}` };
 }
 
-/** "HH:MM" from what the rep typed ("9", "9:5", "0930", "17.30"), or null when it is not an hour of the day. */
-export function parseTime(raw: string): string | null {
-  const text = raw.trim().replace(".", ":");
-  const match = /^(\d{1,2})(?::?(\d{1,2}))?$/.exec(text.length === 4 && !text.includes(":") ? `${text.slice(0, 2)}:${text.slice(2)}` : text);
-  if (!match) return null;
-  const hour = Number(match[1]);
-  const minute = match[2] === undefined ? 0 : Number(match[2]);
-  return hour <= 23 && minute <= 59 ? `${two(hour)}:${two(minute)}` : null;
-}
-
 export type CalendarDay = { iso: string; day: number; inMonth: boolean; past: boolean };
 
 /** The six weeks that show a month, Monday first, with the days before `today` marked as past. */
@@ -54,9 +44,9 @@ export function monthGrid(year: number, month: number, today: string): CalendarD
 const WEEKDAY = new Intl.DateTimeFormat("en-GB", { weekday: "short" });
 const SHORT_DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
 
-/** How a due day reads: Today, Tomorrow, or "Fri 30 Oct"; the hour follows when there is one. */
+/** How a due day reads: Today, Tomorrow, or "Fri 30 Oct"; the hour follows when there is one ("Tomorrow 16:30"). */
 export function dueLabel({ due, time }: { due: string; time?: string | null }, today: Date = new Date()): string {
   const when = dayOf(due);
   const name = due === dayAfter(0, today) ? "Today" : due === dayAfter(1, today) ? "Tomorrow" : `${WEEKDAY.format(when)} ${SHORT_DAY.format(when)}`;
-  return time ? `${name}, ${time}` : name;
+  return time ? `${name} ${time}` : name;
 }

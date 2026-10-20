@@ -1,6 +1,6 @@
 import { briefLinesShown, type DialIslandState, type OnScreenCall } from "../../core/callIsland.ts";
 import { meetingBriefLines, type IslandMeeting } from "../../core/meetingHeadsUp.ts";
-import type { Geometry, Mode } from "./types.ts";
+import type { BackgroundJob, Geometry, Mode } from "./types.ts";
 
 export const EAR = 82;
 /** Just room for the mark, so the idle island barely widens the camera housing. */
@@ -101,4 +101,13 @@ export function offerBriefLines(state: { mode: { kind: Kind }; onScreen: OnScree
   // Calling: the brief stays under "Calling…" (a missed call says why instead).
   if (state.mode.kind === "dialing" && state.dial && state.dial.phase !== "active" && state.dial.phase !== "ended") return (state.dial.brief?.length ?? 0) + (state.dial.companyBrief ? 2 : 0);
   return 0;
+}
+
+/** Under the open island, one line for the calls the dashboard is still finishing (see Background.tsx). */
+export const BACKGROUND_LINE = 32;
+
+/** The height that line adds: only where the island is a short menu (a card sizes itself, and a recording shows a badge instead). */
+export function backgroundLine(state: { mode: { kind: Kind }; background?: BackgroundJob[] | null }): number {
+  const kind = state.mode.kind;
+  return (kind === "idle" || kind === "call" || kind === "dialConfirm" || kind === "dialing") && state.background && state.background.length > 0 ? BACKGROUND_LINE : 0;
 }

@@ -8,7 +8,7 @@ import { WaveSide } from "../../core/waveSide.ts";
 import { DEFAULT_SPOT, type PillSpot } from "../../core/pill.ts";
 import type { Assist, Geometry, IslandAction, IslandState, Levels, LiveAction, Mode, PostCallData } from "../../island/src/types.ts";
 import { postCallPending } from "../../island/src/types.ts";
-import { parseAssist, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parsePostCall, parseTurns, type LiveChannelKind, type LiveType } from "./parse.ts";
+import { parseAssist, parseBackground, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parsePostCall, parseTurns, type LiveChannelKind, type LiveType } from "./parse.ts";
 
 /**
  * The island's brain: what it shows and what each click does. A port of `MeetingPillController` and
@@ -152,6 +152,7 @@ export class IslandController {
       countdown: null,
       geometry,
       postCall: null,
+      background: null,
       finish: null,
       onScreen: null,
       dial: null,
@@ -250,6 +251,10 @@ export class IslandController {
         patch.postCall = next;
         postCallChanged = true;
       }
+    }
+    if (has("background")) {
+      const next = parseBackground(update.background);
+      if (JSON.stringify(next) !== JSON.stringify(this.current.background ?? null)) patch.background = next;
     }
     let finishChanged = false;
     if (has("finish")) {
@@ -840,6 +845,17 @@ export class IslandController {
 
   /** Holds the island on a spinner from the moment the recording ends until its memo is being written, so there is no gap where it looks idle and a new recording could start. */
   private finish(): void {
+    // A dashboard that reports the finished calls keeps nothing to wait for: the island is free for the next recording or
+    // call at once, and what the ended one still needs shows as a badge and a line (see Background.tsx). The card that was on
+    // show is the last call's, which the dashboard has just handed on, so it does not open again.
+    if (this.current.background != null) {
+      this.stopTimer("autoClose");
+      this.set({ finish: null, countdown: null });
+      this.transition({ kind: "idle" }, false);
+      // A call app that took the mic meanwhile is offered now, as when the wait ends.
+      if (this.currentCaller && !this.callHandled && !this.isListening && !this.isQuiet(this.currentCaller)) this.callChanged(this.currentCaller);
+      return;
+    }
     this.finishingAfter = this.current.postCall?.memoId ?? null;
     this.stopTimer("autoClose");
     this.set({ finish: null, countdown: null });
@@ -862,7 +878,12 @@ export class IslandController {
   /** The dashboard says how the ended recording is going: a failure opens the island and stays; a recording it did not
    * keep (an unanswered call) says why for a moment. */
   private finishChanged(): void {
-    if (this.mode === "finishing" && this.current.finish?.step === "skipped") {
+    const step = this.current.finish?.step;
+    // A dashboard that keeps the finished calls leaves the island at rest after a recording; what it says about one that was not
+    // kept (no answer, nothing transcribed) still opens the island for it. A call that could not be written is its job's line.
+    const background = this.current.background;
+    const atRest = background != null && this.mode === "idle" && (step === "skipped" || (step === "failed" && !background.some((job) => job.state === "failed")));
+    if ((this.mode === "finishing" || atRest) && step === "skipped") {
       this.stopTimer("finishTimeout");
       this.transition({ kind: "finishing" }, true);
       this.start("finishTimeout", SKIPPED_LINGER, () => {
@@ -873,7 +894,7 @@ export class IslandController {
       });
       return;
     }
-    if (this.mode !== "finishing" || this.current.finish?.step !== "failed") return;
+    if (!(this.mode === "finishing" || atRest) || step !== "failed") return;
     this.stopTimer("finishTimeout");
     this.transition({ kind: "finishing" }, true);
   }

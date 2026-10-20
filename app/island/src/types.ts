@@ -234,6 +234,11 @@ export type PostCallData = {
   noAnswer: boolean;
 };
 
+/** What a finished call still needs. Working: Vocify is writing it up. Needs: an update waits for the rep. Failed: it could not be written, and stays until retried. Followup: logged as no answer, with an optional follow-up. Done: saved, for a moment. */
+export type BackgroundJobState = "working" | "needs" | "failed" | "followup" | "done";
+/** A finished call the dashboard is still working on, so the next recording or call can start meanwhile. */
+export type BackgroundJob = { id: string; name: string | null; state: BackgroundJobState };
+
 /** What still needs the rep; the count on the closed island. */
 export function postCallPending(data: PostCallData): number {
   return (
@@ -273,6 +278,8 @@ export type IslandState = {
   countdown: Countdown | null;
   geometry: Geometry;
   postCall: PostCallData | null;
+  /** The finished calls the dashboard is still on; null when it does not report them (then the island waits on a spinner after a recording, as before). */
+  background?: BackgroundJob[] | null;
   /** The recording that just ended, until its memo is being written; null when the dashboard says nothing. */
   finish: Finish | null;
   /** The CRM contact in the frontmost browser the island can offer to call (`shell:state` onScreen). */

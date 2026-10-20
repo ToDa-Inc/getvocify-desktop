@@ -1,6 +1,6 @@
 import type {
   Assist, Clock, Finish, LiveContact, LiveData, LiveDecision, LiveGoal, LiveNext, LiveNow, LiveOutcome, LivePart, LivePoint, LiveProgress, LiveRecap, LiveResponder, LiveRewrite, LiveStep, LiveStepAsk, LiveView,
-  PostCallChange, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn,
+  BackgroundJob, PostCallChange, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn,
 } from "../../island/src/types.ts";
 
 /**
@@ -395,4 +395,18 @@ export function parseLiveBrain(raw: unknown): LiveView | null {
     view: raw.view === "say" ? "say" : "tabs",
     contact: parseLiveContact(raw.contact),
   };
+}
+
+const JOB_STATES = ["working", "needs", "failed", "followup", "done"] as const;
+
+/** The finished calls the dashboard is still on. Not a list at all: it does not report them (null). A malformed job is dropped. */
+export function parseBackground(raw: unknown): BackgroundJob[] | null {
+  if (!Array.isArray(raw)) return null;
+  const jobs: BackgroundJob[] = [];
+  for (const item of list(raw)) {
+    const id = nonEmpty(item.id);
+    const state = JOB_STATES.find((s) => s === item.state);
+    if (id && state) jobs.push({ id, name: nonBlank(item.name), state });
+  }
+  return jobs;
 }

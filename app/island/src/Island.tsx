@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
-import { cornerRadius, earWidth, islandSize, offerBriefLines, showsConversation, showsMeeting } from "./geometry.ts";
+import { backgroundLine, cornerRadius, earWidth, islandSize, offerBriefLines, showsConversation, showsMeeting } from "./geometry.ts";
+import { JobsBadge, JobsLine, jobsIndicator } from "./Background.tsx";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, transcriptText, turnParts, turnPlainText } from "./helpers.ts";
 import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, Copy, ExclamationCircle, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Trash, Video, Waveform } from "./icons.tsx";
@@ -35,7 +36,8 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
   // As tall as its content: the after-call card, and a call offer or call carrying the contact's brief (it wraps).
   const natural = open && (kind === "postCall" || offerBriefLines(state) > 0);
   const shape = islandSize(state.geometry, kind, open, undefined, offerBriefLines(state), showsMeeting(state), showsConversation(state));
-  const size = natural && cardHeight !== null ? { width: shape.width, height: cardHeight } : shape;
+  const jobsLine = open ? backgroundLine(state) : 0;
+  const size = natural && cardHeight !== null ? { width: shape.width, height: cardHeight } : { ...shape, height: shape.height + jobsLine };
   const radius = cornerRadius(kind, open);
   const [hovered, setHovered] = useState(false);
   const lifted = hovered && !open && kind !== "starting";
@@ -113,6 +115,7 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
           )}
         </div>
         {open && <Body state={state} act={act} onPopupExtent={setPopupBottom} />}
+        {jobsLine > 0 && <JobsLine state={state} act={act} />}
       </div>
       {open && state.countdown && <CountdownLine countdown={state.countdown} />}
       <Rim lifted={lifted} open={open} />
@@ -171,6 +174,7 @@ export function LeftEar({ state, open, lifted }: { state: IslandState; open: boo
         <div className="row gap6">
           <RecordingDot paused={state.paused} reduceMotion={state.reduceMotion} />
           <Elapsed state={state} />
+          <JobsBadge state={state} />
         </div>
       );
     case "stopped":
@@ -186,8 +190,12 @@ export function LeftEar({ state, open, lifted }: { state: IslandState; open: boo
       return state.finish?.step === "failed" ? <AlertCircle size={12} style={{ color: "var(--warning)" }} /> : <Spinner />;
     case "starting":
       return <Spinner />;
-    case "idle":
+    case "idle": {
+      // Calls the dashboard is still finishing: the closed island says so where the mark is (a spinner, or what needs the rep).
+      const jobs = open ? null : jobsIndicator(state);
+      if (jobs) return jobs.need > 0 ? <PendingBadge count={jobs.need} /> : <Spinner />;
       return <VocifyMark style={{ opacity: lifted || open ? 1 : 0.85 }} />;
+    }
     case "dialConfirm":
     case "dialing":
       return <Phone size={11} style={{ color: state.dial?.phase === "ended" ? "var(--secondary)" : "var(--beige)" }} />;

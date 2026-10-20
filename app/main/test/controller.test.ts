@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { IslandState, Levels } from "../../island/src/types.ts";
-import { islandSize, showsConversation } from "../../island/src/geometry.ts";
+import { backgroundLine, islandSize, showsConversation } from "../../island/src/geometry.ts";
 import { IslandController, type Caller, type Effects } from "../src/controller.ts";
 
 /** A clock and timer queue the tests move by hand, plus a record of everything the controller does outside itself. */
@@ -183,6 +183,57 @@ test("Discard throws the stopped recording away: the dashboard is told to drop i
   assert.deepEqual(t.commands().slice(-2), ["pause", "discard"], "the line running out does not also write the memo");
   t.controller.act({ name: "discard" });
   assert.deepEqual(t.commands().slice(-2), ["pause", "discard"], "a second press does nothing");
+});
+
+/* ---------- the finished calls the dashboard is still on ---------- */
+
+test("a dashboard that reports its finished calls leaves the island free at once: no spinner, the next recording starts, the last card does not open again", () => {
+  const t = recording();
+  t.controller.applyShellState({ background: [], postCall: postCall("done") });
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  assert.equal(t.mode(), "idle", "nothing to wait for");
+  assert.equal(t.controller.state.expanded, false, "the last card stays closed");
+  t.controller.applyShellState({ postCall: null, background: [{ id: "d1", name: "Marta", state: "working" }] });
+  t.controller.act({ name: "record" });
+  assert.equal(t.mode(), "starting");
+  assert.deepEqual(t.commands().slice(-1), ["listen"]);
+  t.controller.show();
+  assert.equal(t.mode(), "recording");
+  assert.deepEqual(t.controller.state.background, [{ id: "d1", name: "Marta", state: "working" }], "the badge reads it while the next call runs");
+});
+
+test("a dashboard that does not report them keeps today's wait on a spinner", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  assert.equal(t.mode(), "finishing");
+  assert.equal(t.controller.state.background ?? null, null);
+});
+
+test("a finished call's card is asked for by the rep and arrives when the island is at rest; a card that arrives during a recording waits", () => {
+  const t = setup();
+  t.controller.applyShellState({ background: [{ id: "d1", name: "Marta", state: "needs" }] });
+  t.controller.act({ name: "postCall", type: "openJob", details: { id: "d1" } });
+  assert.deepEqual(t.last("postcall:action"), { id: "d1", type: "openJob" });
+  t.controller.applyShellState({ postCall: postCall("ready") });
+  assert.equal(t.mode(), "postCall");
+  assert.equal(t.controller.state.expanded, true);
+  const busy = recording();
+  busy.controller.applyShellState({ background: [{ id: "d1", name: "Marta", state: "needs" }], postCall: postCall("ready") });
+  assert.equal(busy.mode(), "recording", "a call in progress is not interrupted");
+});
+
+test("the line for the finished calls adds its height to a short open island only", () => {
+  const t = setup();
+  t.controller.act({ name: "toggle" });
+  const base = islandSize(t.controller.state.geometry, "idle", true);
+  assert.equal(backgroundLine(t.controller.state), 0);
+  t.controller.applyShellState({ background: [{ id: "d1", name: null, state: "working" }] });
+  assert.equal(backgroundLine(t.controller.state), 32);
+  assert.equal(base.height + backgroundLine(t.controller.state), 120);
+  assert.equal(backgroundLine({ mode: { kind: "recording" }, background: [{ id: "d1", name: null, state: "working" }] }), 0, "a recording shows a badge instead");
+  assert.equal(backgroundLine({ mode: { kind: "postCall" }, background: [{ id: "d1", name: null, state: "needs" }] }), 0, "a card sizes itself");
 });
 
 test("while finishing the island ignores the dashboard hiding it, the shortcut and a call app, and shows the memo when a new one arrives", () => {
@@ -1589,4 +1640,24 @@ test("the open recording is 400 high, and 460 only while Conversación is open (
   assert.equal(showsConversation({ mode: { kind: "recording" }, live: {}, liveTab: "conversation" }), true);
   assert.equal(showsConversation({ mode: { kind: "recording" }, live: null, liveTab: "conversation" }), false, "today's island never grows");
   assert.equal(showsConversation({ mode: { kind: "recording" }, live: {}, liveTab: "help" }), false);
+});
+
+test("with the finished calls kept by the dashboard, a recording that was not kept still says why, and a call that could not be written is only its job's line", () => {
+  const t = recording();
+  t.controller.applyShellState({ background: [] });
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  assert.equal(t.mode(), "idle");
+  t.controller.applyShellState({ finish: { step: "skipped", message: "No answer. Nothing was saved." } });
+  assert.equal(t.mode(), "finishing");
+  assert.equal(t.controller.state.expanded, true);
+  t.advance(10);
+  assert.equal(t.mode(), "idle", "the line runs out");
+  const u = recording();
+  u.controller.applyShellState({ background: [] });
+  u.controller.act({ name: "stop" });
+  u.controller.act({ name: "finish" });
+  u.controller.applyShellState({ background: [{ id: "d1", name: "Marta", state: "failed" }] });
+  u.controller.applyShellState({ finish: { step: "failed", message: "Couldn't send the meeting." } });
+  assert.equal(u.mode(), "idle", "the failed line says it; no second card");
 });

@@ -99,6 +99,50 @@ app.whenReady().then(async () => {
     check(analyse(micFrames).peak > 1000, `the microphone side carries the fake microphone's beep (peak ${analyse(micFrames).peak})`);
     await loopback.stop();
     check(BrowserWindow.getAllWindows().length === baseWindows, "the microphone cycle also leaves no window behind");
+
+    // A Bluetooth headset connecting, leaving or switching to hands-free: the page sees the devices change. The capture
+    // restarts by itself, call and microphone together, and the recording carries on (it is not reported as lost).
+    const hidden = () => BrowserWindow.getAllWindows().find((w) => w !== anchor);
+    const deviceChange = () => hidden().webContents.executeJavaScript(`navigator.mediaDevices.dispatchEvent(new Event("devicechange")); true`);
+    const bt = createLoopback({ testSource: true, settleMs: 200 });
+    let btLost = null;
+    bt.onLost((reason) => (btLost = reason));
+    check((await bt.start({ mic: true })).mic === true, "bluetooth: the capture starts with the microphone");
+    await sleep(500);
+    const before = { call: 0, mic: 0 };
+    bt.onPcm(() => before.call++);
+    bt.onMicPcm(() => before.mic++);
+    await sleep(600);
+    check(before.call > 0 && before.mic > 0, "bluetooth: frames flow before the change");
+    // A burst of changes (a headset reports several) is one restart.
+    await deviceChange();
+    await deviceChange();
+    await deviceChange();
+    await sleep(300);
+    const mark = { call: before.call, mic: before.mic };
+    await sleep(2500);
+    check(btLost === null, `bluetooth: a device change is not reported as lost audio (${btLost})`);
+    check(before.call - mark.call >= 15 && before.mic - mark.mic >= 15, `bluetooth: call and microphone frames flow again after the change (${before.call - mark.call} / ${before.mic - mark.mic})`);
+    check(BrowserWindow.getAllWindows().length === baseWindows + 1, "bluetooth: the restart reuses the one hidden window");
+    const reAnalysed = await collect(bt, 1500);
+    const tone = analyse(reAnalysed);
+    check(Math.abs(tone.hz - 440) < 8 && Math.abs(tone.rms - expected) / expected < 0.08, `bluetooth: the call side is still the tone after the restart (${tone.hz.toFixed(1)} Hz)`);
+    // A stop during a quiet moment before a restart cancels it: nothing comes back.
+    await deviceChange();
+    await bt.stop();
+    await sleep(600);
+    check(btLost === null && BrowserWindow.getAllWindows().length === baseWindows, "bluetooth: a stop right after a change leaves nothing running or behind");
+    // A device that never settles is reported, not restarted forever.
+    const flapping = createLoopback({ testSource: true, settleMs: 50 });
+    let flapLost = null;
+    flapping.onLost((reason) => (flapLost = reason));
+    await flapping.start();
+    for (let i = 0; i < 12 && flapLost === null; i++) {
+      await deviceChange().catch(() => {});
+      await sleep(1200);
+    }
+    check(typeof flapLost === "string" && flapLost.startsWith("device_unstable"), `bluetooth: a device that keeps changing is reported lost (${flapLost})`);
+    check(BrowserWindow.getAllWindows().length === baseWindows, "bluetooth: nothing is left behind after that");
   } catch (error) {
     failures.push(`threw: ${error instanceof Error ? error.stack : String(error)}`);
     console.log(`FAIL threw: ${error instanceof Error ? error.stack : error}`);

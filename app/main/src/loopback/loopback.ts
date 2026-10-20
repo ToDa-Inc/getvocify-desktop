@@ -15,7 +15,14 @@ import type { SystemAudio } from "../platform/types.ts";
 const FRAME_BYTES = 3200;
 const here = dirname(fileURLToPath(import.meta.url));
 
+/** The devices settle for this long before the capture is restarted: a Bluetooth headset reports several changes in a row. */
+const SETTLE_MS = 1500;
+/** More restarts than this within a minute is a device that will not settle: the audio is reported lost. */
+const MAX_RESTARTS = 6;
+
 export type LoopbackOptions = {
+  /** Test only: how long the devices must be quiet before a restart (default 1.5 s). */
+  settleMs?: number;
   /** Test only: a sine tone replaces the PC's audio so the whole pipeline runs on any OS. Never read from the environment. */
   testSource?: boolean;
 };
@@ -31,6 +38,11 @@ export function createLoopback(options: LoopbackOptions = {}): Loopback {
   let running = false;
   // A deliberate stop is not "the call's audio was lost".
   let stopping = false;
+  // What the running capture was started with, to restart it the same way, and the restarts of the last minute.
+  let startedWith: { mic?: boolean } = {};
+  let restartTimer: ReturnType<typeof setTimeout> | null = null;
+  let restarting = false;
+  let restarts: number[] = [];
 
   const notify = <T>(listeners: Set<(value: T) => void>, value: T, what: string) => {
     for (const listener of listeners) {
@@ -65,6 +77,55 @@ export function createLoopback(options: LoopbackOptions = {}): Loopback {
     notify(pcmListeners, call, "pcm");
   };
 
+  const onChanged = (event: IpcMainEvent, reason: unknown) => {
+    if (!fromOurPage(event) || stopping) return;
+    // Quiet for a moment first, and one restart for a burst of changes.
+    if (restartTimer) clearTimeout(restartTimer);
+    restartTimer = setTimeout(() => void restart(typeof reason === "string" && reason ? reason : "device_changed"), options.settleMs ?? SETTLE_MS);
+  };
+
+  /** The same capture again on the devices as they are now. The listeners stay: the recording carries on, with a gap. */
+  async function restart(reason: string): Promise<void> {
+    restartTimer = null;
+    if (!running || stopping) return;
+    if (restarting) return onChangedAgain(reason);
+    const now = Date.now();
+    restarts = restarts.filter((at) => now - at < 60_000);
+    if (restarts.length >= MAX_RESTARTS) return lose(`device_unstable:${reason}`);
+    restarts.push(now);
+    restarting = true;
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const page = window;
+        if (!page || page.isDestroyed() || stopping) return;
+        try {
+          const result = (await page.webContents.executeJavaScript(
+            `window.__vocifyLoopback.start(${JSON.stringify({ test: options.testSource === true, mic: startedWith.mic === true })})`,
+            true,
+          )) as { mic?: boolean } | null;
+          // A Bluetooth headset can take a moment to give its microphone back after the switch: ask again before settling for the call alone.
+          if (startedWith.mic && result?.mic !== true && attempt < 2) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            continue;
+          }
+          console.info(`loopback: restarted after ${reason}${startedWith.mic && result?.mic !== true ? " (without the microphone)" : ""}`);
+          return;
+        } catch (error) {
+          if (attempt === 2) return lose(`restart_failed:${error instanceof Error && error.name ? error.name : "unknown"}`);
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      }
+    } finally {
+      restarting = false;
+    }
+  }
+
+  /** A change that arrived during a restart: another one follows it, on the devices as they are by then. */
+  function onChangedAgain(reason: string): void {
+    if (restartTimer) clearTimeout(restartTimer);
+    restartTimer = setTimeout(() => void restart(reason), options.settleMs ?? SETTLE_MS);
+  }
+
   const onEnded = (event: IpcMainEvent, reason: unknown) => {
     if (!fromOurPage(event) || stopping) return;
     lose(typeof reason === "string" && reason ? reason : "stream_ended");
@@ -81,6 +142,9 @@ export function createLoopback(options: LoopbackOptions = {}): Loopback {
     ipcMain.off("loopback:frame", onFrame);
     ipcMain.off("loopback:pair", onPair);
     ipcMain.off("loopback:ended", onEnded);
+    ipcMain.off("loopback:changed", onChanged);
+    if (restartTimer) clearTimeout(restartTimer);
+    restartTimer = null;
     const closing = window;
     window = null;
     running = false;
@@ -111,6 +175,9 @@ export function createLoopback(options: LoopbackOptions = {}): Loopback {
       ipcMain.on("loopback:frame", onFrame);
       ipcMain.on("loopback:pair", onPair);
       ipcMain.on("loopback:ended", onEnded);
+      ipcMain.on("loopback:changed", onChanged);
+      startedWith = { mic: startOptions?.mic === true };
+      restarts = [];
 
       window = new BrowserWindow({
         show: false,

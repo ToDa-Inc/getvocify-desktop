@@ -13,4 +13,8 @@ contextBridge.exposeInMainWorld("loopbackHost", {
   ended(reason: string): void {
     ipcRenderer.send("loopback:ended", reason);
   },
+  /** The PC's audio devices changed (a Bluetooth headset connected, left, or switched mode) or a capture track ended. */
+  changed(reason: string): void {
+    ipcRenderer.send("loopback:changed", reason);
+  },
 });

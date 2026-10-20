@@ -4,6 +4,18 @@
   let context = null;
   let streams = [];
 
+  // Bluetooth headphones come and go, and switch to hands-free (a new sample rate, other endpoints) when the mic opens:
+  // the audio devices changing, or a track ending, is reported to the app, which restarts the capture (it must, because
+  // getDisplayMedia needs a user gesture that only the app can give).
+  let watching = false;
+  const watchDevices = () => {
+    if (watching || !navigator.mediaDevices || !navigator.mediaDevices.addEventListener) return;
+    watching = true;
+    navigator.mediaDevices.addEventListener("devicechange", () => {
+      if (context) window.loopbackHost.changed("devicechange");
+    });
+  };
+
   const stopEverything = async () => {
     for (const stream of streams) for (const track of stream.getTracks()) track.stop();
     streams = [];
@@ -62,8 +74,13 @@
       await context.audioWorklet.addModule("./pcm-worklet.js");
       const stream = options && options.test ? testStream(context) : await loopbackStream();
       streams.push(stream);
+      watchDevices();
       const mic = options && options.mic ? await micStream() : null;
-      if (mic) streams.push(mic);
+      if (mic) {
+        streams.push(mic);
+        // A microphone that is unplugged or taken over ends its track without a word: the capture is restarted.
+        for (const track of mic.getAudioTracks()) track.addEventListener("ended", () => window.loopbackHost.changed("mic_track_ended"));
+      }
       const source = context.createMediaStreamSource(stream);
       // A node nobody pulls is never run, so the framer ends in a muted gain: the captured audio must not play back.
       const mute = context.createGain();
@@ -89,7 +106,7 @@
         framer.connect(mute);
       }
       for (const track of stream.getAudioTracks()) {
-        track.addEventListener("ended", () => window.loopbackHost.ended("track_ended"));
+        track.addEventListener("ended", () => window.loopbackHost.changed("track_ended"));
       }
       return { sampleRate: context.sampleRate, tracks: stream.getAudioTracks().length, mic: mic !== null };
     },

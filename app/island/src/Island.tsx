@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { cornerRadius, earWidth, islandSize, offerBriefLines, showsConversation, showsMeeting } from "./geometry.ts";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, transcriptText, turnParts, turnPlainText } from "./helpers.ts";
-import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, Copy, ExclamationCircle, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Video, Waveform } from "./icons.tsx";
+import { AlertCircle, ArrowDown, ArrowUpRight, Building, Calendar, Check, CheckCircle, ChevronDown, Close, Copy, ExclamationCircle, FileText, Keypad, Mail, Mic, MicSlash, Pause, Phone, PhoneDown, PhoneOutline, Play, Sparkle, Trash, Video, Waveform } from "./icons.tsx";
 import { briefWhen, CallWording, PhoneFormat, type BriefKind, type BriefLine, type CompanyBrief, type DialIslandState, type OnScreenBrief, type OnScreenCall } from "../../core/callIsland.ts";
 import { MeetingWording, type IslandMeeting } from "../../core/meetingHeadsUp.ts";
 import { ProposalWording, type Language } from "../../core/typeProposal.ts";
@@ -597,6 +597,9 @@ function StoppedMenu({ title, act }: { title: string; act: Act }) {
     <div className="menu">
       <span className="menu-title">{title}</span>
       <div className="grow" />
+      <IconButton help="Discard this recording" onClick={() => act({ name: "discard" })}>
+        <Trash size={11} />
+      </IconButton>
       <button type="button" className="text-action" title="Keep recording this call" onClick={() => act({ name: "resume" })}>
         <Play size={10} />
         <span>Resume</span>

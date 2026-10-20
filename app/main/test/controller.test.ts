@@ -171,6 +171,20 @@ test("Finish ends the stopped recording at once, without waiting for the line to
   assert.deepEqual(t.commands().slice(-2), ["pause", "stop"], "a second press does nothing");
 });
 
+test("Discard throws the stopped recording away: the dashboard is told to drop it and the island goes to rest", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.advance(1);
+  t.controller.act({ name: "discard" });
+  assert.notEqual(t.mode(), "finishing");
+  assert.notEqual(t.mode(), "stopped");
+  assert.deepEqual(t.commands().slice(-2), ["pause", "discard"]);
+  t.advance(10);
+  assert.deepEqual(t.commands().slice(-2), ["pause", "discard"], "the line running out does not also write the memo");
+  t.controller.act({ name: "discard" });
+  assert.deepEqual(t.commands().slice(-2), ["pause", "discard"], "a second press does nothing");
+});
+
 test("while finishing the island ignores the dashboard hiding it, the shortcut and a call app, and shows the memo when a new one arrives", () => {
   const t = recording();
   t.controller.applyShellState({ postCall: postCall("done") });

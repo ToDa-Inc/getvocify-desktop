@@ -28,6 +28,9 @@ export const ArrowDown = ({ size = 10, stroke = 2.4, style, className }: IconPro
 export const Close = ({ size = 11, stroke = 2.2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><path d="M6 6l12 12M18 6 6 18" /></svg>
 );
+export const Trash = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg>
+);
 export const Plus = ({ size = 10, stroke = 2.6, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><path d="M12 5v14M5 12h14" /></svg>
 );

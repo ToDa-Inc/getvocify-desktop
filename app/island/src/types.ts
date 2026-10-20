@@ -123,7 +123,8 @@ export type LiveProgress = {
 export type LiveResponder = { seq: number; status: "reading" | "found" | "nothing"; pointId: string | null };
 export type LiveRecap = { seq: number; status: "reading" | "ready"; upTo: number | null; lines: string[]; unknown: string[] };
 /** Responder with nothing to answer: the missing item that matters most, with its question. */
-export type LiveNext = { kind: "step" | "data"; id: string; label: string; question: string };
+/** Responder with nothing to answer: a missing playbook item and its question, or ("said") a question on the last thing they said. */
+export type LiveNext = { kind: "step" | "data" | "said"; id: string; label: string; question: string };
 /** A question for one pending step or data item, asked for from Pasos. */
 export type LiveStepAsk = { seq: number; kind: "step" | "data"; id: string; status: "reading" | "ready"; question: string | null };
 /** "Otra forma" for one point: being written, written (a new version), or none (no other honest angle). */
@@ -296,6 +297,8 @@ export type IslandAction =
   | { name: "resume" }
   /** End the stopped recording now, without waiting for its line to run out. */
   | { name: "finish" }
+  /** Throw the stopped recording away: nothing is sent, kept or written. */
+  | { name: "discard" }
   /** Close the card that says the ended recording failed. */
   | { name: "dismissFinish" }
   | { name: "pickCallType"; key: string | null }

@@ -400,6 +400,8 @@ export class IslandController {
         return this.resumeRecording();
       case "finish":
         return this.finishRecording();
+      case "discard":
+        return this.discardRecording();
       case "dismissFinish":
         return this.dismissFinish();
       case "pickCallType":
@@ -806,6 +808,14 @@ export class IslandController {
   finishRecording(): void {
     if (this.mode !== "stopped" || !this.grace) return;
     this.run(this.grace.onFinish);
+  }
+
+  /** Throws the stopped recording away: the dashboard drops it instead of writing its memo. */
+  discardRecording(): void {
+    if (this.mode !== "stopped" || !this.grace) return;
+    this.grace = null;
+    this.hide();
+    this.effects.emit("shell:command", "discard");
   }
 
   /** Back to rest: the last call's update if one is pending, else the mark beside the camera. `finishing`: the recording just ended from the island; wait for its memo instead. */

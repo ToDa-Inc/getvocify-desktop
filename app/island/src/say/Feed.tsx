@@ -56,6 +56,8 @@ function Card({ point, ack, flash, onDone }: { point: SayPoint; ack: boolean; fl
   const writing = point.phase === "writing" || typing;
   const shown = typing ? text.slice(0, Math.max(0, Math.floor(since / CHAR_MS))) : text;
   const title = point.repeated ? `${say.repeats} · ${quoted(point.title)}` : point.title ? quoted(point.title) : "";
+  // Spotted but not answered yet: what it is, from the turn check or the brain's first words («Precio», «Pregunta»).
+  const spotted = point.draft ? point.tag ?? (point.tagKey === "question" ? say.question : (words.kinds as Record<string, string>)[point.tagKey] ?? null) : null;
   const tooltip = point.answer !== null ? point.source ?? "" : [point.gap, words.sayMeanwhile].filter(Boolean).join(". ");
   return (
     <div className="say-card" data-id={point.id} data-kind={kind} data-live={point.live} data-ended={!point.live && ended && ack ? ended : "none"} title={tooltip}>
@@ -70,6 +72,7 @@ function Card({ point, ack, flash, onDone }: { point: SayPoint; ack: boolean; fl
             <KindIcon />
             {say.kinds[kind]}
             {index > 0 && <span className="say-again"> · {say.again}</span>}
+            {spotted && <span className="say-again"> · {spotted}</span>}
           </span>
         )}
         <span className="say-words">{title}</span>
@@ -80,7 +83,7 @@ function Card({ point, ack, flash, onDone }: { point: SayPoint; ack: boolean; fl
         )}
       </div>
       {thinking ? (
-        <div className="help-drafting"><span className="dim">{rewriting ? say.otherWay : words.reading}</span><TypingDots /></div>
+        <div className="help-drafting"><span className="dim">{rewriting ? say.otherWay : point.draft ? say.spotted : words.reading}</span><TypingDots /></div>
       ) : (
         <div className="say-text">
           {shown}
@@ -207,12 +210,14 @@ export function Feed() {
     // Nothing to answer: the next thing to find out, the brain's pick (else the playbook's own next item and its question).
     const brain = live.asks.next;
     const fallback = brain ? null : nowTodo(live.progress, ui.marks, words);
-    const next = brain ? { label: brain.label, question: brain.question } : fallback?.ask ? { label: fallback.label, question: fallback.ask } : null;
+    // With nothing pending in the playbook, the brain asks about the last thing they said: an opportunity, in their words.
+    const said = brain?.kind === "said";
+    const next = brain ? { label: said ? quoted(brain.label) : brain.label, question: brain.question } : fallback?.ask ? { label: fallback.label, question: fallback.ask } : null;
     if (next) {
       tail = (
         <div className="say-card" data-live="true" data-kind="explore" data-id="say-next">
           <div className="say-said">
-            <span className="say-kind say-next" data-kind="explore"><QuestionIcon size={10} />{say.kinds.next}</span>
+            <span className="say-kind say-next" data-kind="explore"><QuestionIcon size={10} />{said ? say.kinds.explore : say.kinds.next}</span>
             <span className="say-words">{next.label}</span>
             <button type="button" className="live-close say-done" title={words.close} aria-label={words.close} onClick={() => update({ respond: null })}>
               <CloseSmall />
@@ -233,7 +238,8 @@ export function Feed() {
         <button type="button" className="say-fresh" onClick={catchUp} title={say.freshHelp}>{say.fresh}</button>
       )}
       {points.length === 0 && !tail ? (
-        <div className="say-quiet">{say.quiet}</div>
+        // Nothing yet: an empty space with the view's name, small, at the top left.
+        <div className="say-quiet" title={say.quiet} aria-label={say.quiet}><span className="say-label">{say.label}</span></div>
       ) : (
         <FollowScroll follow={false} still={still}>
           <div className="say-list">

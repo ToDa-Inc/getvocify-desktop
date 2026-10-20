@@ -183,6 +183,7 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
       return {
         cards: cards.length,
         kinds: cards.map((c) => text(c.querySelector('.say-kind, .say-ended'))?.replace(/ · .*$/, '') ?? null),
+        kindLine: text([...cards].reverse().find((c) => c.dataset.live === 'true')?.querySelector('.say-kind')),
         text: text([...cards].reverse().find((c) => c.dataset.live === 'true')?.querySelector('.say-text')),
         faded: cards.filter((c) => c.dataset.live === 'false').length,
         caret: !!document.querySelector('.say-card .live-caret'),
@@ -349,7 +350,7 @@ for (const fixture of fixtures) {
     if (m.say) {
       // The stack the spec fixes: Qué decir 100 high under the controls, the bar 40 at the foot, the transcript between.
       const st = m.say.stack;
-      if (st.feed?.height !== 100) problems.push(`Qué decir is ${st.feed?.height}px high, expected 100`);
+      if (st.feed?.height !== 84) problems.push(`Qué decir is ${st.feed?.height}px high, expected 84`);
       if (st.bar?.height !== 40 || st.bar?.top + st.bar?.height !== st.island?.top + st.island?.height) problems.push(`bar at ${st.bar?.top}/${st.bar?.height}, expected 40 high at the foot of the ${st.island?.height}px island`);
       if (m.say.cut) problems.push(`${m.say.cut} text(s) cut by their box`);
       // The transcript stays between Qué decir and the bar: no bubble is drawn over the bar.

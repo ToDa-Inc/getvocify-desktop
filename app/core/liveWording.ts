@@ -67,7 +67,14 @@ type SayStrings = {
   otherWay: string;
   repeats: string;
   done: string;
+  /** The view's name, small at the top left while nothing is there. */
+  label: string;
+  /** Said when the view is empty (as the label's tooltip): what will show here. */
   quiet: string;
+  /** A question spotted but not answered yet. */
+  question: string;
+  /** A point spotted, its answer not written yet. */
+  spotted: string;
   fresh: string;
   freshHelp: string;
   readingMinute: string;
@@ -155,7 +162,10 @@ const ES: Strings = {
     otherWay: "Otra forma…",
     repeats: "Lo repite",
     done: "Ya está",
+    label: "Qué decir",
     quiet: "Aquí sale qué decir cuando el cliente pregunta, objeta o cuenta algo importante.",
+    question: "Pregunta",
+    spotted: "Preparando…",
     fresh: "Nuevo ↓",
     freshHelp: "Hay algo nuevo abajo",
     readingMinute: "Leyendo el último minuto",
@@ -244,7 +254,10 @@ const EN: Strings = {
     otherWay: "Another way…",
     repeats: "Said again",
     done: "Done",
+    label: "What to say",
     quiet: "What to say shows up here when they ask, object or say something important.",
+    question: "Question",
+    spotted: "Preparing…",
     fresh: "New ↓",
     freshHelp: "Something new below",
     readingMinute: "Reading the last minute",

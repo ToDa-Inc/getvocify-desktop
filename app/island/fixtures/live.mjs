@@ -263,7 +263,7 @@ const SAY = { width: 460, height: 400 };
 const NEXT = { kind: "data", id: "n_comerciales", label: "N.º de comerciales", question: "¿Cuántos comerciales sois, y cuántos están en la calle?" };
 
 export const sayFixtures = [
-  { name: "say-empty", state: recording(sayView()), expect: { ...SAY, say: { cards: 0, quiet: "Aquí sale qué decir cuando el cliente pregunta, objeta o cuenta algo importante.", bar: ["Responder", "Resumen", "Pasos"], contact: "Marta Ruiz", peek: null } } },
+  { name: "say-empty", state: recording(sayView()), expect: { ...SAY, say: { cards: 0, quiet: "Qué decir", bar: ["Responder", "Resumen", "Pasos"], contact: "Marta Ruiz", peek: null } } },
   { name: "say-answer", state: recording(sayView([S_HUBSPOT])), expect: { ...SAY, say: { cards: 1, kinds: ["Respuesta"], text: HUBSPOT.answer, sources: ["t6"] } } },
   { name: "say-kinds", state: recording(sayView([S_TIMING, S_DEEPEN, S_SINCE, S_HUBSPOT])), expect: { ...SAY, say: { cards: 4, kinds: ["No está en tu conocimiento", "Respuesta", "Puedes preguntar", "Respuesta"], faded: 1 } } },
   { name: "say-writing", state: recording(sayView([S_HUBSPOT, S_DRAFT])), expect: { ...SAY, say: { cards: 2, caret: true } } },
@@ -272,6 +272,8 @@ export const sayFixtures = [
   { name: "say-rewrite-arrives", state: recording(sayView([S_HUBSPOT])), steps: [".say-bar .live-action:nth-child(1)"], next: recording(sayView([S_HUBSPOT_TWO], sayAsks({ rewrite: { seq: 1, pointId: "hubspot", status: "ready" } }))), expect: { ...SAY, say: { cards: 1, again: true, text: S_HUBSPOT_TWO.versions[1] } } },
   { name: "say-rewrite-none", state: recording(sayView([S_HUBSPOT])), steps: [".say-bar .live-action:nth-child(1)"], next: recording(sayView([S_HUBSPOT], sayAsks({ rewrite: { seq: 1, pointId: "hubspot", status: "none" } }))), expect: { ...SAY, say: { cards: 1, again: false, text: HUBSPOT.answer } } },
   { name: "say-respond-reading", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { note: "Leyendo el último minuto", on: ["Responder"] } } },
+  // Nothing pending in the playbook: Responder still gives a card, a question on the last thing they said.
+  { name: "say-respond-said", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(1)"], next: recording(sayView([], sayAsks({ responder: { seq: 1, status: "nothing", pointId: null }, next: { kind: "said", id: "t7", label: "se lo reenviaré a la directora comercial", question: "¿Y qué crees que le va a importar más a la directora comercial?" } }))), expect: { ...SAY, say: { cards: 1, kinds: ["Puedes preguntar"], text: "¿Y qué crees que le va a importar más a la directora comercial?" } } },
   { name: "say-respond-next", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(1)"], next: recording(sayView([], sayAsks({ responder: { seq: 1, status: "nothing", pointId: null }, next: NEXT }))), expect: { ...SAY, say: { cards: 1, kinds: ["Te falta saber"], text: NEXT.question } } },
   { name: "say-respond-next-from-playbook", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(1)"], next: recording(sayView([], sayAsks({ responder: { seq: 1, status: "nothing", pointId: null } }))), expect: { ...SAY, say: { cards: 1, kinds: ["Te falta saber"] } } },
   { name: "say-respond-reopens", state: recording(sayView([{ ...S_HUBSPOT, outcome: "answered" }])), steps: [".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { cards: 1, faded: 0 } } },
@@ -284,6 +286,8 @@ export const sayFixtures = [
   { name: "say-brief-first", state: recording(sayView([], { contact: { ...CONTACT, first: true, lines: [] } })), steps: [".say-contact"], expect: { ...SAY, say: { peek: "brief", briefLines: 1 } } },
   { name: "say-no-contact", state: recording(sayView([], { contact: null })), expect: { ...SAY, say: { contact: null } } },
   { name: "say-offline", state: recording(sayView([S_HUBSPOT], { offlineSince: NOW - 12_000 })), expect: { ...SAY, say: { offline: "Sin conexión con Vocify", cards: 1 } } },
+  // An objection spotted by the turn check before the brain writes: the card is there at once, with what it is.
+  { name: "say-detected", state: recording(sayView([sayPoint({ ...draft("Es que es caro para nosotros", null), kind: "objection", tagKey: "price" }, [])])), expect: { ...SAY, say: { cards: 1, kinds: ["Respuesta"], kindLine: "Respuesta · Precio" } } },
   { name: "say-off", state: recording(sayView([S_HUBSPOT]), { liveHelp: false }), expect: { ...SAY, say: { quiet: "La ayuda en vivo está apagada en esta llamada.", disabled: ["Responder", "Resumen", "Pasos"] } } },
   { name: "say-english", state: recording(sayView([S_DEEPEN, S_HUBSPOT]), { language: "en" }), expect: { ...SAY, say: { kinds: ["You could ask", "Answer"], bar: ["Respond", "Recap", "Steps"] } } },
   { name: "say-fresh", state: recording(sayView([S_FRESH])), expect: { ...SAY, say: { cards: 1, again: false } } },

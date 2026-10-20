@@ -3,11 +3,11 @@
    (scroll, peek, recap, nodes, bar). No new colours. */
 
 /* ---------- Qué decir: a fixed height, one card and a glimpse of the one before ---------- */
-.say-feed { position: relative; flex: none; height: 100px; display: flex; flex-direction: column; padding: 6px 0; }
+.say-feed { position: relative; flex: none; height: 84px; display: flex; flex-direction: column; padding: 6px 0; }
 .say-feed .live-scroll { flex: 1; min-height: 0; padding: 0 14px; overflow-anchor: none; }
 .say-list { display: flex; flex-direction: column; gap: 6px; }
-.say-quiet { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; margin: 0 14px; padding: 0 16px; border-radius: 10px;
-  border: 0.5px dashed rgba(255, 255, 255, 0.12); font-size: 11.5px; line-height: 1.35; color: var(--secondary); text-align: center; }
+.say-quiet { flex: 1; min-height: 0; position: relative; margin: 0 14px; }
+.say-label { position: absolute; top: 0; left: 0; font-size: 10.5px; font-weight: 500; letter-spacing: 0.01em; color: rgba(255, 255, 255, 0.38); }
 .say-offline { margin: 0 14px 6px; }
 .say-note { padding: 4px 2px 2px; font-size: 11.5px; color: rgba(255, 255, 255, 0.45); }
 .say-note .help-drafting { display: inline-flex; align-items: center; gap: 6px; }

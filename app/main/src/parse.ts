@@ -245,8 +245,11 @@ function versionsOf(raw: unknown, first: string | null): string[] {
 /** What the model is writing right now, from its stream: after the open points. It has no tag yet and no kind. */
 function parseDraft(raw: Raw, index: number): LivePoint {
   const say = nonBlank(raw.say);
+  // What it is, as soon as it is known: the turn check's verdict or the brain's first words ("price", "question", ...).
+  const tagKey = nonBlank(raw.kind) ?? "question";
   return {
-    id: `draft:${index}`, kind: "question", tag: null, tagKey: "question", title: nonBlank(raw.title) ?? "", saidAt: Number.MAX_SAFE_INTEGER,
+    id: `draft:${index}`, kind: tagKey === "question" ? "question" : tagKey === "deepen" ? "deepen" : "objection", tag: nonBlank(raw.tag), tagKey,
+    title: nonBlank(raw.title) ?? "", saidAt: Number.MAX_SAFE_INTEGER,
     decision: null, decisionNote: null, answer: say, fallback: null, gap: null, source: null,
     phase: say === null ? "thinking" : "writing", outcome: "open", repeated: false, draft: true,
     turnIds: [], versions: say ? [say] : [],
@@ -331,7 +334,7 @@ function parseRecap(raw: unknown): LiveRecap | null {
 
 function parseNext(raw: unknown): LiveNext | null {
   if (!isRaw(raw)) return null;
-  const kind = raw.kind === "step" || raw.kind === "data" ? raw.kind : null;
+  const kind = raw.kind === "step" || raw.kind === "data" || raw.kind === "said" ? raw.kind : null;
   const id = nonEmpty(raw.id);
   const label = nonBlank(raw.label);
   const question = nonBlank(raw.question);

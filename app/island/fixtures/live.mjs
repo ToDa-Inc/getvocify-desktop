@@ -300,9 +300,9 @@ sayFixtures.push(
   { name: "say-closed-tabs-keep-sparkle", state: recording(view([HUBSPOT]), { expanded: false }), expect: { ...CLOSED, marker: null } },
 );
 
-// As a pill (the setting): the window is the screen (1100 x 720 here); the pill stands 12 px from a side edge (40 x 104) or
+// As a pill (the setting): the window is the screen (1000 x 720 here: narrower than the 1024 px screen of the Windows CI runner, which would shrink a larger window); the pill stands 12 px from a side edge (40 x 104) or
 // lies 12 px from the top or bottom one (104 x 40); the island opens out of it away from its edge, whole on the screen.
-const STAGE = { width: 1100, height: 720 };
+const STAGE = { width: 1000, height: 720 };
 const STRIP = { width: 40, height: 104, edge: "right", gap: 12 };
 const PILL = (kind = "recording", more = {}) => ({ strip: STRIP, open: false, view: false, marker: false, panel: null, inside: null, glyph: kind !== "recording", action: null, ...more });
 sayFixtures.push(
@@ -321,12 +321,12 @@ sayFixtures.push(
   { name: "side-call", side: true, state: { ...recording(null, { placement: "side" }), mode: { kind: "call", caller: { name: "Zoom", appId: "us.zoom.xos", holding: true, icon: null } }, expanded: false }, expect: { ...STAGE, side: PILL("call", { action: "record-dot" }) } },
 );
 
-// Dragging the pill (window 1100 x 720, from where the fixture rests): where it rests after it is let go, and what the page
+// Dragging the pill (window 1000 x 720, from where the fixture rests): where it rests after it is let go, and what the page
 // tells the app (the spot to remember). The click that ends a drag neither opens nor closes the island.
 export const pillDrags = [
-  { name: "pill-to-top", fixture: "side-idle", to: { x: 400, y: 30 }, expect: { strip: { width: 104, height: 40, edge: "top", gap: 12 }, open: false, drop: { edge: "top", at: 0.364 } } },
+  { name: "pill-to-top", fixture: "side-idle", to: { x: 400, y: 30 }, expect: { strip: { width: 104, height: 40, edge: "top", gap: 12 }, open: false, drop: { edge: "top", at: 0.4 } } },
   { name: "pill-to-left-low", fixture: "side-idle", to: { x: 25, y: 690 }, expect: { strip: { width: 40, height: 104, edge: "left", gap: 12 }, open: false, drop: { edge: "left", at: 0.928 } } },
-  { name: "pill-to-bottom", fixture: "side-closed", to: { x: 700, y: 712 }, expect: { strip: { width: 104, height: 40, edge: "bottom", gap: 12 }, open: false, drop: { edge: "bottom", at: 0.636 } } },
+  { name: "pill-to-bottom", fixture: "side-closed", to: { x: 700, y: 712 }, expect: { strip: { width: 104, height: 40, edge: "bottom", gap: 12 }, open: false, drop: { edge: "bottom", at: 0.7 } } },
   // Let go in the middle of the screen, it still goes to the nearest edge.
   { name: "pill-from-the-middle", fixture: "side-idle", to: { x: 820, y: 360 }, expect: { strip: { width: 40, height: 104, edge: "right", gap: 12 }, open: false, drop: { edge: "right", at: 0.5 } } },
 ];

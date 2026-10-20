@@ -200,6 +200,8 @@ export type PostCallChange = {
   when: string | null;
   /** The call gave the task no day: `when` is only the default it will be written with. */
   whenSuggested: boolean;
+  /** A task's due moment (ISO, with offset), which the day and hour picker starts from; null for anything else. */
+  dueAt: string | null;
 };
 
 export type PostCallEmail = { state: "writing" | "ready" | "skipped" | "sent"; to: string | null; subject: string | null; preview: string | null };
@@ -228,6 +230,8 @@ export type PostCallData = {
   type: PostCallType | null;
   /** The updated record in the CRM, once written; null when it has no link. */
   crmUrl: string | null;
+  /** Nobody answered (a voicemail): the card offers only the lead status and tasks, and no note. */
+  noAnswer: boolean;
 };
 
 /** What still needs the rep; the count on the closed island. */

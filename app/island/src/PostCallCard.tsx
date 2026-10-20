@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
-import { ArrowUpRight, Calendar, Check, ChevronDown, Close, ExclamationCircle, FileText, IdCard, Mail, Plus, Users } from "./icons.tsx";
+import { ArrowUpRight, Calendar, Check, ChevronDown, Close, ExclamationCircle, FileText, IdCard, Mail, PhoneDown, Plus, Users } from "./icons.tsx";
+import { dayAfter, dueLabel, dueOfMoment, type TaskDue } from "../../core/taskDates.ts";
+import { keyboardNow, keyboardOver, releaseKeyboardSoon } from "./keyboard.ts";
+import { TaskDatePicker } from "./TaskDatePicker.tsx";
 import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallData, type PostCallMeeting } from "./types.ts";
 
 /**
@@ -12,8 +15,10 @@ import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallD
 
 type Act = (action: IslandAction) => void;
 type Tab = "crm" | "email" | "notes";
-/** A task the rep added here: its title and the day it is due (YYYY-MM-DD, the rep's own calendar). */
-type NewTask = { title: string; due: string };
+/** A task the rep added here: its title, the day it is due (YYYY-MM-DD, the rep's own calendar) and, when chosen, the hour. */
+type NewTask = { title: string; due: string; time: string | null };
+/** What the rep changed on one of the call's proposed tasks: its text, and/or its day and hour. */
+type TaskEdit = { title?: string; due?: string; time?: string | null };
 
 const L = { inset: 16, top: 6, header: 26, tabs: 26, gap: 8, line: 30, groupLabel: 20, listMax: 236, actions: 40, meeting: 26, bottom: 10, label: 104, noteLines: 8, noteMinLines: 3 } as const;
 const GROUPS = [
@@ -53,6 +58,8 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const [options, setOptions] = useState<{ key: string; anchor: Anchor } | null>(null);
   const [typeMenu, setTypeMenu] = useState<Anchor | null>(null);
   const [tasks, setTasks] = useState<NewTask[]>([]);
+  const [taskEdits, setTaskEdits] = useState<Record<string, TaskEdit>>({});
+  const [dateMenu, setDateMenu] = useState<{ key: string; anchor: Anchor } | null>(null);
 
   // A new call: its own ticks, picks and note.
   useEffect(() => {
@@ -63,11 +70,16 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
     setOptions(null);
     setTypeMenu(null);
     setTasks([]);
+    setTaskEdits({});
+    setDateMenu(null);
   }, [postCall.memoId]);
 
   // Past its changes (applying, done...), a value's options no longer apply.
   useEffect(() => {
-    if (postCall.stage !== "ready") setOptions(null);
+    if (postCall.stage !== "ready") {
+      setOptions(null);
+      setDateMenu(null);
+    }
   }, [postCall.stage]);
 
   const groups = groupedChanges(postCall);
@@ -76,7 +88,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const noteText = noteDraft ?? postCall.summary ?? "";
   const tabs: Tab[] = ["crm"];
   if (postCall.email) tabs.push("email");
-  if (postCall.notes || postCall.summary !== null || noteEditable) tabs.push("notes");
+  if (!postCall.noAnswer && (postCall.notes || postCall.summary !== null || noteEditable)) tabs.push("notes");
   const tab = tabs.includes(activeTab) ? activeTab : "crm";
   // A change with nothing proposed (the lead status) is written only once the rep has picked a value for it.
   const isKept = (key: string) => !dropped.has(key) && !(postCall.changes.find((c) => c.key === key)?.pending && edited[key] === undefined);
@@ -97,6 +109,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const closeMenus = useCallback(() => {
     setOptions(null);
     setTypeMenu(null);
+    setDateMenu(null);
   }, []);
 
   const toggleChange = (key: string) =>
@@ -130,15 +143,23 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
     const omit = postCall.changes.map((c) => c.key).filter((key) => !isKept(key));
     if (!canSave) return;
     const edits = Object.fromEntries(Object.entries(edited).filter(([key, value]) => postCall.changes.some((c) => c.key === key && c.value !== value)));
-    act({ name: "postCall", type: "approve", details: { omit, edits, ...(noteDraft !== null ? { note: noteDraft } : {}), ...(tasks.length > 0 ? { tasks } : {}) } });
+    // Only the tasks still ticked, and only what changed on them (a time left out is "any hour").
+    const moved = Object.fromEntries(
+      Object.entries(taskEdits)
+        .filter(([key]) => !omit.includes(key) && postCall.changes.some((c) => c.key === key))
+        .map(([key, edit]) => [key, { ...(edit.title !== undefined ? { title: edit.title } : {}), ...(edit.due ? { due: edit.due, ...(edit.time ? { time: edit.time } : {}) } : {}) }]),
+    );
+    const added = tasks.map((task) => ({ title: task.title, due: task.due, ...(task.time ? { time: task.time } : {}) }));
+    act({ name: "postCall", type: "approve", details: { omit, edits, ...(noteDraft !== null ? { note: noteDraft } : {}), ...(added.length > 0 ? { tasks: added } : {}), ...(Object.keys(moved).length > 0 ? { taskEdits: moved } : {}) } });
   };
 
   const send = (type: string, details?: Record<string, unknown>) => act({ name: "postCall", type, details });
-  const review = <TextAction title="Review in Vocify" arrow onClick={() => send("review")} />;
+  // A call nobody answered has nothing to review in Vocify.
+  const review = postCall.noAnswer ? null : <TextAction title="Review in Vocify" arrow onClick={() => send("review")} />;
   const saveButton = (
     <button type="button" className="primary-action" disabled={!canSave} title={`Writes the ticked changes, the new tasks and the note to ${crm}`} onClick={approve}>
       <Check size={9} />
-      <span>{saveLabel(keptCount + tasks.length, hasNote, postCall.crm ?? "the CRM")}</span>
+      <span>{saveLabel(keptCount + tasks.length, hasNote, postCall.crm ?? "the CRM", postCall.noAnswer)}</span>
     </button>
   );
 
@@ -184,6 +205,9 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
 
         {tab === "crm" && (
           <>
+            {postCall.noAnswer && postCall.stage === "ready" && (
+              <Line icon={<PhoneDown size={11} />}><span className="dim">No answer. Logged in {crm} as no answer</span></Line>
+            )}
             {postCall.stage === "writing" && <Line busy><span className="dim">Writing the update…</span></Line>}
             {postCall.stage === "ready" && nothingSure && (
               <Line icon={<ExclamationCircle />} trailing={postCall.canApprove ? undefined : review}>
@@ -192,7 +216,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
             )}
             {postCall.stage === "ready" && nothingSure && postCall.canApprove && (
               <>
-                <AddTask tasks={tasks} onChange={setTasks} />
+                <AddTask tasks={tasks} onChange={setTasks} onPopupExtent={onPopupExtent} />
                 <div className="postcall-actions" style={{ height: L.actions }}>
                   {saveButton}
                   <div className="grow" />
@@ -210,13 +234,21 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
                         <ChangeRow
                           key={change.key}
                           change={change}
-                          shown={shownValue(change, edited[change.key])}
+                          shown={change.when !== null ? taskEdits[change.key]?.title ?? change.to : shownValue(change, edited[change.key])}
                           kept={isKept(change.key)}
                           open={options?.key === change.key}
                           toggle={() => toggleChange(change.key)}
-                          editable={typable && change.editable}
+                          editable={typable && (change.editable || change.when !== null)}
+                          taskEdit={change.when !== null ? taskEdits[change.key] ?? {} : null}
+                          dateOpen={dateMenu?.key === change.key}
+                          onDate={(element) => {
+                            setOptions(null);
+                            setTypeMenu(null);
+                            setDateMenu((open) => (open?.key === change.key ? null : { key: change.key, anchor: anchorOf(element) }));
+                          }}
                           onEdit={(text) => {
-                            setEdited((previous) => ({ ...previous, [change.key]: text }));
+                            if (change.when !== null) setTaskEdits((previous) => ({ ...previous, [change.key]: { ...previous[change.key], title: text } }));
+                            else setEdited((previous) => ({ ...previous, [change.key]: text }));
                             keep(change.key);
                           }}
                           toggleOptions={(element) => {
@@ -228,7 +260,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
                     </div>
                   ))}
                 </ChangesList>
-                {postCall.canApprove && <AddTask tasks={tasks} onChange={setTasks} />}
+                {postCall.canApprove && <AddTask tasks={tasks} onChange={setTasks} onPopupExtent={onPopupExtent} />}
                 <div className="postcall-actions" style={{ height: L.actions }}>
                   {postCall.canApprove ? (
                     <>
@@ -359,13 +391,32 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
           ))}
         </FloatMenu>
       )}
+      {dateMenu && (() => {
+        const change = postCall.changes.find((c) => c.key === dateMenu.key);
+        if (!change) return null;
+        const edit = taskEdits[change.key];
+        const value: TaskDue = edit?.due ? { due: edit.due, time: edit.time ?? null } : dueOfMoment(change.dueAt) ?? { due: dayAfter(1), time: null };
+        return (
+          <TaskDatePicker
+            anchor={dateMenu.anchor}
+            value={value}
+            onClose={closeMenus}
+            onExtent={onPopupExtent}
+            onChange={(next) => {
+              setTaskEdits((previous) => ({ ...previous, [change.key]: { ...previous[change.key], due: next.due, time: next.time } }));
+              keep(change.key);
+            }}
+          />
+        );
+      })()}
     </>
   );
 }
 
 /** The Save button: the ticked fields and/or the note, whichever the rep has. */
-function saveLabel(fields: number, note: boolean, crm: string): string {
+function saveLabel(fields: number, note: boolean, crm: string, noAnswer = false): string {
   if (fields > 0) return `Save ${fields}${note ? " + note" : ""} to ${crm}`;
+  if (noAnswer) return `Save to ${crm}`;
   return note ? `Save note to ${crm}` : "Nothing to save";
 }
 
@@ -418,7 +469,7 @@ function ChangesList({ children }: { children: ReactNode }) {
 }
 
 /** One proposed change: tick to keep, its field, and what it becomes (then what it was). */
-function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable, onEdit }: { change: PostCallChange; shown: string; kept: boolean; open: boolean; toggle: () => void; toggleOptions: (element: Element) => void; editable: boolean; onEdit: (text: string) => void }) {
+function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable, onEdit, taskEdit, dateOpen, onDate }: { change: PostCallChange; shown: string; kept: boolean; open: boolean; toggle: () => void; toggleOptions: (element: Element) => void; editable: boolean; onEdit: (text: string) => void; /** The edits on this task, or null when the row is not a task. */ taskEdit: TaskEdit | null; dateOpen: boolean; onDate: (element: Element) => void }) {
   const value = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState(false);
   const before = change.from !== null && change.from !== shown ? change.from : null;
@@ -456,31 +507,31 @@ function ChangeRow({ change, shown, kept, open, toggle, toggleOptions, editable,
               {before !== null && <span className="was-text">{"  was "}{before}</span>}
             </span>
             {/* Outside the clamped text, so a long task never cuts its day and hour off. */}
-            {change.when !== null && <span className="when-text">{change.when}{change.whenSuggested ? " · suggested" : ""}</span>}
+            {change.when !== null && taskEdit !== null && editable ? (
+              <button
+                type="button"
+                className="task-when"
+                data-open={dateOpen}
+                data-changed={Boolean(taskEdit.due)}
+                title="Change the day and hour"
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDate(event.currentTarget);
+                }}
+              >
+                <Calendar size={9} />
+                <span>{taskEdit.due ? dueLabel({ due: taskEdit.due, time: taskEdit.time }) : `${change.when}${change.whenSuggested ? " · suggested" : ""}`}</span>
+              </button>
+            ) : (
+              change.when !== null && <span className="when-text">{taskEdit?.due ? dueLabel({ due: taskEdit.due, time: taskEdit.time }) : change.when}{!taskEdit?.due && change.whenSuggested ? " · suggested" : ""}</span>
+            )}
           </span>
         )}
         <span className="value-chevron" style={{ opacity: hasOptions ? 1 : 0 }}><ChevronDown size={8} stroke={3.6} /></span>
       </div>
     </div>
   );
-}
-
-/** The pointer is over a field the rep can type in: the click that follows focuses the island (see `keyboard`). */
-function keyboardOver(): void {
-  void window.vocifyIsland?.keyboard?.("over");
-}
-
-/** A click in a field: the island must have the keyboard now (Windows may need it brought to the front). */
-function keyboardNow(): void {
-  void window.vocifyIsland?.keyboard?.("now");
-}
-
-/** Gives the keyboard back once no field of the card has the caret any more (a moment later: focus may be moving). */
-function releaseKeyboardSoon(): void {
-  setTimeout(() => {
-    const active = document.activeElement;
-    if (!(active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement)) void window.vocifyIsland?.keyboard?.("release");
-  }, 150);
 }
 
 /** A free-text value typed in place: Enter or a click elsewhere keeps it, Escape leaves it as it was. Grows with the text. */
@@ -534,50 +585,55 @@ function ValueEditor({ text, onDone }: { text: string; onDone: (text: string | n
   );
 }
 
-const DAYS = [
-  { label: "Today", offset: 0 },
-  { label: "Tomorrow", offset: 1 },
-  { label: "Next week", offset: 7 },
-] as const;
-
-/** The day `offset` days from today, as YYYY-MM-DD on the rep's own calendar. */
-function dayAfter(offset: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + offset);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
-
-/** Tasks the rep adds by hand: a title and a day, listed under the changes and written to the CRM with Save. */
-function AddTask({ tasks, onChange }: { tasks: NewTask[]; onChange: (tasks: NewTask[]) => void }) {
+/** Tasks the rep adds by hand: a title, a day and an hour. Listed under the changes and written to the CRM with Save; each can still be re-worded and moved. */
+function AddTask({ tasks, onChange, onPopupExtent }: { tasks: NewTask[]; onChange: (tasks: NewTask[]) => void; onPopupExtent: (bottom: number | null) => void }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
-  const [offset, setOffset] = useState<number>(1);
+  const [when, setWhen] = useState<TaskDue>(() => ({ due: dayAfter(1), time: null }));
+  // The picker is for the form's own day ("new") or for one of the listed tasks (its index).
+  const [picker, setPicker] = useState<{ target: "new" | number; anchor: Anchor } | null>(null);
+  const [editing, setEditing] = useState<number | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const close = () => {
     setOpen(false);
     setTitle("");
+    setWhen({ due: dayAfter(1), time: null });
     releaseKeyboardSoon();
   };
   const add = () => {
     const text = title.replace(/\s+/g, " ").trim();
     if (!text) return;
-    onChange([...tasks, { title: text, due: dayAfter(offset) }]);
+    onChange([...tasks, { title: text, due: when.due, time: when.time }]);
     close();
   };
+  const update = (index: number, patch: Partial<NewTask>) => onChange(tasks.map((task, i) => (i === index ? { ...task, ...patch } : task)));
+  const openPicker = (target: "new" | number, element: Element) => setPicker((current) => (current?.target === target ? null : { target, anchor: anchorOf(element) }));
   useEffect(() => {
     if (!open) return;
     void window.vocifyIsland?.keyboard?.("now");
     input.current?.focus();
   }, [open]);
-  const dayLabel = (due: string) => DAYS.find((day) => dayAfter(day.offset) === due)?.label ?? due;
+  const pickerValue: TaskDue | null = picker ? (picker.target === "new" ? when : tasks[picker.target] ? { due: tasks[picker.target].due, time: tasks[picker.target].time } : null) : null;
   return (
     <div className="task-add">
       {tasks.map((task, index) => (
-        <div key={`${task.title}-${index}`} className="task-row">
+        <div key={index} className="task-row">
           <span className="meeting-icon"><Check size={10} stroke={3} /></span>
-          <span className="task-title">{task.title}</span>
-          <span className="when-text">{dayLabel(task.due)}</span>
-          <button type="button" className="icon-button" title="Remove this task" aria-label="Remove this task" onClick={() => onChange(tasks.filter((_, i) => i !== index))}>
+          {editing === index ? (
+            <div className="task-title" onMouseEnter={keyboardOver} onMouseDown={keyboardNow}>
+              <ValueEditor text={task.title} onDone={(text) => {
+                setEditing(null);
+                if (text !== null && text.trim() !== "") update(index, { title: text.replace(/\s+/g, " ").trim().slice(0, 200) });
+              }} />
+            </div>
+          ) : (
+            <button type="button" className="task-title task-title-button" title="Edit the text" onMouseEnter={keyboardOver} onMouseDown={keyboardNow} onClick={() => setEditing(index)}>{task.title}</button>
+          )}
+          <button type="button" className="task-when" data-open={picker?.target === index} title="Change the day and hour" onClick={(event) => { event.stopPropagation(); openPicker(index, event.currentTarget); }}>
+            <Calendar size={9} />
+            <span>{dueLabel(task)}</span>
+          </button>
+          <button type="button" className="icon-button" title="Remove this task" aria-label="Remove this task" onClick={() => { setPicker(null); onChange(tasks.filter((_, i) => i !== index)); }}>
             <Close size={9} />
           </button>
         </div>
@@ -604,12 +660,11 @@ function AddTask({ tasks, onChange }: { tasks: NewTask[]; onChange: (tasks: NewT
               }
             }}
           />
-          <div className="task-days" role="radiogroup" aria-label="Due day">
-            {DAYS.map((day) => (
-              <button key={day.label} type="button" role="radio" aria-checked={offset === day.offset} className="small-action task-day" data-active={offset === day.offset} onClick={() => setOffset(day.offset)}>
-                {day.label}
-              </button>
-            ))}
+          <div className="task-days">
+            <button type="button" className="task-when" data-open={picker?.target === "new"} title="Pick the day and hour" onClick={(event) => { event.stopPropagation(); openPicker("new", event.currentTarget); }}>
+              <Calendar size={9} />
+              <span>{dueLabel(when)}</span>
+            </button>
             <div className="grow" />
             <button type="button" className="small-action" disabled={title.trim() === ""} onClick={add}>Add</button>
             <TextAction title="Cancel" onClick={close} />
@@ -620,6 +675,15 @@ function AddTask({ tasks, onChange }: { tasks: NewTask[]; onChange: (tasks: NewT
           <Plus size={9} />
           <span>Add task</span>
         </button>
+      )}
+      {picker && pickerValue && (
+        <TaskDatePicker
+          anchor={picker.anchor}
+          value={pickerValue}
+          onClose={() => setPicker(null)}
+          onExtent={onPopupExtent}
+          onChange={(next) => (picker.target === "new" ? setWhen(next) : update(picker.target, { due: next.due, time: next.time }))}
+        />
       )}
     </div>
   );

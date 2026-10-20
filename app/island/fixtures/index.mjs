@@ -116,15 +116,15 @@ const channelTypeMenu = {
 
 const postCall = (stage, extra = {}) => ({
   stage, memoId: "memo-1", contactName: "Marta Ruiz", changes: [], canApprove: false, applied: null, undoUntil: null, note: null,
-  email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, crmUrl: null, ...extra,
+  email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, crmUrl: null, noAnswer: false, ...extra,
 });
 
 const postCallTasks = [
-  { key: "task:next_step_task_0", label: "Next Step (Task)", object: "other", from: null, to: "Llamada con Marta: confirmar el presupuesto", value: "Llamada con Marta: confirmar el presupuesto", options: [], multiple: false, editable: false, check: false, when: "Tue 20 Oct, 18:30", whenSuggested: false },
-  { key: "task:next_step_task_1", label: "Next Step 2 (Task)", object: "other", from: null, to: "Enviar la propuesta", value: "Enviar la propuesta", options: [], multiple: false, editable: false, check: false, when: "Sat 17 Oct, 09:00", whenSuggested: true },
+  { key: "task:next_step_task_0", label: "Next Step (Task)", object: "other", from: null, to: "Llamada con Marta: confirmar el presupuesto", value: "Llamada con Marta: confirmar el presupuesto", options: [], multiple: false, editable: false, check: false, when: "Tue 20 Oct, 18:30", whenSuggested: false, dueAt: "2026-10-20T18:30:00+02:00" },
+  { key: "task:next_step_task_1", label: "Next Step 2 (Task)", object: "other", from: null, to: "Enviar la propuesta", value: "Enviar la propuesta", options: [], multiple: false, editable: false, check: false, when: "Sat 17 Oct, 09:00", whenSuggested: true, dueAt: "2026-10-17T09:00:00+02:00" },
 ];
 
-const leadStatusToPick = { key: "contacts:hs_lead_status", label: "Lead Status", object: "contact", from: null, to: "Choose", value: "", options: [{ value: "NEW", label: "New" }, { value: "ATTEMPTED_TO_CONTACT", label: "Attempted to contact" }, { value: "CONNECTED", label: "Connected" }], multiple: false, editable: false, check: false, pending: true, when: null, whenSuggested: false };
+const leadStatusToPick = { key: "contacts:hs_lead_status", label: "Lead Status", object: "contact", from: null, to: "Choose", value: "", options: [{ value: "NEW", label: "New" }, { value: "ATTEMPTED_TO_CONTACT", label: "Attempted to contact" }, { value: "CONNECTED", label: "Connected" }], multiple: false, editable: false, check: false, pending: true, when: null, whenSuggested: false, dueAt: null };
 
 const postCallChanges = [
   {
@@ -260,6 +260,9 @@ export const fixtures = [
   { name: "postcall-open-writing", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("writing") }, expect: { width: 420, height: 200 }, fit: true },
   { name: "postcall-open-ready", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 4), canApprove: true }) }, expect: { width: 420, height: 380 }, fit: true },
   { name: "postcall-open-tasks", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallTasks, canApprove: true }) }, expect: { width: 420 }, fit: true },
+  { name: "postcall-open-noanswer", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { noAnswer: true, canApprove: true, changes: [leadStatusToPick] }) }, expect: { width: 420 }, fit: true },
+  { name: "postcall-open-tasks-date-open", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallTasks, canApprove: true }) }, expect: { width: 420 }, fit: true, steps: [".task-when"] },
+  { name: "postcall-open-add-task", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallTasks, canApprove: true }) }, expect: { width: 420 }, fit: true, steps: [".task-open"] },
   { name: "postcall-open-ready-all-changes", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges, canApprove: true }) }, expect: { width: 420, height: 450 }, fit: true },
   { name: "postcall-open-applying", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("applying", { undoUntil: NOW + 3500 }) }, expect: { width: 420, height: 200 }, fit: true },
   { name: "postcall-open-done", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("done", { applied: 4 }) }, expect: { width: 420, height: 200 }, fit: true },

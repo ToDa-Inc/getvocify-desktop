@@ -59,6 +59,8 @@ export function parsePostCall(raw: unknown): PostCallData | null {
       pending: options.length > 0 && (bool(item.pending) ?? false),
       when: nonBlank(item.when),
       whenSuggested: bool(item.whenSuggested) ?? false,
+      // The moment the day and hour picker starts from: only a real ISO date and time.
+      dueAt: nonBlank(item.dueAt) && !Number.isNaN(Date.parse(String(item.dueAt))) ? String(item.dueAt).trim() : null,
     });
   }
 
@@ -103,6 +105,7 @@ export function parsePostCall(raw: unknown): PostCallData | null {
     offerStopEmails: bool(raw.offerStopEmails) ?? false,
     type,
     crmUrl: webUrl(raw.crmUrl),
+    noAnswer: bool(raw.noAnswer) ?? false,
   };
 }
 

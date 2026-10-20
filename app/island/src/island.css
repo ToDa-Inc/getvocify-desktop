@@ -399,3 +399,33 @@ button.type-tag:hover { color: var(--text); }
 .dial-pad { display: grid; grid-template-columns: repeat(3, 40px); gap: 8px; justify-content: center; padding: 4px 8px 8px; }
 .dial-key { width: 40px; height: 40px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, 0.09); font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text); transition: background 120ms; }
 .dial-key:hover { background: rgba(255, 255, 255, 0.17); }
+
+/* The day and hour picker of a task. */
+.date-picker { display: flex; flex-direction: column; gap: 6px; padding: 4px; }
+.date-quick { display: flex; gap: 6px; }
+.date-head { display: flex; align-items: center; justify-content: space-between; }
+.date-month { font-size: 12px; font-weight: 600; color: var(--text); }
+.date-step { width: 22px; height: 22px; }
+.date-step[data-direction="back"] svg { transform: rotate(90deg); }
+.date-step[data-direction="next"] svg { transform: rotate(-90deg); }
+.date-week, .date-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.date-week span { text-align: center; font-size: 10px; line-height: 16px; color: var(--secondary); opacity: 0.8; }
+.date-grid { row-gap: 1px; }
+.date-day { height: 28px; border: 0; border-radius: 14px; background: transparent; font-size: 11.5px; font-variant-numeric: tabular-nums; color: var(--text); cursor: default; transition: background 100ms, color 100ms; }
+.date-day:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); }
+.date-day[data-out="true"] { color: var(--secondary); opacity: 0.55; }
+.date-day:disabled { color: var(--secondary); opacity: 0.28; }
+.date-day[data-today="true"] { box-shadow: inset 0 0 0 1px rgba(219, 192, 154, 0.55); }
+.date-day[data-selected="true"] { background: var(--beige); color: rgba(0, 0, 0, 0.85); font-weight: 600; opacity: 1; }
+.date-time { display: flex; align-items: center; gap: 4px; }
+.date-time .small-action { padding: 0 6px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.date-time-input { width: 50px; flex: 1; min-width: 44px; height: 24px; box-sizing: border-box; padding: 0 7px; border: 0; outline: none; border-radius: 12px; background: rgba(255, 255, 255, 0.08); color: var(--text); font: inherit; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.date-time-input::placeholder { color: var(--secondary); }
+.date-foot { display: flex; justify-content: flex-end; }
+.date-foot .text-action { height: 22px; }
+.task-when { display: inline-flex; align-items: center; gap: 4px; padding: 0 6px; height: 20px; border: 0; border-radius: 10px; background: rgba(255, 255, 255, 0.07); color: var(--secondary); font-size: 11px; transition: background 120ms, color 120ms; white-space: nowrap; cursor: default; }
+.task-when:hover, .task-when[data-open="true"] { background: rgba(255, 255, 255, 0.14); color: var(--text); }
+.task-when[data-changed="true"] { color: var(--beige); }
+.task-title-button { text-align: left; background: transparent; border: 0; padding: 0; font: inherit; color: inherit; cursor: default; }
+.task-title-button:hover { color: var(--beige); }
+.task-row .task-when { flex: none; }

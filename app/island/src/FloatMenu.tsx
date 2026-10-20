@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Check } from "./icons.tsx";
 
 /**
@@ -69,7 +70,9 @@ export function FloatMenu({ anchor, width, maxHeight, role = "listbox", onClose,
     };
   }, [onClose]);
 
-  return (
+  // Drawn at the page's top level: inside the pill's panel (moved and scaled into place) a fixed menu would be placed
+  // against the panel instead of the window, off to its side where nothing can be clicked.
+  return createPortal(
     <div
       ref={ref}
       className="float-menu"
@@ -79,7 +82,8 @@ export function FloatMenu({ anchor, width, maxHeight, role = "listbox", onClose,
       onClick={(event) => event.stopPropagation()}
     >
       {children}
-    </div>
+    </div>,
+    document.body,
   );
 }
 

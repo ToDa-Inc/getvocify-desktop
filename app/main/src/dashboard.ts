@@ -99,7 +99,26 @@ export class DashboardHost {
     win.webContents.on("console-message", ({ level, message, lineNumber, sourceId }) => {
       if (level === "error") this.options.log(`dashboard console error: ${message} (${sourceId}:${lineNumber})`);
     });
-    win.webContents.on("render-process-gone", (_event, details) => this.options.log(`dashboard renderer gone: ${details.reason}`));
+    win.webContents.on("render-process-gone", (_event, details) => {
+      this.options.log(`dashboard renderer gone: ${details.reason}`);
+      if (details.reason !== "clean-exit" && !win.isDestroyed()) win.webContents.reloadIgnoringCache();
+    });
+    // Opened at login, the Mac often has no network yet: the page fails with ERR_NAME_NOT_RESOLVED and would stay blank
+    // for good, and a blank page records nothing. It is loaded again, a little later each time, until it loads.
+    let retries = 0;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    win.webContents.on("did-fail-load", (_event, code, description, _url, isMainFrame) => {
+      if (!isMainFrame || code === -3 || retry || win.isDestroyed()) return; // -3: a navigation replaced by another
+      const wait = Math.min(2000 * 2 ** retries, 30_000);
+      retries++;
+      this.options.log(`dashboard failed to load (${code} ${description}), trying again in ${wait / 1000} s`);
+      retry = setTimeout(() => {
+        retry = null;
+        if (!win.isDestroyed()) void win.loadURL(this.options.url).catch(() => undefined);
+      }, wait);
+      retry.unref();
+    });
+    win.webContents.on("did-finish-load", () => (retries = 0));
     win.on("close", (event) => {
       if (this.options.isQuitting()) return;
       event.preventDefault();
@@ -110,7 +129,7 @@ export class DashboardHost {
       this.ready = false;
       this.queue = [];
     });
-    void win.loadURL(this.options.url).catch((error: unknown) => this.options.log(`dashboard failed to load: ${String(error)}`));
+    void win.loadURL(this.options.url).catch(() => undefined); // a failure is logged and retried by did-fail-load above
     return win;
   }
 

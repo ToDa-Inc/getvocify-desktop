@@ -90,7 +90,8 @@ function StepQuestion({ todo }: { todo: Todo }) {
   const ready = answer && answer.kind === todo.kind && answer.id === todo.id && answer.seq > asked.after && answer.status === "ready" ? answer : null;
   const [readyAt, setReadyAt] = useState<number | null>(null);
   const now = nowMs();
-  const giveUp = !ready && now - asked.at > STEP_FALLBACK_MS;
+  // The dashboard answered with no question of its own: the playbook's question at once. No answer at all: after a while.
+  const giveUp = ready ? ready.question === null : now - asked.at > STEP_FALLBACK_MS;
   const question = ready?.question ?? (giveUp ? todo.ask : null);
   useEffect(() => {
     if (question && readyAt === null) setReadyAt(nowMs());
@@ -193,7 +194,10 @@ function Pasos() {
         })}
       </div>
       {/* One fixed line, so hovering never moves the list: what the step under the pointer still needs. */}
-      <div className="say-step-hint" data-on={Boolean(hovered)}>{(hovered && missingFor(hovered)) ?? say.stepHint}</div>
+      {(() => {
+        const hint = (hovered && missingFor(hovered)) ?? say.stepHint;
+        return <div className="say-step-hint" data-on={Boolean(hovered)} title={hint}>{hint}</div>;
+      })()}
     </Panel>
   );
 }

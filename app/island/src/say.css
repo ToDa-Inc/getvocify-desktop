@@ -108,7 +108,11 @@
   font-size: 12px; line-height: 1.4; color: var(--text); user-select: text; }
 .say-step-q .help-drafting { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; }
 /* One fixed line at the foot: what the step under the pointer still needs. */
-.say-step-hint { margin: 8px 3px 0; padding-top: 7px; border-top: 0.5px solid rgba(255, 255, 255, 0.08); min-height: 30px; font-size: 11px; line-height: 1.35; color: rgba(255, 255, 255, 0.4); }
+/* Exactly two lines tall whatever it says: the panel is anchored at its foot, so a line that grew would push the rows up
+   under the pointer, which then hovers another row, which changes the line again (the list bounced). Longer text is cut
+   with an ellipsis; the whole of it is in the tooltip. */
+.say-step-hint { box-sizing: content-box; height: calc(11px * 1.35 * 2); margin: 8px 3px 0; padding-top: 7px; border-top: 0.5px solid rgba(255, 255, 255, 0.08);
+  font-size: 11px; line-height: 1.35; color: rgba(255, 255, 255, 0.4); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .say-step-hint[data-on="true"] { color: rgba(255, 255, 255, 0.75); }
 
 :root[data-platform="win32"] :is(.say-card, .say-line, .say-step-q) { user-select: none; }

@@ -1,4 +1,5 @@
-import { app, BrowserWindow, session, shell, type WebContents } from "electron";
+import { app, BrowserWindow, screen, session, shell, type Rectangle, type WebContents } from "electron";
+import { COMPACT_MIN_SIZE, compactBounds, FULL_MIN_SIZE } from "./compact.ts";
 
 /**
  * The dashboard window. It is created when it is needed and given back when it is not: an Electron window costs about
@@ -38,6 +39,8 @@ export class DashboardHost {
   private queue: { channel: string; payload: unknown }[] = [];
   private readonly options: DashboardOptions;
   private permissionsSet = false;
+  /** The window's size and place before it became compact; null while it is not compact. */
+  private compactFrom: Rectangle | null = null;
 
   constructor(options: DashboardOptions) {
     this.options = options;
@@ -64,8 +67,8 @@ export class DashboardHost {
     const win = new BrowserWindow({
       width: 1200,
       height: 820,
-      minWidth: 900,
-      minHeight: 640,
+      minWidth: FULL_MIN_SIZE.width,
+      minHeight: FULL_MIN_SIZE.height,
       show: false,
       title: "Vocify",
       icon: this.options.icon,
@@ -126,6 +129,7 @@ export class DashboardHost {
     });
     win.on("closed", () => {
       this.window = null;
+      this.compactFrom = null;
       this.ready = false;
       this.queue = [];
     });
@@ -185,6 +189,36 @@ export class DashboardHost {
     win.moveTop();
     win.focus();
     if (process.platform === "darwin") app.focus({ steal: true });
+  }
+
+  get compact(): boolean {
+    return this.compactFrom !== null;
+  }
+
+  /**
+   * The compact window (compact.ts): narrow at the right of its screen and above the other windows, or back to the size
+   * and place it had. The page is told either way (`window:compact`), so every view of it agrees.
+   */
+  setCompact(on: boolean): boolean {
+    const win = this.window && !this.window.isDestroyed() ? this.window : null;
+    if (!win || on === this.compact) return this.compact;
+    if (on) {
+      if (win.isFullScreen()) win.setFullScreen(false);
+      if (win.isMaximized()) win.unmaximize();
+      this.compactFrom = win.getBounds();
+      win.setMinimumSize(COMPACT_MIN_SIZE.width, COMPACT_MIN_SIZE.height);
+      win.setBounds(compactBounds(screen.getDisplayMatching(this.compactFrom).workArea));
+      win.setAlwaysOnTop(true, "floating");
+    } else {
+      const from = this.compactFrom!;
+      this.compactFrom = null;
+      win.setAlwaysOnTop(false);
+      win.setMinimumSize(FULL_MIN_SIZE.width, FULL_MIN_SIZE.height);
+      win.setBounds(from);
+    }
+    this.options.log(`dashboard window ${on ? "compact" : "back to its size"}`);
+    this.emit("window:compact", { compact: this.compact });
+    return this.compact;
   }
 
   /** Starts the page without showing it, for a call started from the island. */

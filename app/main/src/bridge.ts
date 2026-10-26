@@ -32,6 +32,8 @@ export type BridgeDeps = {
   islandPlacement: { get(): "notch" | "side"; set(placement: "notch" | "side"): void };
   /** To the dashboard page (`__vocifyEmit`). */
   emit(channel: string, payload: unknown): void;
+  /** The dashboard's compact window (compact.ts). Absent where the app has no such window. */
+  dashboardWindow?: { compact(): boolean; setCompact(on: boolean): boolean };
   showMainWindow(): void;
   /** Electron's `getMediaAccessStatus('microphone')`. */
   microphoneAccess(): string;
@@ -153,6 +155,11 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
         return calling();
       case "island:get":
         return { placement: deps.islandPlacement.get() };
+      case "window:get":
+        return { compact: deps.dashboardWindow?.compact() ?? false };
+      case "window:setCompact":
+        if (typeof args.compact === "boolean") deps.dashboardWindow?.setCompact(args.compact);
+        return { compact: deps.dashboardWindow?.compact() ?? false };
       case "island:setPlacement":
         if (args.placement === "notch" || args.placement === "side") deps.islandPlacement.set(args.placement);
         return { placement: deps.islandPlacement.get() };

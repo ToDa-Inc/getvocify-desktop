@@ -752,6 +752,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     callOnPhone: { get: () => settings.get("callOnPhone") === true, set: (on) => settings.set("callOnPhone", on) },
     islandPlacement: { get: placementSetting, set: setPlacement },
     emit: (channel, payload) => dashboard.emit(channel, payload),
+    dashboardWindow: { compact: () => dashboard.compact, setCompact: (on) => dashboard.setCompact(on) },
     showMainWindow: () => dashboard.show(),
     microphoneAccess: () => systemPreferences.getMediaAccessStatus("microphone"),
     askMicrophone: platform === "darwin" ? () => systemPreferences.askForMediaAccess("microphone") : undefined,

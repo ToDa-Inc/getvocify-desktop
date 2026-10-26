@@ -223,7 +223,7 @@ test("a saved shortcut is restored on the next launch, and 'off' stays off", () 
 
 /* ---------- the bridge ---------- */
 
-function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | null; phoneFails?: "no_dialer" | "invalid_number" | "open_failed"; microphone?: string; loopbackStart?: { ok: boolean; reason?: string; mic?: boolean }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void>; systemAudioAccess?: () => string; askSystemAudio?: () => Promise<void> } = {}) {
+function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | null; phoneFails?: "no_dialer" | "invalid_number" | "open_failed"; microphone?: string; loopbackStart?: { ok: boolean; reason?: string; mic?: boolean }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void>; systemAudioAccess?: () => string; askSystemAudio?: () => Promise<void>; compactWindow?: boolean } = {}) {
   const emitted: { channel: string; payload: unknown }[] = [];
   const opened: string[] = [];
   const logs: string[] = [];
@@ -232,6 +232,7 @@ function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | n
   const pcmListeners = new Set<(p: ArrayBuffer) => void>();
   const lostListeners = new Set<(r: string) => void>();
   const micListeners = new Set<(p: ArrayBuffer) => void>();
+  let compact = false;
   const startOptions: ({ mic?: boolean } | undefined)[] = [];
   let loopbackStops = 0;
   let loopbackStarts = 0;
@@ -295,6 +296,7 @@ function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | n
     relaunch: () => {},
     fetch: async () => ({ status: 200, text: async () => "{}" }),
     log: (line) => logs.push(line),
+    ...(options.compactWindow ? { dashboardWindow: { compact: () => compact, setCompact: (on: boolean) => (compact = on) } } : {}),
   };
   return { loopbackStarts: () => loopbackStarts, call: createBridge(deps), dialed, calendarWatches, emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, micListeners, startOptions, loopbackStops: () => loopbackStops };
 }
@@ -539,4 +541,13 @@ test("bridge: the recording keeps the capture that heard the call on the phone, 
   const fresh = bridgeSetup();
   await fresh.call("system-audio:start", {});
   assert.equal(fresh.loopbackStarts(), 1);
+});
+
+test("bridge: the dashboard window turns compact and back, and says it is not where the app has no such window", async () => {
+  const t = bridgeSetup({ compactWindow: true });
+  assert.deepEqual(await t.call("window:get", {}), { compact: false });
+  assert.deepEqual(await t.call("window:setCompact", { compact: true }), { compact: true });
+  assert.deepEqual(await t.call("window:setCompact", { compact: "yes" }), { compact: true }, "only a boolean changes it");
+  assert.deepEqual(await t.call("window:setCompact", { compact: false }), { compact: false });
+  assert.deepEqual(await bridgeSetup().call("window:setCompact", { compact: true }), { compact: false });
 });

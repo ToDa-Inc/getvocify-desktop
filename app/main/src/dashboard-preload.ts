@@ -71,6 +71,12 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
     get: () => call("island:get"),
     setPlacement: (placement: "notch" | "side") => call("island:setPlacement", { placement }),
   },
+  // The dashboard's own window: compact (narrow at the side of the screen, above the call) or its usual size ({ compact }).
+  window: {
+    get: () => call("window:get"),
+    setCompact: (compact: boolean) => call("window:setCompact", { compact }),
+    onCompact: on("window:compact"),
+  },
   // Vocify calling on this computer: off, the island's Call opens on the rep's phone ({ onPhone, phoneApp }).
   calling: {
     get: () => call("calling:get"),

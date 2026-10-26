@@ -453,3 +453,10 @@ button.type-tag:hover { color: var(--text); }
 .job-step:disabled { opacity: 0.28; }
 .job-step[data-dir="prev"] svg { transform: rotate(90deg); }
 .job-step[data-dir="next"] svg { transform: rotate(-90deg); }
+
+/* Which mic records the rep: a card on the wave (MicCard.tsx), in the dropdown's glass. */
+.mic-wave { display: inline-flex; }
+.mic-card-name { color: var(--text); }
+.mic-card-row, .mic-card-legend { cursor: default; }
+.mic-card-row:hover, .mic-card-legend:hover { background: transparent; color: var(--secondary); }
+.mic-card-legend { height: 20px; font-size: 11px; }

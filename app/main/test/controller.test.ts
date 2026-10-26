@@ -544,6 +544,51 @@ test("the call type menu follows Vocify's proposal, and a pick is final and sent
   assert.deepEqual(t.last("call:type"), { key: "demo" });
 });
 
+test("the mics the dashboard reports reach the island, and a picked one is sent back and ends the notice", () => {
+  const t = recording();
+  t.controller.applyShellState({
+    mic: {
+      devices: [{ id: "mac", label: "MacBook Pro Microphone" }, { id: "", label: "no id" }, { id: "x", label: " " }],
+      defaultLabel: "iPhone Microphone",
+      chosen: { id: "airpods", label: "AirPods Pro" },
+      inUse: "iPhone Microphone",
+      notice: true,
+    },
+  });
+  // A mic without an id or a name is dropped, never shown.
+  assert.deepEqual(t.controller.state.mic, {
+    devices: [{ id: "mac", label: "MacBook Pro Microphone" }],
+    defaultLabel: "iPhone Microphone",
+    chosen: { id: "airpods", label: "AirPods Pro" },
+    inUse: "iPhone Microphone",
+    notice: true,
+  });
+  t.controller.act({ name: "pickMic", mic: { id: "mac", label: "MacBook Pro Microphone" } });
+  assert.deepEqual(t.last("mic:choose"), { id: "mac", label: "MacBook Pro Microphone" });
+  assert.equal(t.controller.state.mic?.notice, false);
+  assert.deepEqual(t.controller.state.mic?.chosen, { id: "mac", label: "MacBook Pro Microphone" });
+  t.controller.act({ name: "pickMic", mic: null });
+  assert.equal(t.last("mic:choose"), null);
+});
+
+test("the line that names an unusual mic folds after a while open, and stays folded for that recording", () => {
+  const t = openRecording();
+  const mic = { devices: [{ id: "mac", label: "MacBook Pro Microphone" }], defaultLabel: "iPhone Microphone", chosen: null, inUse: "iPhone Microphone", notice: true };
+  t.controller.applyShellState({ mic });
+  assert.equal(t.controller.state.mic?.notice, true);
+  t.advance(7.9);
+  assert.equal(t.controller.state.mic?.notice, true);
+  t.advance(0.2);
+  assert.equal(t.controller.state.mic?.notice, false);
+  // The dashboard reporting the mics again (one plugged in) does not bring it back.
+  t.controller.applyShellState({ mic: { ...mic, devices: [...mic.devices, { id: "usb", label: "USB Mic" }] } });
+  assert.equal(t.controller.state.mic?.notice, false);
+  // The next recording on that mic says so again.
+  t.controller.applyShellState({ mic: { ...mic, inUse: null, notice: false } });
+  t.controller.applyShellState({ mic });
+  assert.equal(t.controller.state.mic?.notice, true);
+});
+
 test("tapping Vocify's ticked proposal confirms it as the rep's own", () => {
   const t = recording();
   t.controller.applyShellState({ liveType: { selected: "discovery", proposed: true, options: [{ key: "discovery", label: "Discovery call" }] } });

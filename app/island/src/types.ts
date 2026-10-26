@@ -252,6 +252,22 @@ export function postCallCrmName(data: PostCallData): string {
   return data.crm ?? "the CRM";
 }
 
+/** A mic the system lists, by its id in the dashboard's page. */
+export type MicDevice = { id: string; label: string };
+
+/** The mics the dashboard can see (`shell:state` mic): the island's card on the wave and the app's menu list them. */
+export type MicView = {
+  devices: MicDevice[];
+  /** The system's default input, by name; null when the system names none. */
+  defaultLabel: string | null;
+  /** The mic the rep picked (connected or not); null: the system's default. */
+  chosen: MicDevice | null;
+  /** The mic recording now; null when not recording. */
+  inUse: string | null;
+  /** The recording is not on the rep's usual mic: said once, under the controls. */
+  notice: boolean;
+};
+
 export type IslandState = {
   mode: Mode;
   expanded: boolean;
@@ -278,6 +294,8 @@ export type IslandState = {
   countdown: Countdown | null;
   geometry: Geometry;
   postCall: PostCallData | null;
+  /** The mics and which one records; null until the dashboard reports them (older dashboards never do). */
+  mic?: MicView | null;
   /** The finished calls the dashboard is still on; null when it does not report them (then the island waits on a spinner after a recording, as before). */
   background?: BackgroundJob[] | null;
   /** The recording that just ended, until its memo is being written; null when the dashboard says nothing. */
@@ -316,6 +334,8 @@ export type IslandAction =
   /** Undo on "Cambia a ...": back to the type before, now the rep's. */
   | { name: "undoCallType" }
   | { name: "pickChannel"; kind: "call" | "meeting" }
+  /** The mic to record with; null follows the system's default. */
+  | { name: "pickMic"; mic: MicDevice | null }
   | { name: "toggleLiveHelp" }
   | LiveAction
   | { name: "pointer"; inside: boolean }

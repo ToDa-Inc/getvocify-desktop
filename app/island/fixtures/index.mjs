@@ -83,6 +83,18 @@ const inCall = {
   ],
 };
 
+/** The rep picked AirPods, which are not connected: the recording fell back to the system's default (the iPhone). */
+const micFellBack = {
+  devices: [
+    { id: "mac", label: "MacBook Pro Microphone (Built-in)" },
+    { id: "iphone", label: "iPhone Microphone (Continuity)" },
+  ],
+  defaultLabel: "iPhone Microphone (Continuity)",
+  chosen: { id: "airpods", label: "AirPods Pro (Bluetooth)" },
+  inUse: "iPhone Microphone (Continuity)",
+  notice: true,
+};
+
 const typeMenu = {
   title: "Discovery call",
   placeholder: false,
@@ -241,6 +253,10 @@ export const fixtures = [
   { name: "recording-open-channel-list", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: channelTypeMenu, liveHelp: true }, steps: [".type-tag-button"], expect: { width: 460, height: 400 } },
   { name: "recording-open-channel-no-type", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Type", placeholder: true, proposed: false, channel: { title: "Reunión", rows: [{ key: "call", label: "Llamada", checked: false }, { key: "meeting", label: "Reunión", checked: true }] } }, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-audio-lost", state: { mode: { kind: "recording" }, expanded: true, clock: clock(95), turns: turns.slice(0, 2), typeMenu, liveHelp: true, callAudioLost: true }, expect: { width: 460, height: 400 } },
+  // Which mic records the rep: Chromium's names for the mics, as the dashboard reports them.
+  { name: "recording-open-mic-notice", state: { mode: { kind: "recording" }, expanded: true, clock: clock(12), turns: turns.slice(0, 2), typeMenu, liveHelp: true, mic: micFellBack }, expect: { width: 460, height: 400 } },
+  { name: "recording-open-mic-list", state: { mode: { kind: "recording" }, expanded: true, clock: clock(12), turns: turns.slice(0, 2), typeMenu, liveHelp: true, mic: micFellBack }, steps: [".mic-line .type-tag-button"], expect: { width: 460, height: 400 } },
+  { name: "recording-open-mic-silent", state: { mode: { kind: "recording" }, expanded: true, clock: clock(95), turns: turns.slice(0, 2), typeMenu, liveHelp: true, micSilent: true, mic: { ...micFellBack, notice: false } }, expect: { width: 460, height: 400 } },
   { name: "recording-open-paused", state: { mode: { kind: "recording" }, expanded: true, clock: clock(412, { pausedAt: NOW }), paused: true, turns: turns.slice(0, 4), typeMenu, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-bar-only", state: { geometry: BAR_ONLY, mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu, liveHelp: true, material: "opaque" }, expect: { width: 460, height: 400 } },
   // stopped
@@ -344,6 +360,9 @@ export const interactions = [
   { name: "live-help-toggle", fixture: "recording-open-conversation", click: ".live-help-toggle", expect: [{ name: "toggleLiveHelp" }] },
   { name: "open-vocify", fixture: "recording-open-conversation", click: ".controls [aria-label=\"Open Vocify\"]", expect: [{ name: "openApp" }] },
   { name: "topbar-toggles", fixture: "recording-closed", click: ".topbar", expect: [{ name: "toggle" }] },
+  // A mic picked from the list that "Change" opens; the first row follows the system's default again.
+  { name: "pick-mic", fixture: "recording-open-mic-notice", before: [".mic-line .type-tag-button"], click: ".float-menu [role=option]:nth-of-type(2)", expect: [{ name: "pickMic", mic: { id: "mac", label: "MacBook Pro Microphone (Built-in)" } }] },
+  { name: "pick-system-default-mic", fixture: "recording-open-mic-notice", before: [".mic-line .type-tag-button"], click: ".float-menu [role=option]:nth-of-type(1)", expect: [{ name: "pickMic", mic: null }] },
   { name: "record-dot-records-only", fixture: "call-closed", click: ".record-dot", expect: [{ name: "record" }] },
   { name: "record-button-records-only", fixture: "call-open-contact", click: ".quiet-record", expect: [{ name: "record" }] },
   { name: "skip-call", fixture: "call-open-contact", click: ".menu .icon-button", expect: [{ name: "dismissCall" }] },

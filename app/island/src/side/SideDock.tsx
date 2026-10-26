@@ -8,6 +8,7 @@
 // over the pill or the open island.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { DEFAULT_SPOT, dragCentre, lying, nearestEdge, panelBox, pillCentre, snap, type PillEdge, type PillSpot, type Point, type Size } from "../../../core/pill.ts";
+import { waveTitle } from "../MicCard.tsx";
 import { BlockedGlyph, CallGlyph, Elapsed, HangUpDot, LeftEar, NotchIsland, RecordDot, RecordingDot, VoiceWave } from "../Island.tsx";
 import type { IslandAction, IslandState } from "../types.ts";
 import { HelpMarker, useHelpMarker } from "../say/Marker.tsx";
@@ -197,7 +198,7 @@ function PillFace({ state, act, open, marker }: { state: IslandState; act: Act; 
       <>
         <RecordingDot paused={state.paused} reduceMotion={state.reduceMotion} />
         <span className="side-time"><Elapsed state={state} /></span>
-        {state.paused ? <span className="side-paused">Paused</span> : <VoiceWave state={state} />}
+        {state.paused ? <span className="side-paused">Paused</span> : <VoiceWave state={state} title={waveTitle(state, false)} />}
         {/* Its place is kept when nothing is there, so the pill never changes size. */}
         <span className="help-dot-slot">{marker && !open && <HelpMarker key={marker} language={state.language} />}</span>
       </>

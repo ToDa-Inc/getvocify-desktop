@@ -19,7 +19,7 @@ import { createAudioTrace, createTranscriptTrace } from "./transcript-trace.ts";
 import { JsonSettings } from "./settings.ts";
 import { ShortcutManager } from "./shortcut.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
-import { trayItems } from "./tray-menu.ts";
+import { micChoices, trayItems } from "./tray-menu.ts";
 import { startsPageAtLaunch } from "./calendar-watch.ts";
 import { createBrowserCallWatch } from "./windows/browser-call.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
@@ -1100,8 +1100,20 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   function buildTrayMenu(state: IslandState): Menu {
     const items = trayItems(state, `Vocify ${app.getVersion()} · ${dashboardHost}`, microphoneLabel(systemPreferences.getMediaAccessStatus("microphone")));
+    const mics = micChoices(state.mic);
     const entries: Electron.MenuItemConstructorOptions[] = items.map((item) => {
       if (item.id === "separator") return { type: "separator" as const };
+      // Once the dashboard has named the mics, the microphone line is where one is picked (the island's card lists the same).
+      if (item.id === "microphone" && mics.length > 0) {
+        return {
+          label: "Microphone",
+          submenu: mics.map((choice) =>
+            "separator" in choice
+              ? { type: "separator" as const }
+              : { label: choice.label, type: "radio" as const, checked: choice.checked, enabled: choice.enabled, click: () => controller.act({ name: "pickMic", mic: choice.mic }) },
+          ),
+        };
+      }
       const click = () => {
         if (item.id === "open") dashboard.show();
         else if (item.id === "record") controller.shortcutPressed();

@@ -12,6 +12,7 @@ import { LiveBody } from "./live/LiveBody.tsx";
 import { SayBody, type TranscriptMarks } from "./say/SayBody.tsx";
 import { HelpMarker, useHelpMarker } from "./say/Marker.tsx";
 import { SideDock } from "./side/SideDock.tsx";
+import { MicNoticeLine, micSilentBody, MicWave, waveTitle } from "./MicCard.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
 import { TypingDots } from "./TypingDots.tsx";
 import { useNow } from "./useNow.ts";
@@ -244,7 +245,9 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
                   <Sparkle size={10} />
                 </span>
               )}
-              <VoiceWave state={state} />
+              <MicWave state={state} open={open} act={act}>
+                <VoiceWave state={state} title={waveTitle(state, open)} />
+              </MicWave>
             </>
           )}
           <OpenArrow open={open} />
@@ -952,7 +955,7 @@ export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
       {state.keypadOpen && state.dial?.phase === "active" && keypadAnchor && (
         <KeypadPopover anchor={keypadAnchor} onDigit={(digit) => act({ name: "digit", digit })} onClose={closeKeypad} />
       )}
-      {state.micSilent && !state.paused ? <MicSilentLine /> : state.callAudioLost && !state.paused && <CallAudioLostLine />}
+      {state.micSilent && !state.paused ? <MicSilentLine state={state} /> : state.callAudioLost && !state.paused ? <CallAudioLostLine /> : <MicNoticeLine state={state} />}
       {state.live?.view === "say" ? (
         // The live assistant, "Qué decir": what to say on top, the transcript, and the asks at the foot.
         <SayBody
@@ -989,13 +992,13 @@ export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
   );
 }
 
-function MicSilentLine() {
+function MicSilentLine({ state }: { state: IslandState }) {
   return (
     <div className="lost-line">
       <AlertCircle size={11} style={{ color: "var(--warning)", marginTop: 2 }} />
       <div>
         <div className="lost-title">Your mic isn't sending audio</div>
-        <div className="lost-body">Check it isn't muted and that the right input is selected.</div>
+        <div className="lost-body">{micSilentBody(state) ?? "Check it isn't muted and that the right input is selected."}</div>
       </div>
     </div>
   );
@@ -1313,7 +1316,7 @@ const REST = [3, 4.5, 6, 4.5, 3];
 const WAVE_FRAME_MS = 42;
 const SILENT = 0.002;
 
-export function VoiceWave({ state }: { state: IslandState }) {
+export function VoiceWave({ state, title = "Beige is you speaking, white is them" }: { state: IslandState; title?: string }) {
   const root = useRef<HTMLDivElement>(null);
   const { reduceMotion } = state;
 
@@ -1349,7 +1352,7 @@ export function VoiceWave({ state }: { state: IslandState }) {
   }, [reduceMotion]);
 
   return (
-    <div className="wave" ref={root} title="Beige is you speaking, white is them" aria-label="Voice activity">
+    <div className="wave" ref={root} title={title} aria-label="Voice activity">
       {REST.map((_, index) => (
         <span key={index} />
       ))}

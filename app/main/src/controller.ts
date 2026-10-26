@@ -8,7 +8,7 @@ import { WaveSide } from "../../core/waveSide.ts";
 import { DEFAULT_SPOT, type PillSpot } from "../../core/pill.ts";
 import type { Assist, Geometry, IslandAction, IslandState, Levels, LiveAction, Mode, PostCallData } from "../../island/src/types.ts";
 import { postCallPending } from "../../island/src/types.ts";
-import { parseAssist, parseBackground, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parsePostCall, parseTurns, type LiveChannelKind, type LiveType } from "./parse.ts";
+import { parseAssist, parseBackground, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parseMic, parsePostCall, parseTurns, type LiveChannelKind, type LiveType } from "./parse.ts";
 
 /**
  * The island's brain: what it shows and what each click does. A port of `MeetingPillController` and
@@ -86,7 +86,10 @@ export type Effects = {
   stopCallSound?(): void;
 };
 
-type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout" | "dialFailedHold" | "phoneConnect" | "callSilence" | "typeNote";
+/** How long "Recording with … · Change" stays once the island is open (the call type's line has 4 s; this one is read and acted on). */
+const MIC_NOTE_SECONDS = 8;
+
+type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout" | "dialFailedHold" | "phoneConnect" | "callSilence" | "typeNote" | "micNote";
 
 export class IslandController {
   private effects: Effects;
@@ -123,6 +126,8 @@ export class IslandController {
   private static occasion(meeting: { id: string; startsAt: number }): string {
     return `${meeting.id}@${meeting.startsAt}`;
   }
+  /** The mic whose "Recording with …" line has had its time: not shown again until the recording ends. */
+  private micNoticeDone: string | null = null;
   /** The meeting the rep closed: not shown again. */
   private dismissedMeeting: string | null = null;
   /** True when a native recorder draws the transcript itself; the dashboard's overlay then must not overwrite it. */
@@ -153,6 +158,7 @@ export class IslandController {
       geometry,
       postCall: null,
       background: null,
+      mic: null,
       finish: null,
       onScreen: null,
       dial: null,
@@ -195,6 +201,10 @@ export class IslandController {
     // A type Vocify changed while the island was closed waits: its line is on show for a few seconds once it is open.
     if (this.proposal.note && this.current.expanded && !this.cancels.has("typeNote")) {
       this.start("typeNote", TypeProposal.noteSeconds, () => this.typeNoteEnded());
+    }
+    // The same for the line that names a mic other than the usual one: timed only while it can be read.
+    if (this.current.mic?.notice && this.current.expanded && !this.cancels.has("micNote")) {
+      this.start("micNote", MIC_NOTE_SECONDS, () => this.micNoteEnded());
     }
     this.effects.onState(this.current);
   }
@@ -251,6 +261,14 @@ export class IslandController {
         patch.postCall = next;
         postCallChanged = true;
       }
+    }
+    if (has("mic")) {
+      const parsed = parseMic(update.mic);
+      // A recording that ended takes its line with it: the next one on another mic says so again.
+      if (!parsed?.inUse) this.micNoticeDone = null;
+      const next = parsed && parsed.notice && parsed.inUse === this.micNoticeDone ? { ...parsed, notice: false } : parsed;
+      if (!next?.notice) this.stopTimer("micNote");
+      if (JSON.stringify(next) !== JSON.stringify(this.current.mic ?? null)) patch.mic = next;
     }
     if (has("background")) {
       const next = parseBackground(update.background);
@@ -363,6 +381,13 @@ export class IslandController {
     return { title, placeholder: menu.placeholder, proposed: menu.placeholder ? false : this.liveType.proposed, rows: menu.rows, channel, note };
   }
 
+  private micNoteEnded(): void {
+    const mic = this.current.mic;
+    if (!mic) return;
+    this.micNoticeDone = mic.inUse;
+    this.set({ mic: { ...mic, notice: false } });
+  }
+
   private typeNoteEnded(): void {
     this.proposal.expire();
     if (this.liveType) this.set({ typeMenu: this.typeMenuView() });
@@ -413,6 +438,8 @@ export class IslandController {
         return this.pickCallType(action.key);
       case "undoCallType":
         return this.undoCallType();
+      case "pickMic":
+        return this.pickMic(action.mic);
       case "pickChannel":
         return this.pickChannel(action.kind);
       case "toggleLiveHelp":
@@ -920,6 +947,14 @@ export class IslandController {
     if (key !== null && this.liveType) this.liveType = { ...this.liveType, selected: key, proposed: false };
     if (this.liveType) this.set({ typeMenu: this.typeMenuView() });
     this.effects.emit("call:type", { key });
+  }
+
+  /** The mic the rep picked (island or the app's menu); the dashboard remembers it and moves a live recording onto it. */
+  pickMic(mic: { id: string; label: string } | null): void {
+    const current = this.current.mic;
+    this.stopTimer("micNote");
+    if (current) this.set({ mic: { ...current, chosen: mic, notice: false } });
+    this.effects.emit("mic:choose", mic);
   }
 
   /** Undo on a change Vocify made: the type before, sent as the rep's own pick, so Vocify proposes no more. */

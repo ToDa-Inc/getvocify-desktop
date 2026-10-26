@@ -20,13 +20,15 @@ export const anchorOf = (element: Element): Anchor => {
   return { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
 };
 
-export function FloatMenu({ anchor, width, maxHeight, role = "listbox", onClose, onExtent, label, children }: {
+export function FloatMenu({ anchor, width, maxHeight, role = "listbox", align = "start", onClose, onExtent, label, children }: {
   anchor: Anchor;
   width: number;
   /** Taller than the default list (a keypad is not rows). */
   maxHeight?: number;
   /** `listbox` for rows to pick from; `group` for any other content. */
   role?: "listbox" | "group";
+  /** "end": its right edge lines up with what opened it (something at the island's right, like the wave). */
+  align?: "start" | "end";
   onClose: () => void;
   /** Where the dropdown ends (px from the window's top), so the window can grow to include it; null once it closes. */
   onExtent?: (bottom: number | null) => void;
@@ -35,7 +37,8 @@ export function FloatMenu({ anchor, width, maxHeight, role = "listbox", onClose,
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // The rows' text lines up under the value that opened it, inside the island's width.
-  const left = Math.max(8, Math.min(anchor.x - PADDING - 8, document.documentElement.clientWidth - width - 8));
+  const wanted = align === "end" ? anchor.x + anchor.width + PADDING + 8 - width : anchor.x - PADDING - 8;
+  const left = Math.max(8, Math.min(wanted, document.documentElement.clientWidth - width - 8));
 
   useLayoutEffect(() => {
     const el = ref.current;

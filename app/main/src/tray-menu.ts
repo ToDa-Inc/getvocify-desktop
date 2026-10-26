@@ -1,4 +1,4 @@
-import type { IslandState } from "../../island/src/types.ts";
+import type { IslandState, MicDevice, MicView } from "../../island/src/types.ts";
 
 export type TrayItem = { id: "about" | "open" | "microphone" | "permissions" | "record" | "stop" | "update" | "quit"; label: string; enabled: boolean } | { id: "separator" };
 
@@ -21,5 +21,22 @@ export function trayItems(state: Pick<IslandState, "mode" | "recorderReady">, ab
     { id: "separator" },
     { id: "update", label: "Check for updates", enabled: true },
     { id: "quit", label: "Quit Vocify", enabled: true },
+  ];
+}
+
+/** One row of the menu's Microphone list: picking it sends `mic` (null: the system's default). */
+export type MicChoiceItem = { label: string; checked: boolean; enabled: boolean; mic: MicDevice | null } | { separator: true };
+
+/** The Microphone list, as the island's card lists it: the system's default, every mic, and the picked one while it is
+ * not connected. Empty until the dashboard has named the mics (then the menu keeps its "Microphone: …" line). */
+export function micChoices(mic: MicView | null | undefined): MicChoiceItem[] {
+  if (!mic || mic.devices.length === 0) return [];
+  const chosen = mic.chosen;
+  const missing = chosen && !mic.devices.some((d) => d.id === chosen.id || d.label === chosen.label) ? chosen : null;
+  return [
+    { label: mic.defaultLabel ? `System default (${mic.defaultLabel})` : "System default", checked: chosen === null, enabled: true, mic: null },
+    { separator: true },
+    ...mic.devices.map((d) => ({ label: d.label, checked: chosen?.id === d.id, enabled: true, mic: d })),
+    ...(missing ? [{ label: `${missing.label} (not connected)`, checked: true, enabled: false, mic: missing }] : []),
   ];
 }

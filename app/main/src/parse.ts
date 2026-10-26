@@ -1,6 +1,6 @@
 import type {
   Assist, Clock, Finish, LiveContact, LiveData, LiveDecision, LiveGoal, LiveNext, LiveNow, LiveOutcome, LivePart, LivePoint, LiveProgress, LiveRecap, LiveResponder, LiveRewrite, LiveStep, LiveStepAsk, LiveView,
-  BackgroundJob, PostCallChange, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn,
+  BackgroundJob, MicDevice, MicView, PostCallChange, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn,
 } from "../../island/src/types.ts";
 
 /**
@@ -400,6 +400,25 @@ export function parseLiveBrain(raw: unknown): LiveView | null {
 const JOB_STATES = ["working", "needs", "failed", "followup", "done"] as const;
 
 /** The finished calls the dashboard is still on. Not a list at all: it does not report them (null). A malformed job is dropped. */
+const micDevice = (raw: unknown): MicDevice | null => {
+  if (!isRaw(raw)) return null;
+  const id = nonEmpty(raw.id);
+  const label = nonBlank(raw.label);
+  return id && label ? { id, label } : null;
+};
+
+/** The mics the dashboard can see (`mic`): a mic without an id or a name is dropped. */
+export function parseMic(raw: unknown): MicView | null {
+  if (!isRaw(raw)) return null;
+  return {
+    devices: list(raw.devices).flatMap((d) => micDevice(d) ?? []),
+    defaultLabel: nonBlank(raw.defaultLabel),
+    chosen: micDevice(raw.chosen),
+    inUse: nonBlank(raw.inUse),
+    notice: raw.notice === true,
+  };
+}
+
 export function parseBackground(raw: unknown): BackgroundJob[] | null {
   if (!Array.isArray(raw)) return null;
   const jobs: BackgroundJob[] = [];

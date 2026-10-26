@@ -6,6 +6,7 @@ import { AUDIO_SESSIONS_SCRIPT } from "../../windows/audio-sessions.ts";
 import type { ReaderChild } from "../../windows/page-reader-process.ts";
 import type { PlatformEnv } from "../env.ts";
 import { every, runQuiet } from "../exec.ts";
+import { countLaunch, trackChild } from "../../resources.ts";
 import type { AudioSessionReader, Platform } from "../types.ts";
 import { createWindowsCallDetector } from "./call-detector.ts";
 import { createWindowsCrmScreenReader } from "./crm-screen-reader.ts";
@@ -13,7 +14,7 @@ import { createWindowsPermissions } from "./permissions.ts";
 import { createWindowsPhone } from "./phone.ts";
 import { createWindowsSystemAudio } from "./system-audio.ts";
 
-const reg = (args: string[]) => execFileSync("reg.exe", ["query", ...args], { encoding: "utf8", timeout: 5000, windowsHide: true });
+const reg = (args: string[]) => (countLaunch("reg.exe"), execFileSync("reg.exe", ["query", ...args], { encoding: "utf8", timeout: 5000, windowsHide: true }));
 
 /** The app the rep chose for TEL links (Settings › Default apps), as the UserChoice ProgId Windows keeps; null for none. */
 function telProgId(): string | null {
@@ -37,6 +38,7 @@ function phoneLinkInstalled(): boolean {
   if (phoneLinkSeen && now - phoneLinkSeen.at < (phoneLinkSeen.installed ? 10 * 60_000 : 30_000)) return phoneLinkSeen.installed;
   let installed = false;
   try {
+    countLaunch("powershell.exe");
     const out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "(Get-AppxPackage -Name Microsoft.YourPhone | Measure-Object).Count"], {
       encoding: "utf8",
       timeout: 8000,
@@ -73,6 +75,8 @@ function createAudioSessionReader(log: (line: string) => void): AudioSessionRead
         stdio: ["ignore", "pipe", "pipe"],
       });
       child = started;
+      countLaunch("powershell.exe");
+      trackChild("audio-sessions reader", started);
       let pending = "";
       started.stdout?.on("data", (chunk: Buffer) => {
         pending += chunk.toString("utf8");
@@ -115,11 +119,15 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
       onActive: (apps) => env.log(`mic in use (Windows record): ${apps.length ? apps.join(", ") : "none"}`),
     }),
     crmScreenReader: createWindowsCrmScreenReader({
-      spawn: () =>
-        spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(READER_LOOP_SCRIPT)], {
+      spawn: () => {
+        const reader = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(READER_LOOP_SCRIPT)], {
           windowsHide: true,
           stdio: ["pipe", "pipe", "ignore"],
-        }) as unknown as ReaderChild,
+        });
+        countLaunch("powershell.exe");
+        trackChild("browser reader", reader);
+        return reader as unknown as ReaderChild;
+      },
       now: () => Date.now(),
     }),
     permissions: createWindowsPermissions({
@@ -145,6 +153,7 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
           stdio: ["ignore", "pipe", "ignore"],
         });
         pressing = child;
+        countLaunch("powershell.exe");
         let output = "";
         child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString("utf8")));
         child.on("exit", () => {

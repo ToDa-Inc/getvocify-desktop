@@ -1,4 +1,5 @@
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, screen, shell, systemPreferences, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, screen, shell, systemPreferences, Tray, webContents } from "electron";
+import { freemem, totalmem } from "node:os";
 import { existsSync } from "node:fs";
 import { CallSource } from "../../core/callSource.ts";
 import { readSpot } from "../../core/pill.ts";
@@ -20,6 +21,7 @@ import { JsonSettings } from "./settings.ts";
 import { ShortcutManager } from "./shortcut.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { micChoices, trayItems } from "./tray-menu.ts";
+import { launchCounts, parsePs, parseTasklist, processName, resourceLine, trackedChildren } from "./resources.ts";
 import { startsPageAtLaunch } from "./calendar-watch.ts";
 import { createBrowserCallWatch } from "./windows/browser-call.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
@@ -983,6 +985,51 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   });
   const periodicRedraw = setInterval(() => redraw("up for hours"), 4 * 60 * 60 * 1000);
   periodicRedraw.unref();
+
+  // What the app costs the computer, in the log a rep sends: a minute after launch, then every 10 minutes (resources.ts).
+  const sampleResources = async () => {
+    const pages = new Map<number, string>();
+    for (const contents of webContents.getAllWebContents()) {
+      const url = contents.getURL();
+      const name = url.includes("/island/") ? "island" : url.includes("loopback-page") ? "call audio" : url.includes("/demo/") ? "controls" : url.startsWith("http") ? "dashboard" : "page";
+      pages.set(contents.getOSProcessId(), name);
+      // A page's frames from another site run in processes of their own (the dashboard's Stripe frames): named by site.
+      for (const frame of contents.mainFrame.framesInSubtree) {
+        if (pages.has(frame.osProcessId)) continue;
+        const host = URL.canParse(frame.url) ? new URL(frame.url).hostname : "";
+        if (host) pages.set(frame.osProcessId, `${name} frame ${host}`);
+      }
+    }
+    const own = app.getAppMetrics().map((m) => ({ name: processName(m.type, m.serviceName, pages.get(m.pid)), kb: m.memory.workingSetSize, cpu: m.cpu.percentCPUUsage }));
+    const children = trackedChildren();
+    let kbByPid = new Map<number, number>();
+    let powershells: number | null = null;
+    if (platform === "win32") {
+      const output = await runQuiet("tasklist.exe", ["/FO", "CSV", "/NH"], 10_000).catch(() => "");
+      if (output) {
+        const listed = parseTasklist(output);
+        kbByPid = listed.kbByPid;
+        powershells = listed.countByName.get("powershell.exe") ?? 0;
+      }
+    } else if (children.length) {
+      kbByPid = parsePs(await runQuiet("ps", ["-o", "pid=,rss=", "-p", children.map((c) => c.pid).join(",")], 10_000).catch(() => ""));
+    }
+    log(
+      resourceLine({
+        mode: controller.state.mode.kind,
+        uptimeMs: process.uptime() * 1000,
+        // Windows reports the memory programs can still get; macOS counts only pages nobody uses, which says little.
+        freeBytes: platform === "win32" ? freemem() : null,
+        totalBytes: totalmem(),
+        own,
+        children: children.map((c) => ({ name: c.name, kb: kbByPid.get(c.pid) ?? null })),
+        powershells,
+        launches: launchCounts(),
+      }),
+    );
+  };
+  setTimeout(() => void sampleResources().catch((error) => log(`resources: not measured (${String(error)})`)), 60_000).unref();
+  setInterval(() => void sampleResources().catch((error) => log(`resources: not measured (${String(error)})`)), 10 * 60_000).unref();
 
   app.on("before-quit", (event) => {
     if (!controller.isListening) {

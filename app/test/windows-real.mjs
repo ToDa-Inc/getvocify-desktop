@@ -2,6 +2,7 @@
 //   1. Call detection: a fake app's entry is written into the real microphone-use record with `reg add`, read back with
 //      the real `reg query`, and must be parsed as the active caller; then stopped and cleaned up.
 //   2. CRM links: a real browser is opened on a local page and its address bar must be read through UI Automation.
+//   3. Resources: the real `tasklist` (in the system's language) is read for the memory the log reports.
 // Run on a Windows machine: node test/windows-real.mjs   (skips on other systems)
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdtempSync } from "node:fs";
@@ -12,6 +13,7 @@ import { crmUrlsOf, encodePowerShell, parsePageOutput, READ_PAGES_SCRIPT } from 
 import { MIC_CONSENT_KEY, parseMicConsent, pickCaller } from "../main/src/windows/mic-use.ts";
 import { AUDIO_SESSIONS_SCRIPT } from "../main/src/windows/audio-sessions.ts";
 import { parseSessionsLine } from "../main/src/call-audio-session.ts";
+import { parseTasklist } from "../main/src/resources.ts";
 
 if (process.platform !== "win32") {
   console.log("windows-real: skipped (not Windows)");
@@ -124,6 +126,14 @@ if (!browserPath) {
   } catch {
     // Already closed.
   }
+}
+
+/* ---------- 3. resources: what the log reports every 10 minutes ---------- */
+{
+  const listed = parseTasklist(execFileSync("tasklist.exe", ["/FO", "CSV", "/NH"], { encoding: "utf8", windowsHide: true }));
+  const kb = listed.kbByPid.get(process.pid);
+  check(typeof kb === "number" && kb > 1024, `the real tasklist is read: this test's own process uses ${kb ?? "?"} KB`);
+  check((listed.countByName.get("node.exe") ?? 0) >= 1, "and the running programs are counted by name");
 }
 
 console.log(failures.length ? `\nwindows-real: ${failures.length} failed` : "\nwindows-real: all passed");

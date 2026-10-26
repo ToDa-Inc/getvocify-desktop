@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { countLaunch, trackChild } from "../../resources.ts";
 import { existsSync } from "node:fs";
 import { EventEmitter } from "node:events";
 
@@ -39,6 +40,8 @@ export function jsonLines(onEvent: (event: Record<string, unknown>) => void): (c
 export function spawnMacHelper(path: string, command: HelperCommand, args: string[] = []): HelperChild {
   if (!existsSync(path)) return exitedHelper();
   const child = spawn(path, [command, ...args], { stdio: ["pipe", "pipe", "pipe"] });
+  countLaunch("vocify-mac-helper");
+  trackChild(`helper ${command}`, child);
   let exited = false;
   child.on("exit", () => void (exited = true));
   child.on("error", () => {

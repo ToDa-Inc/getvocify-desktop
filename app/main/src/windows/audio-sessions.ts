@@ -61,41 +61,69 @@ namespace VocifyAudio {
       return b.ToString();
     }
 
+    // Every COM object read here is released at once: the reader runs every 500 ms for a whole call, and leaving them to
+    // the garbage collector kept every device, manager and session of every pass alive until it ran.
+    static void Release(object value) {
+      if (value != null && Marshal.IsComObject(value)) Marshal.ReleaseComObject(value);
+    }
+
+    static string ProcessName(uint pid) {
+      if (pid == 0) return "system-sounds";
+      try {
+        using (System.Diagnostics.Process process = System.Diagnostics.Process.GetProcessById((int)pid)) return process.ProcessName;
+      } catch (Exception) {
+        return "?";
+      }
+    }
+
     // Sessions whose stream is running (AudioSessionStateActive = 1) on every active output device.
     public static string Active() {
       List<string> items = new List<string>();
       IMMDeviceEnumerator enumerator = (IMMDeviceEnumerator)(new MMDeviceEnumeratorCom());
-      IMMDeviceCollection devices;
-      if (enumerator.EnumAudioEndpoints(0, 1, out devices) != 0) return "[]";
-      int count;
-      devices.GetCount(out count);
-      for (int d = 0; d < count; d++) {
-        IMMDevice device;
-        if (devices.Item(d, out device) != 0) continue;
-        Guid iid = typeof(IAudioSessionManager2).GUID;
-        object manager;
-        if (device.Activate(ref iid, 23, IntPtr.Zero, out manager) != 0) continue;
-        IAudioSessionEnumerator sessions;
-        if (((IAudioSessionManager2)manager).GetSessionEnumerator(out sessions) != 0) continue;
-        int n;
-        sessions.GetCount(out n);
-        for (int i = 0; i < n; i++) {
-          IAudioSessionControl2 session;
-          if (sessions.GetSession(i, out session) != 0) continue;
-          int state;
-          if (session.GetState(out state) != 0 || state != 1) continue;
-          uint pid = 0;
-          session.GetProcessId(out pid);
-          string id = "";
-          IntPtr raw;
-          if (session.GetSessionInstanceIdentifier(out raw) == 0 && raw != IntPtr.Zero) {
-            id = Marshal.PtrToStringUni(raw);
-            Marshal.FreeCoTaskMem(raw);
+      IMMDeviceCollection devices = null;
+      try {
+        if (enumerator.EnumAudioEndpoints(0, 1, out devices) != 0) return "[]";
+        int count;
+        devices.GetCount(out count);
+        for (int d = 0; d < count; d++) {
+          IMMDevice device = null;
+          object manager = null;
+          IAudioSessionEnumerator sessions = null;
+          try {
+            if (devices.Item(d, out device) != 0) continue;
+            Guid iid = typeof(IAudioSessionManager2).GUID;
+            if (device.Activate(ref iid, 23, IntPtr.Zero, out manager) != 0) continue;
+            if (((IAudioSessionManager2)manager).GetSessionEnumerator(out sessions) != 0) continue;
+            int n;
+            sessions.GetCount(out n);
+            for (int i = 0; i < n; i++) {
+              IAudioSessionControl2 session = null;
+              try {
+                if (sessions.GetSession(i, out session) != 0) continue;
+                int state;
+                if (session.GetState(out state) != 0 || state != 1) continue;
+                uint pid = 0;
+                session.GetProcessId(out pid);
+                string id = "";
+                IntPtr raw;
+                if (session.GetSessionInstanceIdentifier(out raw) == 0 && raw != IntPtr.Zero) {
+                  id = Marshal.PtrToStringUni(raw);
+                  Marshal.FreeCoTaskMem(raw);
+                }
+                items.Add("{\"pid\":" + pid + ",\"app\":\"" + Json(ProcessName(pid)) + "\",\"id\":\"" + Json(id) + "\"}");
+              } finally {
+                Release(session);
+              }
+            }
+          } finally {
+            Release(sessions);
+            Release(manager);
+            Release(device);
           }
-          string app = pid == 0 ? "system-sounds" : "?";
-          try { if (pid != 0) app = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch (Exception) {}
-          items.Add("{\"pid\":" + pid + ",\"app\":\"" + Json(app) + "\",\"id\":\"" + Json(id) + "\"}");
         }
+      } finally {
+        Release(devices);
+        Release(enumerator);
       }
       items.Sort(StringComparer.Ordinal);
       return "[" + string.Join(",", items.ToArray()) + "]";

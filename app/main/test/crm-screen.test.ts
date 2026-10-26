@@ -135,6 +135,21 @@ test("one long-lived reader answers front and read in order", async () => {
   assert.deepEqual(child.stdin.written, ["front\n", "read\n"]);
 });
 
+test("every browser window's address comes from the running reader, as the page script wrote it", async () => {
+  let spawned = 0;
+  const output = `chrome\t${HUBSPOT_CONTACT}\r\nmsedge\twww.google.com`;
+  const child = fakeChild({ read: output });
+  const reader = createPageReaderProcess(() => {
+    spawned += 1;
+    return child as unknown as ReaderChild;
+  }, () => 0);
+  // As the script wrote it, its last line break included (parsePageOutput reads past it).
+  assert.equal(await reader.readOutput(), `${output}\r\n`);
+  assert.equal(await reader.readOutput(), `${output}\r\n`);
+  assert.equal(spawned, 1);
+  assert.deepEqual(child.stdin.written, ["read\n", "read\n"]);
+});
+
 test("a reader that dies answers nothing and is restarted at most once a minute", async () => {
   let now = 0;
   const children: ReturnType<typeof fakeChild>[] = [];

@@ -82,6 +82,8 @@ export function createPageReaderProcess(spawn: () => ReaderChild, now: () => num
       const output = await ask("read");
       return output === null ? [] : parsePageOutput(output);
     },
+    /** Every browser window's address, as the page script writes it; null when the reader gave no answer. */
+    readOutput: (): Promise<string | null> => ask("read"),
     dispose(): void {
       child?.kill();
       child = null;

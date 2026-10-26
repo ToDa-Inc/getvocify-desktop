@@ -48,6 +48,9 @@ export interface CrmScreenReader {
   read(app: string): Promise<string[] | null>;
   /** The OS refused Vocify this browser (Mac: Automation), until it is read again. Absent where the OS never refuses. */
   refused?(app: string): boolean;
+  /** Every browser window's address, read by the reader already running (Windows), as the page script writes it; null
+   * when it gave no answer. Absent where no reader keeps running. */
+  pagesOutput?(): Promise<string | null>;
 }
 
 export type PermissionKind = "microphone" | "systemAudio" | "crmTabs";

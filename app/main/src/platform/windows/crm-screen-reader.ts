@@ -14,5 +14,6 @@ export function createWindowsCrmScreenReader(deps: { spawn(): ReaderChild; now()
       const page = await reader.frontPage();
       return page ? CrmPages.frontRecordURLs(page.url) : [];
     },
+    pagesOutput: () => reader.readOutput(),
   };
 }

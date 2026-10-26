@@ -194,7 +194,15 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   /* ---------- who is on the call ---------- */
 
-  const pageReader = createPageReader((script) => runQuiet("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(script)], 10_000), () => Date.now());
+  // Every browser window's address (a call in the browser, the CRM pages of a call): asked of the reader the CRM watcher
+  // keeps running, not of a new PowerShell each time (one every 4 s while a browser holds the mic); a new one only when
+  // that reader gives no answer.
+  const pageReader = createPageReader(
+    async (script) =>
+      (await os.crmScreenReader.pagesOutput?.()) ??
+      runQuiet("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(script)], 10_000),
+    () => Date.now(),
+  );
 
   // The app's own icon, as the Swift island shows it: asked of the system once per app, kept as a small image.
   const icons = new Map<string, string | null>();
@@ -606,8 +614,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     }
   })();
   const tray = createTray();
+  /** What the menu shows, as last given to the tray: the menu is built again only when this changes. */
+  let trayShown = "";
   // The microphone can be switched in the system's settings while the app runs: keep the tray's line current.
-  const trayRefresh = tray ? setInterval(() => tray.setContextMenu(buildTrayMenu(controller.state)), 5000) : null;
+  const trayRefresh = tray ? setInterval(() => refreshTray(controller.state), 5000) : null;
   trayRefresh?.unref();
   if (platform === "darwin") {
     // Keeping the island over full-screen windows turns the app into one without a Dock icon; give it back.
@@ -646,7 +656,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     // The window first, so it is already big enough when the page starts drawing the bigger island.
     if (!followPlacement(state)) fit(targetSize(state), false);
     island.webContents.send("island:state", state);
-    tray?.setContextMenu(buildTrayMenu(state));
+    refreshTray(state);
     dashboard.releaseIfIdle();
   }
 
@@ -921,7 +931,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     takePlacement(next);
     controller.setGeometry(next.geometry);
     fit(targetSize(controller.state), true);
-    tray?.setContextMenu(buildTrayMenu(controller.state));
+    refreshTray(controller.state);
   };
   screen.on("display-metrics-changed", reposition);
   screen.on("display-added", reposition);
@@ -1145,7 +1155,18 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     ];
   }
 
-  function buildTrayMenu(state: IslandState): Menu {
+  /** Called on every island change (several a second while recording) and every 5 s (the microphone line): the native
+   * menu is only rebuilt when something it shows changed. */
+  function refreshTray(state: IslandState): void {
+    if (!tray) return;
+    const entries = trayTemplate(state);
+    const shown = JSON.stringify(entries, (_key, value) => (typeof value === "function" ? undefined : value));
+    if (shown === trayShown) return;
+    trayShown = shown;
+    tray.setContextMenu(Menu.buildFromTemplate(entries));
+  }
+
+  function trayTemplate(state: IslandState): Electron.MenuItemConstructorOptions[] {
     const items = trayItems(state, `Vocify ${app.getVersion()} · ${dashboardHost}`, microphoneLabel(systemPreferences.getMediaAccessStatus("microphone")));
     const mics = micChoices(state.mic);
     const entries: Electron.MenuItemConstructorOptions[] = items.map((item) => {
@@ -1173,7 +1194,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     });
     // Before "Check for updates" and "Quit", which end the menu.
     entries.splice(Math.max(0, entries.length - 2), 0, ...placementChoices(), ...screenChoices());
-    return Menu.buildFromTemplate(entries);
+    return entries;
   }
 }
 

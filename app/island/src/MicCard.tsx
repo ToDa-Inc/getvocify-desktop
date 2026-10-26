@@ -20,11 +20,11 @@ const openMicList = () => openers.forEach((open) => open());
 const recordingMic = (state: IslandState): (MicView & { inUse: string }) | null =>
   state.mode.kind === "recording" && state.mic?.inUse ? (state.mic as MicView & { inUse: string }) : null;
 
-/** The wave's tooltip: the mic, then who is who. None while open on a known mic: the card says both. */
-export function waveTitle(state: IslandState, open: boolean): string | undefined {
+/** The wave's tooltip: the mic, then who is who. None ("") while open on a known mic: the card says both. */
+export function waveTitle(state: IslandState, open: boolean): string {
   const mic = recordingMic(state);
   if (!mic) return LEGEND;
-  return open ? undefined : `Mic: ${mic.inUse} · ${LEGEND}`;
+  return open ? "" : `Mic: ${mic.inUse} · ${LEGEND}`;
 }
 
 export function MicWave({ state, open, act, children }: { state: IslandState; open: boolean; act: Act; children: ReactNode }) {
@@ -74,7 +74,7 @@ export function MicWave({ state, open, act, children }: { state: IslandState; op
       </span>
       {anchor && (
         <FloatMenu anchor={anchor} width={310} role={list ? "listbox" : "group"} align="end" onClose={close} label="Microphone">
-          <div onMouseEnter={() => clearTimeout(leaving.current)} onMouseLeave={hide}>
+          <div className="mic-card" onMouseEnter={() => clearTimeout(leaving.current)} onMouseLeave={hide}>
             {list ? (
               <>
                 <MenuRow label={mic.defaultLabel ? `System default (${mic.defaultLabel})` : "System default"} selected={mic.chosen === null} onPick={() => pick(null)} />

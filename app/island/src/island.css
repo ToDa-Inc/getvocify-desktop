@@ -460,3 +460,7 @@ button.type-tag:hover { color: var(--text); }
 .mic-card-row, .mic-card-legend { cursor: default; }
 .mic-card-row:hover, .mic-card-legend:hover { background: transparent; color: var(--secondary); }
 .mic-card-legend { height: 20px; font-size: 11px; }
+/* Mic names are long ("MacBook Air Microphone (Built-in)"): a row gives way with "…" inside the card, never past it. */
+.mic-card { display: flex; flex-direction: column; min-width: 0; }
+.mic-card .option-row { min-width: 0; }
+.mic-card .option-row span { min-width: 0; white-space: nowrap; }

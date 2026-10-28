@@ -6,9 +6,9 @@ import { TypeMenu } from "../../core/typeMenu.ts";
 import { TypeProposal, type Language } from "../../core/typeProposal.ts";
 import { WaveSide } from "../../core/waveSide.ts";
 import { DEFAULT_SPOT, type PillSpot } from "../../core/pill.ts";
-import type { Assist, Geometry, IslandAction, IslandState, Levels, LiveAction, Mode, PostCallData } from "../../island/src/types.ts";
+import type { Assist, Geometry, IslandAction, IslandState, Levels, LiveAction, Mode, PostCallData, VoiceAction } from "../../island/src/types.ts";
 import { postCallPending } from "../../island/src/types.ts";
-import { parseAssist, parseBackground, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parseMic, parsePostCall, parseTurns, type LiveChannelKind, type LiveType } from "./parse.ts";
+import { parseAssist, parseBackground, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parseMic, parsePostCall, parseTurns, parseVoices, type LiveChannelKind, type LiveType } from "./parse.ts";
 
 /**
  * The island's brain: what it shows and what each click does. A port of `MeetingPillController` and
@@ -57,6 +57,13 @@ const PHONE_CALL_SERVICES = ["com.apple.avconferenced", "com.apple.FaceTime"];
 function holds(caller: Caller | null, appId: string | null): boolean {
   if (caller === null || appId === null) return false;
   return caller.holding ? caller.holding.includes(appId) : true;
+}
+
+/** What the dashboard's `voice:` command carries (the island's `text` is the dashboard's `name`: `name` says which action it is here). */
+function voiceCommand(action: VoiceAction): Record<string, unknown> {
+  if (action.op === "rename") return { op: "rename", voice: action.voice, name: action.text };
+  if (action.op === "merge") return { op: "merge", keep: action.keep, drop: action.drop };
+  return { op: "move", starts: action.starts, voice: action.voice };
 }
 
 export type Effects = {
@@ -339,6 +346,8 @@ export class IslandController {
     if (!this.nativeTranscript && has("overlay")) {
       const turns = parseTurns(update.overlay);
       if (turns && JSON.stringify(turns) !== JSON.stringify(this.current.turns)) patch.turns = turns;
+      const voices = parseVoices(update.overlay);
+      if (JSON.stringify(voices) !== JSON.stringify(this.current.voices ?? [])) patch.voices = voices;
     }
 
     if (Object.keys(patch).length === 0) return;
@@ -444,6 +453,9 @@ export class IslandController {
         return this.pickChannel(action.kind);
       case "toggleLiveHelp":
         return this.effects.emit("shell:command", this.current.liveHelp === false ? "assist-on" : "assist-off");
+      case "voice":
+        // The dashboard holds the transcript: it renames, merges and moves, and tells the call's backend.
+        return this.effects.emit("shell:command", `voice:${JSON.stringify(voiceCommand(action))}`);
       case "postCall":
         return this.postCallAction(action.type, action.details ?? {});
       case "liveTab":

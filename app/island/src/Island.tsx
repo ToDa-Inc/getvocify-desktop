@@ -13,6 +13,7 @@ import { SayBody, type TranscriptMarks } from "./say/SayBody.tsx";
 import { HelpMarker, useHelpMarker } from "./say/Marker.tsx";
 import { SideDock } from "./side/SideDock.tsx";
 import { MicNoticeLine, micSilentBody, MicWave, waveTitle } from "./MicCard.tsx";
+import { VoiceLabel, type VoiceMenu } from "./VoiceLabel.tsx";
 import { PostCallCard } from "./PostCallCard.tsx";
 import { TypingDots } from "./TypingDots.tsx";
 import { useNow } from "./useNow.ts";
@@ -888,6 +889,8 @@ export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
   const closeKeypad = useCallback(() => act({ name: "keypad", open: false }), [act]);
   const menu = state.typeMenu;
   const hasBrief = Boolean(state.dial?.brief?.length || state.dial?.companyBrief);
+  // The other side's voices, when the dashboard tells them apart: a name above a line then opens the list to fix it.
+  const voiceMenu: VoiceMenu | undefined = state.voices?.length ? { voices: state.voices, act } : undefined;
   return (
     <div className={state.live ? "open-island live" : "open-island"}>
       <div className="controls">
@@ -964,7 +967,7 @@ export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
           transcript={(marks) => (
             <>
               {hasBrief && state.dial && <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} talking={state.turns.length > 0} />}
-              <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} marks={marks} />
+              <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} marks={marks} voices={voiceMenu} />
             </>
           )}
         />
@@ -976,7 +979,7 @@ export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
           transcript={
             <>
               {hasBrief && state.dial && <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} talking={state.turns.length > 0} />}
-              <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} />
+              <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} voices={voiceMenu} />
             </>
           }
         />
@@ -985,7 +988,7 @@ export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
           {state.liveHelp !== false && <HelpSection current={state.assist} earlier={state.lastHelp} />}
           <div className="hairline" />
           {hasBrief && state.dial && <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} talking={state.turns.length > 0} />}
-          <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} />
+          <TranscriptScroll turns={state.turns} reduceMotion={state.reduceMotion} voices={voiceMenu} />
         </>
       )}
     </div>
@@ -1056,7 +1059,7 @@ const GLIDE_LIMIT_MS = 400;
  * instead of snapping a line at a time, and only the rep's own scrolling (wheel, scrollbar) lets go of the latest line:
  * the view's own movement never does.
  */
-function TranscriptScroll({ turns, reduceMotion, marks }: { turns: Turn[]; reduceMotion: boolean; marks?: TranscriptMarks }) {
+function TranscriptScroll({ turns, reduceMotion, marks, voices }: { turns: Turn[]; reduceMotion: boolean; marks?: TranscriptMarks; voices?: VoiceMenu }) {
   const ref = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const [following, setFollowing] = useState(true);
@@ -1172,6 +1175,7 @@ function TranscriptScroll({ turns, reduceMotion, marks }: { turns: Turn[]; reduc
                 source={marks?.sources.has(turn.id) ?? false}
                 onTap={marks?.onTap && !turn.you ? () => marks.onTap!(turn.id) : null}
                 tapHelp={marks?.tapHelp ?? null}
+                voices={voices}
               />
             ))}
           </div>
@@ -1232,7 +1236,7 @@ function CopyButton({ text, help, className }: { text: string; help: string; cla
  * words several times a second, and a bubble that followed every rewrite would shrink and stretch under the reader.
  * It takes its real size again once the turn has settled.
  */
-function TurnBubble({ turn, arrives, source = false, onTap = null, tapHelp = null }: { turn: Turn; arrives: boolean; source?: boolean; onTap?: (() => void) | null; tapHelp?: string | null }) {
+function TurnBubble({ turn, arrives, source = false, onTap = null, tapHelp = null, voices }: { turn: Turn; arrives: boolean; source?: boolean; onTap?: (() => void) | null; tapHelp?: string | null; voices?: VoiceMenu }) {
   const parts = turnParts(turn);
   const bubble = useRef<HTMLDivElement>(null);
   const floor = useRef({ width: 0, height: 0 });
@@ -1254,7 +1258,7 @@ function TurnBubble({ turn, arrives, source = false, onTap = null, tapHelp = nul
   }, [parts.text, parts.tail, parts.dots]);
   return (
     <div className="turn" data-you={turn.you} data-entering={entering} data-turn-id={turn.id}>
-      {!turn.you && turn.label && <div className="turn-label">{turn.label}</div>}
+      {!turn.you && turn.label && (voices && turn.voice !== undefined ? <VoiceLabel turn={turn} menu={voices} /> : <div className="turn-label">{turn.label}</div>)}
       <div className="bubble-row" data-you={turn.you}>
         {/* Live help: the line a card came from carries a thin beige outline; a tap on one of theirs asks about it. */}
         <div

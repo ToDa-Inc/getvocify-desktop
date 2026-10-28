@@ -25,7 +25,19 @@ export type Mode =
    * did, and the island offers to set calls from the phone up. */
   | { kind: "phoneCall"; name: string | null; failed: boolean };
 
-export type Turn = { id: string; you: boolean; label: string | null; text: string; pending: string };
+export type Turn = {
+  id: string;
+  you: boolean;
+  label: string | null;
+  text: string;
+  pending: string;
+  /** The voice on the other side that said it, when the dashboard tells voices apart, and where its lines began. */
+  voice?: number;
+  starts?: number[];
+};
+
+/** A voice heard on the other side, as it is called now. */
+export type VoiceChoice = { id: number; label: string };
 
 export type Assist = {
   label: string;
@@ -296,6 +308,8 @@ export type IslandState = {
   postCall: PostCallData | null;
   /** The mics and which one records; null until the dashboard reports them (older dashboards never do). */
   mic?: MicView | null;
+  /** The voices heard on the other side (two or more, or one the rep may name); empty when the dashboard does not tell them apart. */
+  voices?: VoiceChoice[];
   /** The finished calls the dashboard is still on; null when it does not report them (then the island waits on a spinner after a recording, as before). */
   background?: BackgroundJob[] | null;
   /** The recording that just ended, until its memo is being written; null when the dashboard says nothing. */
@@ -315,6 +329,11 @@ export type IslandState = {
   /** The rep's language, for the words the island writes itself (the rest comes from the dashboard). */
   language: Language;
 };
+
+export type VoiceAction =
+  | { name: "voice"; op: "rename"; voice: number; text: string }
+  | { name: "voice"; op: "merge"; keep: number; drop: number }
+  | { name: "voice"; op: "move"; starts: number[]; voice: number | null };
 
 export type IslandAction =
   | { name: "toggle" }
@@ -337,6 +356,8 @@ export type IslandAction =
   /** The mic to record with; null follows the system's default. */
   | { name: "pickMic"; mic: MicDevice | null }
   | { name: "toggleLiveHelp" }
+  /** The rep names a voice of the other side, says two are one person, or moves a paragraph to another (null: someone new). */
+  | VoiceAction
   | LiveAction
   | { name: "pointer"; inside: boolean }
   /** Calling the contact on screen (sent to the dashboard as the bridge contract's commands). */

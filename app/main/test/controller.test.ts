@@ -750,6 +750,37 @@ test("the dashboard's overlay becomes the transcript, unless a native recorder d
   assert.equal(t.controller.state.turns.length, 2);
 });
 
+test("an overlay's voices reach the island, turns without them stay as they were, and bad ones are dropped", () => {
+  const t = recording();
+  t.controller.applyShellState({
+    overlay: {
+      turns: [
+        { key: "a", you: false, label: "Voice 1", text: "Hi", pending: "", voice: 1, starts: [0, 2.5, "x"] },
+        { key: "b", you: false, label: "Voice 2", text: "Hello", pending: "", voice: 0, starts: [] },
+      ],
+      voices: [{ id: 1, label: "Voice 1" }, { id: 2, label: "  " }, { id: 1.5, label: "x" }, { label: "no id" }, { id: 3, label: "Laura" }],
+    },
+  });
+  assert.deepEqual(t.controller.state.turns, [
+    { id: "a", you: false, label: "Voice 1", text: "Hi", pending: "", voice: 1, starts: [0, 2.5] },
+    { id: "b", you: false, label: "Voice 2", text: "Hello", pending: "" },
+  ]);
+  assert.deepEqual(t.controller.state.voices, [{ id: 1, label: "Voice 1" }, { id: 3, label: "Laura" }]);
+  t.controller.applyShellState({ overlay: { turns: [] } });
+  assert.deepEqual(t.controller.state.voices, []);
+});
+
+test("the rep's rename, merge and move of a voice go to the dashboard as one command", () => {
+  const t = recording();
+  const sent = () => JSON.parse(String(t.last("shell:command")).slice("voice:".length));
+  t.controller.act({ name: "voice", op: "rename", voice: 2, text: "Laura" });
+  assert.deepEqual(sent(), { op: "rename", voice: 2, name: "Laura" });
+  t.controller.act({ name: "voice", op: "merge", keep: 1, drop: 2 });
+  assert.deepEqual(sent(), { op: "merge", keep: 1, drop: 2 });
+  t.controller.act({ name: "voice", op: "move", starts: [3, 4], voice: null });
+  assert.deepEqual(sent(), { op: "move", starts: [3, 4], voice: null });
+});
+
 test("the contact name is trimmed, and blank means none", () => {
   const t = setup();
   t.controller.applyShellState({ callContact: { name: "  Marta Ruiz  " } });

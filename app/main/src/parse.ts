@@ -1,6 +1,6 @@
 import type {
   Assist, Clock, Finish, LiveContact, LiveData, LiveDecision, LiveGoal, LiveNext, LiveNow, LiveOutcome, LivePart, LivePoint, LiveProgress, LiveRecap, LiveResponder, LiveRewrite, LiveStep, LiveStepAsk, LiveView,
-  BackgroundJob, MicDevice, MicView, PostCallChange, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn,
+  BackgroundJob, MicDevice, MicView, PostCallChange, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn, VoiceChoice,
 } from "../../island/src/types.ts";
 
 /**
@@ -173,13 +173,30 @@ export function parseAssist(raw: unknown): Assist | null {
 
 export function parseTurns(overlay: unknown): Turn[] | null {
   if (!isRaw(overlay)) return null;
-  return list(overlay.turns).map((raw, index) => ({
-    id: str(raw.key) ?? `row-${index}`,
-    you: bool(raw.you) ?? false,
-    label: str(raw.label) ?? null,
-    text: str(raw.text) ?? "",
-    pending: str(raw.pending) ?? "",
-  }));
+  return list(overlay.turns).map((raw, index) => {
+    const voice = num(raw.voice);
+    const starts = Array.isArray(raw.starts) ? raw.starts.filter((s): s is number => typeof s === "number" && Number.isFinite(s)) : [];
+    return {
+      id: str(raw.key) ?? `row-${index}`,
+      you: bool(raw.you) ?? false,
+      label: str(raw.label) ?? null,
+      text: str(raw.text) ?? "",
+      pending: str(raw.pending) ?? "",
+      // Only when the dashboard tells voices apart: a turn without them is as it always was.
+      ...(voice !== undefined && Number.isInteger(voice) && voice >= 1 ? { voice } : {}),
+      ...(starts.length ? { starts } : {}),
+    };
+  });
+}
+
+/** The voices of the other side the dashboard has heard, each with the name it shows now. */
+export function parseVoices(overlay: unknown): VoiceChoice[] {
+  if (!isRaw(overlay)) return [];
+  return list(overlay.voices).flatMap((raw) => {
+    const id = num(raw.id);
+    const label = nonBlank(raw.label);
+    return id !== undefined && Number.isInteger(id) && id >= 1 && label !== null ? [{ id, label }] : [];
+  });
 }
 
 export function parseClock(raw: unknown): Clock | null {

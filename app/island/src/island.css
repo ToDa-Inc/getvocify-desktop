@@ -236,6 +236,10 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .turn { display: flex; flex-direction: column; gap: 3px; max-width: 340px; align-self: flex-start; align-items: flex-start; }
 .turn[data-you="true"] { align-self: flex-end; align-items: flex-end; }
 .turn-label { font-size: 10.5px; font-weight: 500; color: var(--beige); padding: 0 4px; }
+/* The name of a voice is a button when the dashboard tells voices apart: it looks as it did until the pointer is over it. */
+.voice-label { background: none; border: 0; font-family: inherit; cursor: pointer; border-radius: 4px; }
+.voice-label:hover, .voice-label[aria-expanded="true"] { background: rgba(255, 255, 255, 0.08); }
+.voice-name { cursor: text; }
 .bubble { padding: 7px 11px; border-radius: 14px; background: var(--them-bubble); line-height: 1.32; font-size: 12.5px; user-select: text; word-wrap: break-word; overflow-wrap: anywhere; }
 /* Windows: the island never takes the keyboard, so a selection there could never be copied, and a drag over the
    transcript ran across every bubble with no way to clear it. Nothing outside a field is selectable; Copy copies. */

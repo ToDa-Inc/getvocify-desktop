@@ -5,11 +5,14 @@ import type { LiveStrings } from "../../../core/liveWording.ts";
 import type { IslandAction, IslandState, LivePoint, LiveView } from "../types.ts";
 import type { Marks } from "../live/model.ts";
 
-/** What rises over the transcript on request: the recap, the steps, or who the contact is. One at a time. */
-export type SayPeek = "recap" | "steps" | "brief" | null;
+/** What rises over the tabs on request: the recap or who the contact is. One at a time. */
+export type SayPeek = "recap" | "brief" | null;
+/** Under Qué decir: the steps (the default: they are what the view is for) or the conversation. */
+export type SayTab = "steps" | "transcript";
 
 export type SayUi = {
   peek: SayPeek;
+  tab: SayTab;
   /** Responder: reading the minute (or one tapped line) until the dashboard answers an ask newer than `after`; then, with
    * nothing to answer, the moment it said so (the next question shows for a while). */
   respond: { state: "reading"; after: number; from: "minute" | "turn" } | { state: "nothing"; at: number; from: "minute" | "turn" } | null;
@@ -30,7 +33,7 @@ export type SayUi = {
 };
 
 export const initialSayUi = (): SayUi => ({
-  peek: null, respond: null, recap: null, flashId: null, flashAt: null, reopened: [], dismissed: [], marks: {}, askStep: null, rewrite: null,
+  peek: null, tab: "steps", respond: null, recap: null, flashId: null, flashAt: null, reopened: [], dismissed: [], marks: {}, askStep: null, rewrite: null,
 });
 
 /** A card as the rep sees it: the rep's ✓ and Responder's bringing back applied. */

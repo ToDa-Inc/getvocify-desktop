@@ -98,6 +98,9 @@ type SayStrings = {
   firstTime: string;
   stepsTitle: (done: number, all: number) => string;
   stepHint: string;
+  toFind: string;
+  enough: (need: number, all: number) => string;
+  suggestionHelp: string;
   stillUnknown: (parts: string[], need: number, all: number) => string;
   preparing: string;
   askThis: string;
@@ -189,6 +192,9 @@ const ES: Strings = {
     firstTime: "Es la primera vez que habláis.",
     stepsTitle: (done, all) => `Pasos · ${done} de ${all}`,
     stepHint: "Toca un paso pendiente y te preparo una pregunta con lo que ha dicho.",
+    toFind: "Por averiguar",
+    enough: (need, all) => `Bastan ${need} de ${all}`,
+    suggestionHelp: "Una pregunta a partir de lo que ha dicho. Dila con tus palabras.",
     stillUnknown: (parts, need, all) => `Aún no sabes: ${parts.join(", ")} · bastan ${need} de ${all}`,
     preparing: "Preparando una pregunta con lo que ha dicho",
     askThis: "Dame una pregunta para esto",
@@ -281,6 +287,9 @@ const EN: Strings = {
     firstTime: "It's the first time you talk.",
     stepsTitle: (done, all) => `Steps · ${done} of ${all}`,
     stepHint: "Tap a pending step and I'll prepare a question from what they said.",
+    toFind: "To find out",
+    enough: (need, all) => `${need} of ${all} are enough`,
+    suggestionHelp: "A question from what they said. Say it in your own words.",
     stillUnknown: (parts, need, all) => `You don't know yet: ${parts.join(", ")} · ${need} of ${all} is enough`,
     preparing: "Preparing a question from what they said",
     askThis: "Give me a question for this",

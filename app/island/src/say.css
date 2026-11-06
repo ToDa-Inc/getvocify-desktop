@@ -85,10 +85,40 @@
 .say-line { font-size: 12px; line-height: 1.38; color: var(--text); user-select: text; }
 .say-missing { color: var(--secondary); }
 
-/* Pasos: the steps scroll on their own, so the line under them is in view at any height. */
-.say-steps-list { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 2px 3px 0; max-height: min(170px, calc(100cqh - 104px));
+/* Pasos | Transcripción, under Qué decir. Both panes stay mounted; the hidden one takes no room. */
+.say-tabs-row { padding: 8px 12px 2px; }
+.say-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.say-pane[hidden] { display: none; }
+/* Pasos: the steps scroll on their own, inside the tab. */
+.say-steps-tab { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 5px; padding: 8px 14px 10px;
   overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
-.say-steps-list::-webkit-scrollbar { display: none; }
+.say-steps-tab::-webkit-scrollbar { display: none; }
+.say-steps-tab .say-step-label { flex: 1; max-width: none; }
+/* The step that matters now: open and bright. What it asks, its parts as they are heard, the brain's question. */
+.say-now-step { display: flex; flex-direction: column; gap: 5px; margin: 1px -7px; padding: 8px 10px 9px; border-radius: 10px;
+  background: rgba(219, 192, 154, 0.1); box-shadow: inset 0 0 0 0.5px rgba(219, 192, 154, 0.32); animation: say-now-in 220ms var(--ease) both; }
+.say-now-step .live-node { border-color: var(--beige); }
+.say-now-label { min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.say-now-concept, .say-parts, .say-now-q, .say-now-ask { margin-left: 22px; }
+.say-now-concept { font-size: 11.5px; line-height: 1.35; color: var(--secondary); }
+.say-parts, .say-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.say-part, .say-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11px;
+  color: var(--secondary); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.13); white-space: nowrap; transition: background 200ms, color 200ms; }
+.say-part[data-done="true"], .say-chip[data-done="true"] { color: var(--text); background: rgba(219, 192, 154, 0.16); box-shadow: none; }
+.say-part svg, .say-chip svg { flex: none; color: var(--beige); animation: say-pop 420ms var(--ease); }
+.say-part-need { font-size: 10.5px; color: rgba(255, 255, 255, 0.4); }
+.say-now-q { font-size: 12px; line-height: 1.4; color: var(--text); user-select: text; }
+.say-now-ask { align-self: flex-start; padding: 0; font-size: 11.5px; color: var(--beige); cursor: pointer; }
+.say-now-ask:hover { text-decoration: underline; text-underline-offset: 3px; }
+.say-now-step .say-step-q { margin-left: 22px; }
+/* What to find out: chips that tick themselves; the chip is the tick. */
+.say-find { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.say-chip { cursor: pointer; }
+.say-chip span { overflow: hidden; text-overflow: ellipsis; }
+.say-chip:hover { color: var(--text); background: rgba(255, 255, 255, 0.06); }
+.say-chip[data-done="true"]:hover { background: rgba(219, 192, 154, 0.24); }
+.say-chip[data-current="true"] { color: var(--text); box-shadow: inset 0 0 0 1px rgba(219, 192, 154, 0.6); }
+@keyframes say-now-in { from { opacity: 0; } to { opacity: 1; } }
 .say-step { min-height: 20px; }
 .say-step .live-node { transition: background 240ms, border-color 240ms; }
 .say-step[data-done="true"] .live-node svg { animation: say-pop 420ms var(--ease); }
@@ -107,18 +137,11 @@
 .say-step-q { margin: 4px 0 2px 22px; padding: 6px 9px; border-radius: 8px; background: rgba(219, 192, 154, 0.08); box-shadow: inset 0 0 0 0.5px rgba(219, 192, 154, 0.22);
   font-size: 12px; line-height: 1.4; color: var(--text); user-select: text; }
 .say-step-q .help-drafting { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; }
-/* One fixed line at the foot: what the step under the pointer still needs. */
-/* Exactly two lines tall whatever it says: the panel is anchored at its foot, so a line that grew would push the rows up
-   under the pointer, which then hovers another row, which changes the line again (the list bounced). Longer text is cut
-   with an ellipsis; the whole of it is in the tooltip. */
-.say-step-hint { box-sizing: content-box; height: calc(11px * 1.35 * 2); margin: 8px 3px 0; padding-top: 7px; border-top: 0.5px solid rgba(255, 255, 255, 0.08);
-  font-size: 11px; line-height: 1.35; color: rgba(255, 255, 255, 0.4); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.say-step-hint[data-on="true"] { color: rgba(255, 255, 255, 0.75); }
 
 :root[data-platform="win32"] :is(.say-card, .say-line, .say-step-q) { user-select: none; }
 
 /* reduced motion: nothing sweeps, pops or glides; it just appears */
-.island[data-reduce-motion="true"] :is(.say-card, .say-ended svg, .say-step .live-node svg) { animation: none; }
+.island[data-reduce-motion="true"] :is(.say-card, .say-ended svg, .say-step .live-node svg, .say-now-step, .say-part svg, .say-chip svg) { animation: none; }
 .island[data-reduce-motion="true"] .say-sweep { display: none; }
 .island[data-reduce-motion="true"] .say-card { transition: none; }
 .island[data-reduce-motion="true"] .say-step-text::after { transition: none; }

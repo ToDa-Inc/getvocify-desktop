@@ -52,7 +52,8 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
     .filter((e) => e.scrollWidth > e.clientWidth + 1)
     .map((e) => e.className + ' ' + e.scrollWidth + '>' + e.clientWidth);
   const t = document.querySelector('.transcript');
-  const bubbles = [...document.querySelectorAll('.bubble')].map((b) => b.getBoundingClientRect());
+  // Bubbles in a hidden tab have no box: only the ones on screen can be cut.
+  const bubbles = [...document.querySelectorAll('.bubble')].filter((b) => b.getClientRects().length > 0).map((b) => b.getBoundingClientRect());
   const clipped = t ? bubbles.filter((b) => b.left < r.left - 0.5 || b.right > r.right + 0.5).length : 0;
   return {
     width: Math.round(r.width), height: Math.round(r.height),
@@ -201,9 +202,17 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
         title: text(peek?.querySelector('.say-panel-head')),
         facts: all('.say-fact', peek).length,
         recapLines: all('.live-recap li', peek).length,
-        rows: all('.say-step', peek).length,
-        hint: text(peek?.querySelector('.say-step-hint')),
-        stepQ: text(peek?.querySelector('.say-step-q')),
+        tab: text(document.querySelector('.say-tabs-row .live-tab[data-active="true"]')),
+        rows: all('.say-pane:not([hidden]) .say-steps-tab .say-step').length,
+        current: text(document.querySelector('.say-now-label')),
+        parts: all('.say-part').length,
+        partsDone: all('.say-part[data-done="true"]').length,
+        chips: all('.say-chip').length,
+        chipsDone: all('.say-chip[data-done="true"]').length,
+        chipNow: text(document.querySelector('.say-chip[data-current="true"]')),
+        suggestion: text(document.querySelector('.say-now-q')),
+        askNow: text(document.querySelector('.say-now-ask')),
+        stepQ: text(document.querySelector('.say-step-q')),
         briefLines: all('.say-line', peek).length,
         offline: text(document.querySelector('.say-offline .lost-title')),
         // At the side the view is in the panel, not the whole window.
@@ -214,7 +223,7 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
           return bar && wrap ? Math.max(0, Math.round(wrap.bottom - bar.top)) : 0;
         })(),
         // Nothing the view writes is cut by its box (the faded history clamps on purpose).
-        cut: all('.say-card[data-live="true"] .say-text, .say-step-q, .say-line, .live-recap li').filter((e) => e.scrollHeight > e.clientHeight + 1).length,
+        cut: all('.say-card[data-live="true"] .say-text, .say-step-q, .say-now-q, .say-now-concept, .say-line, .live-recap li').filter((e) => e.scrollHeight > e.clientHeight + 1).length,
       };
     })(),
     title: document.querySelector('.topbar')?.title ?? '',

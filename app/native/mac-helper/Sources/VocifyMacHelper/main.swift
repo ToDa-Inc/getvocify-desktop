@@ -111,7 +111,13 @@ func commandAudio() {
     // A process tap hears every process, system call services included (an iPhone call on the Mac); ScreenCaptureKit
     // only apps. Taps exist from macOS 14.2.
     let capture: AudioCapture
-    if #available(macOS 14.2, *) { capture = TapAudioCapture() } else { capture = SystemAudioCapture() }
+    // The app's own processes, from the app (`--exclude-pids 1,2,3`): looked up one by one instead of asking Core Audio
+    // about every process on the Mac, which took up to 7 s while a call app was opening the mic (2026-11-09).
+    var excludePids: [pid_t]?
+    if let at = arguments.firstIndex(of: "--exclude-pids"), at + 1 < arguments.count {
+        excludePids = arguments[at + 1].split(separator: ",").compactMap { pid_t($0) }
+    }
+    if #available(macOS 14.2, *) { capture = TapAudioCapture(excludePids: excludePids) } else { capture = SystemAudioCapture() }
     var ended: (event: String, reason: String)?
     capture.onEnd = { event, reason in
         DispatchQueue.main.async {

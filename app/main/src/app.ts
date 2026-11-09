@@ -183,6 +183,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     openExternal: (url) => void shell.openExternal(url),
     protocolApp: (scheme) => app.getApplicationNameForProtocol(scheme),
     systemAudioStarted: { get: () => settings.get("systemAudioStarted") === true, set: () => settings.set("systemAudioStarted", true) },
+    appPids: () => app.getAppMetrics().map((metric) => metric.pid),
     crmTabsAnswer: {
       get: () => {
         const stored = settings.get("crmTabs");

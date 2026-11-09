@@ -9,6 +9,9 @@ Status and events are one JSON object per line. Nothing else is written to the c
 
 ## `vocify-mac-helper audio`
 
+`audio --exclude-pids 1,2,3`: the app's own processes, kept out of the tap (looked up one by one). Without it the helper
+finds them by asking Core Audio about every process, which took up to 7 s while a call app was opening the mic.
+
 The call's audio: everything the Mac plays, except the Vocify app (the helper's parent, its helpers) and the helper
 itself. On macOS 14.2+ through a Core Audio process tap read by a private aggregate device on the default output
 (permission: System Audio Recording, the app's `NSAudioCaptureUsageDescription`), which also hears system call services

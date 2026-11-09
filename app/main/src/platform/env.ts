@@ -11,6 +11,8 @@ export type PlatformEnv = {
   protocolApp(scheme: string): string;
   /** Whether call audio has been captured on this Mac once (its permission cannot be read on macOS 14.2+). */
   systemAudioStarted: { get(): boolean; set(): void };
+  /** The app's own processes (main, helpers, renderers): kept out of the call's audio. */
+  appPids?(): number[];
   /** Where the rep's answer to "Vocify wants to control your browser" is kept (Mac). */
   crmTabsAnswer: { get(): Status | undefined; set(value: Status): void };
   log(line: string): void;

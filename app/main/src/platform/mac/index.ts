@@ -24,7 +24,11 @@ export function createMacPlatform(env: PlatformEnv): Platform {
   const access = createAudioAccess({
     spawn: (command) => spawnMacHelper(helper, command),
     capture: createMacSystemAudio({
-      spawn: (command) => spawnMacHelper(helper, command),
+      // The call's audio is told the app's processes, so it need not look for them (that took up to 7 s, 2026-11-09).
+      spawn: (command) => {
+        const pids = command === "audio" ? env.appPids?.() ?? [] : [];
+        return spawnMacHelper(helper, command, pids.length ? ["--exclude-pids", pids.join(",")] : []);
+      },
       micAllowed: () => env.systemPreferences.getMediaAccessStatus("microphone") === "granted",
       log: env.log,
     }),

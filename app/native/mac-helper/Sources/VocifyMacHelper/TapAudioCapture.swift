@@ -21,6 +21,12 @@ extension SystemAudioCapture: AudioCapture {}
 @available(macOS 14.2, *)
 final class TapAudioCapture: AudioCapture, @unchecked Sendable {
     var onEnd: ((_ event: String, _ reason: String) -> Void)?
+    /// The app's processes as it gave them; nil: found by asking Core Audio about every process (slow, see vocifyProcesses).
+    private let excludePids: [pid_t]?
+
+    init(excludePids: [pid_t]? = nil) {
+        self.excludePids = excludePids
+    }
 
     /// The first callback was reported (`io`): the device really runs.
     private var reportedIO = false
@@ -88,7 +94,7 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
             self.timings[name] = String(Int((Date().timeIntervalSince(mark) * 1000).rounded()))
             mark = Date()
         }
-        let excluded = Self.vocifyProcesses()
+        let excluded = excludePids.map { Self.processObjects(pids: $0 + [getppid(), getpid()]) } ?? Self.vocifyProcesses()
         lap("processes_ms")
         let description = CATapDescription(monoGlobalTapButExcludeProcesses: excluded)
         description.isPrivate = true
@@ -222,6 +228,19 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
     // MARK: Core Audio lookups
 
     /// Vocify's own processes (the app that started this helper, its helpers, this helper): never in the call audio.
+    /// Each process's Core Audio object, one direct lookup per pid. A process that never played or recorded has none, and
+    /// nothing to exclude.
+    private static func processObjects(pids: [pid_t]) -> [AudioObjectID] {
+        var address = address(kAudioHardwarePropertyTranslatePIDToProcessObject)
+        return Array(Set(pids)).compactMap { pid in
+            var pid = pid
+            var object = AudioObjectID(kAudioObjectUnknown)
+            var size = UInt32(MemoryLayout<AudioObjectID>.size)
+            let status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, UInt32(MemoryLayout<pid_t>.size), &pid, &size, &object)
+            return status == noErr && object != kAudioObjectUnknown ? object : nil
+        }
+    }
+
     private static func vocifyProcesses() -> [AudioObjectID] {
         let parent = getppid()
         let own = getpid()

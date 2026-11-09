@@ -33,7 +33,7 @@ export type SayUi = {
 };
 
 export const initialSayUi = (): SayUi => ({
-  peek: null, tab: "transcript", respond: null, recap: null, flashId: null, flashAt: null, reopened: [], dismissed: [], marks: {}, askStep: null, rewrite: null,
+  peek: null, tab: "steps", respond: null, recap: null, flashId: null, flashAt: null, reopened: [], dismissed: [], marks: {}, askStep: null, rewrite: null,
 });
 
 /** A card as the rep sees it: the rep's ✓ and Responder's bringing back applied. */

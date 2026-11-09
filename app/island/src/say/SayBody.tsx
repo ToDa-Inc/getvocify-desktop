@@ -1,18 +1,18 @@
 // The recording view of the live call assistant, "Qué decir" (spec 2026-10-16-live-call-assistant-design.md, revised
-// 2026-10-19; 2026-11-09, Dani: the transcript is the main view, the steps on demand). At the top, Qué decir, which takes
-// no room until there is something to say; under it one line with where the call is in the playbook (a tap opens the
-// steps over the transcript); then the transcript; at the foot, Responder · Resumen and who the call is with. What is
-// asked for rises over the transcript, one at a time, and never covers Qué decir.
+// 2026-10-19, and 2026-11-06 for Pasos): at the top, Qué decir (a list like a chat, fixed height); under it two tabs, Pasos
+// (open by default: the playbook's steps ticking themselves) and Transcripción; at the foot, Responder · Resumen and who
+// the call is with. What is asked for rises over the tabs, one at a time, and never covers Qué decir. Nothing changes tab
+// on its own.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LiveWording } from "../../../core/liveWording.ts";
 import type { IslandAction, IslandState, LivePoint } from "../types.ts";
 import { nowMs, useNow } from "../useNow.ts";
 import { callSeconds, inWindow } from "../live/model.ts";
-import { ChevronRight, RecapIcon, ShieldIcon } from "../live/icons.tsx";
+import { ChevronRight, ConversationIcon, RecapIcon, ShieldIcon, TranscriptIcon } from "../live/icons.tsx";
 import { initialSayUi, Say, useSay, type SayContext, type SayPoint, type SayUi } from "./context.ts";
 import { Feed } from "./Feed.tsx";
 import { SayPeeks } from "./Peeks.tsx";
-import { StepsLine, StepsSheet } from "./Steps.tsx";
+import { StepsTab } from "./Steps.tsx";
 import { markSeen, openIds, pickOf, setPick, unseen } from "./memory.ts";
 
 type Act = (action: IslandAction) => void;
@@ -118,18 +118,24 @@ export function SayBody({ state, act, transcript }: { state: IslandState; act: A
     [points, act, live.asks.responder],
   );
 
-  // The steps line is there when the playbook has something to follow; with nothing, the transcript alone, as before.
+  // Pasos is there when the playbook has something to follow; with nothing, the transcript alone, as before.
   const hasSteps = liveHelp && live.progress.hasPlaybook && (live.progress.steps.length > 0 || live.progress.data.length > 0);
+  const tab = hasSteps ? ui.tab : "transcript";
   return (
     <Say.Provider value={ctx}>
       <Feed />
-      {hasSteps && <StepsLine />}
+      <div className="hairline" />
+      {hasSteps && <SayTabs />}
       <div className="live-views say-views">
-        {/* The transcript stays mounted under the steps, so it keeps its place when they close. */}
-        <div className="say-pane">
+        {/* Both stay mounted, so the transcript keeps its place and the steps their scroll when the rep switches. */}
+        <div className="say-pane" hidden={tab !== "transcript"}>
           {transcript({ sources, onTap: liveHelp ? onTap : null, tapHelp: words.say.tapBubble })}
         </div>
-        {hasSteps && ui.tab === "steps" && <StepsSheet />}
+        {hasSteps && (
+          <div className="say-pane" hidden={tab !== "steps"}>
+            <StepsTab />
+          </div>
+        )}
         <SayPeeks />
       </div>
       <SayBar onRespond={respond} />
@@ -206,6 +212,37 @@ const PersonIcon = ({ size = 11 }) => (
   </svg>
 );
 
+/** Pasos | Transcripción, under Qué decir. A step that ticks while the rep is on the transcript pulses Pasos once (no
+ * count: a live "2/6" reads as a score of the rep). */
+function SayTabs() {
+  const { live, ui, update, act, words } = useSay();
+  const progress = live.progress;
+  const doneSteps = progress.steps.filter((s) => (`step:${s.id}` in ui.marks ? ui.marks[`step:${s.id}`] : s.done)).length;
+  const pulse = useGrowPulse(doneSteps);
+  const pick = (tab: SayUi["tab"]) => {
+    if (tab === ui.tab) return;
+    if (tab === "steps") act({ name: "liveEvent", event: "open_steps" });
+    update({ tab, peek: null });
+  };
+  const tabs: { id: SayUi["tab"]; label: string; icon: ReactNode }[] = [
+    { id: "steps", label: words.say.steps.label, icon: <ConversationIcon size={11} /> },
+    { id: "transcript", label: words.tabs.transcript, icon: <TranscriptIcon size={11} /> },
+  ];
+  return (
+    <div className="live-tabs-row say-tabs-row">
+      <div className="postcall-tabs live-tabs" role="tablist" aria-label={words.views}>
+        {tabs.map((t) => (
+          <button key={t.id} type="button" role="tab" aria-selected={ui.tab === t.id} className="postcall-tab live-tab" data-active={ui.tab === t.id} title={t.id === "steps" ? words.say.steps.help : t.label} onClick={() => pick(t.id)}>
+            {t.id === "steps" && ui.tab !== "steps" && pulse > 0 && <span key={pulse} className="type-note-pulse live-pulse" aria-hidden />}
+            <span className="live-tab-icon">{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** Asking, at the foot: Responder, Resumen, and who the call is with. Resumen and the contact open over the tabs; a second
  * tap closes them. */
 function SayBar({ onRespond }: { onRespond: () => void }) {
@@ -217,10 +254,10 @@ function SayBar({ onRespond }: { onRespond: () => void }) {
     if (ui.peek === kind) return update({ peek: null, askStep: null });
     if (kind === "recap") {
       act({ name: "liveAsk", ask: "recap" });
-      return update({ peek: kind, tab: "transcript", askStep: null, recap: { state: "reading", after: live.asks.recap?.seq ?? 0 } });
+      return update({ peek: kind, askStep: null, recap: { state: "reading", after: live.asks.recap?.seq ?? 0 } });
     }
     act({ name: "liveEvent", event: "open_brief" });
-    update({ peek: kind, tab: "transcript", askStep: null });
+    update({ peek: kind, askStep: null });
   };
   const say = words.say;
   return (

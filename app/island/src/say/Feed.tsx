@@ -275,14 +275,9 @@ export function Feed() {
     }
   }
 
-  // Nothing open, being written or just dealt with: Qué decir takes no room, and the transcript has the space.
-  const empty =
-    !tail && !fresh && live.offlineSince === null && !points.some((p) => p.live || now - (endedAt.current.get(p.id) ?? -Infinity) < ACK_MS);
   return (
     <div
       className="say-feed"
-      data-empty={empty}
-      aria-label={empty ? say.quiet : undefined}
       ref={ref}
       onWheel={(event) => { if (event.deltaY < 0) away.current = true; }}
       onPointerEnter={() => {
@@ -304,7 +299,10 @@ export function Feed() {
       {fresh && (
         <button type="button" className="say-fresh" onClick={catchUp} title={say.freshHelp}>{say.fresh}</button>
       )}
-      {empty ? null : (
+      {points.length === 0 && !tail ? (
+        // Nothing yet: an empty space with the view's name, small, at the top left.
+        <div className="say-quiet" title={say.quiet} aria-label={say.quiet}><span className="say-label">{say.label}</span></div>
+      ) : (
         <FollowScroll follow={false} still={still}>
           <div className="say-list">
             {points.map((point) => (

@@ -202,8 +202,15 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
         title: text(peek?.querySelector('.say-panel-head')),
         facts: all('.say-fact', peek).length,
         recapLines: all('.live-recap li', peek).length,
-        tab: text(document.querySelector('.say-tabs-row .live-tab[data-active="true"]')),
-        rows: all('.say-pane:not([hidden]) .say-steps-tab .say-step').length,
+        // The steps line over the transcript, and the sheet it opens (2026-11-09: the transcript is the main view).
+        line: text(document.querySelector('.say-steps-line .say-line-text')),
+        lineSkipped: document.querySelector('.say-steps-line')?.dataset.skipped === 'true',
+        sheet: !!document.querySelector('.say-sheet'),
+        rows: all('.say-sheet .say-step').length,
+        skipped: all('.say-sheet .say-step[data-skipped="true"] .say-step-text').map(text),
+        coveredWhy: all('.say-sheet .say-covered-why').length,
+        empty: document.querySelector('.say-feed')?.dataset.empty === 'true',
+        transcript: !!document.querySelector('.say-views .transcript-wrap'),
         current: text(document.querySelector('.say-now-label')),
         parts: all('.say-part').length,
         partsDone: all('.say-part[data-done="true"]').length,
@@ -367,7 +374,9 @@ for (const fixture of fixtures) {
       // The stack the spec fixes: Qué decir 100 high under the controls, the bar 40 at the foot, the transcript between.
       const st = m.say.stack;
       // Its own 84 px, except when an open answer needs more: then it grows to hold it (never cut, 2026-11-09).
-      if (fixture.expect.say?.grown ? !(st.feed?.height > 84) : st.feed?.height !== 84) problems.push(`Qué decir is ${st.feed?.height}px high in a ${st.island?.height}px island, expected ${fixture.expect.say?.grown ? "more than " : ""}84`);
+      // With nothing to say it takes no room (2026-11-09); with a card, its own 84 px, or more for a long answer.
+      const want = m.say?.empty ? 0 : 84;
+      if (fixture.expect.say?.grown ? !(st.feed?.height > 84) : st.feed?.height !== want) problems.push(`Qué decir is ${st.feed?.height}px high in a ${st.island?.height}px island, expected ${fixture.expect.say?.grown ? "more than " : ""}${want}`);
       if (st.bar?.height !== 40 || st.bar?.top + st.bar?.height !== st.island?.top + st.island?.height) problems.push(`bar at ${st.bar?.top}/${st.bar?.height}, expected 40 high at the foot of the ${st.island?.height}px island`);
       if (m.say.cut) problems.push(`${m.say.cut} text(s) cut by their box`);
       // The transcript stays between Qué decir and the bar: no bubble is drawn over the bar.

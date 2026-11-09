@@ -84,7 +84,22 @@ type SayStrings = {
   thatTurn: string;
   respond: { label: string; help: string };
   recap: { label: string; help: string };
-  steps: { label: string; help: string };
+  /** The steps line over the transcript, and the sheet it opens. */
+  steps: {
+    label: string;
+    help: string;
+    /** The line: the steps still to cover after the one the call is on. */
+    left: (names: string[]) => string;
+    /** The line: steps the call went past without covering. */
+    skippedLine: (names: string[]) => string;
+    allDone: string;
+    /** The sheet. */
+    missing: string;
+    covered: (count: number) => string;
+    skipped: string;
+    onNow: string;
+    close: string;
+  };
   contactHelp: string;
   recapTitle: (at: string) => string;
   recapReading: string;
@@ -178,7 +193,18 @@ const ES: Strings = {
     thatTurn: "esa frase",
     respond: { label: "Responder", help: "Qué digo ahora" },
     recap: { label: "Resumen", help: "Lo que sabes y lo que ha pasado" },
-    steps: { label: "Pasos", help: "Los pasos del playbook" },
+    steps: {
+      label: "Pasos",
+      help: "Abre los pasos del playbook",
+      left: (names) => `faltan ${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""}`,
+      skippedLine: (names) => `Saltado: ${names.slice(0, 2).join(", ")}${names.length > 2 ? "…" : ""}`,
+      allDone: "Todos los pasos cubiertos",
+      missing: "Por cubrir",
+      covered: (count) => `Cubiertos · ${count}`,
+      skipped: "Saltado",
+      onNow: "Ahora",
+      close: "Volver a la transcripción",
+    },
     contactHelp: "Quién es, antes de esta llamada",
     recapTitle: (at) => `Resumen · hasta el ${at}`,
     recapReading: "Resumiendo",
@@ -273,7 +299,18 @@ const EN: Strings = {
     thatTurn: "that line",
     respond: { label: "Respond", help: "What do I say now" },
     recap: { label: "Recap", help: "What you know and what happened" },
-    steps: { label: "Steps", help: "The playbook's steps" },
+    steps: {
+      label: "Steps",
+      help: "Open the playbook's steps",
+      left: (names) => `${names.slice(0, 3).join(", ")}${names.length > 3 ? "…" : ""} left`,
+      skippedLine: (names) => `Skipped: ${names.slice(0, 2).join(", ")}${names.length > 2 ? "…" : ""}`,
+      allDone: "Every step covered",
+      missing: "To cover",
+      covered: (count) => `Covered · ${count}`,
+      skipped: "Skipped",
+      onNow: "Now",
+      close: "Back to the transcript",
+    },
     contactHelp: "Who they are, before this call",
     recapTitle: (at) => `Recap · up to ${at}`,
     recapReading: "Summing up",

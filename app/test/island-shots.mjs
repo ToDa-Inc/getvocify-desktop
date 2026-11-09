@@ -222,6 +222,13 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
           const wrap = document.querySelector('.say-views .transcript-wrap')?.getBoundingClientRect();
           return bar && wrap ? Math.max(0, Math.round(wrap.bottom - bar.top)) : 0;
         })(),
+        // The open answer is in view whole (Qué decir grows to hold it), and the zone grew past its own 84 px for it.
+        whole: (() => {
+          const box = document.querySelector('.say-feed .live-scroll')?.getBoundingClientRect();
+          const card = [...cards].reverse().find((c) => c.dataset.live === 'true')?.getBoundingClientRect();
+          return !!(box && card && card.top >= box.top - 1 && card.bottom <= box.bottom + 1);
+        })(),
+        grown: (document.querySelector('.say-feed')?.getBoundingClientRect().height ?? 0) > 85,
         // Nothing the view writes is cut by its box (the faded history clamps on purpose).
         cut: all('.say-card[data-live="true"] .say-text, .say-step-q, .say-now-q, .say-now-concept, .say-line, .live-recap li').filter((e) => e.scrollHeight > e.clientHeight + 1).length,
       };
@@ -359,7 +366,8 @@ for (const fixture of fixtures) {
     if (m.say) {
       // The stack the spec fixes: Qué decir 100 high under the controls, the bar 40 at the foot, the transcript between.
       const st = m.say.stack;
-      if (st.feed?.height !== 84) problems.push(`Qué decir is ${st.feed?.height}px high, expected 84`);
+      // Its own 84 px, except when an open answer needs more: then it grows to hold it (never cut, 2026-11-09).
+      if (fixture.expect.say?.grown ? !(st.feed?.height > 84) : st.feed?.height !== 84) problems.push(`Qué decir is ${st.feed?.height}px high in a ${st.island?.height}px island, expected ${fixture.expect.say?.grown ? "more than " : ""}84`);
       if (st.bar?.height !== 40 || st.bar?.top + st.bar?.height !== st.island?.top + st.island?.height) problems.push(`bar at ${st.bar?.top}/${st.bar?.height}, expected 40 high at the foot of the ${st.island?.height}px island`);
       if (m.say.cut) problems.push(`${m.say.cut} text(s) cut by their box`);
       // The transcript stays between Qué decir and the bar: no bubble is drawn over the bar.

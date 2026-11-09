@@ -107,6 +107,12 @@ function Offline({ since }: { since: number }) {
   );
 }
 
+/** Qué decir's own height (say.css .say-feed), its padding, and how much of the panel an open answer may take. */
+const FEED_HEIGHT = 84;
+// Its padding (6 + 6) and the 2 px the list keeps above and below a card it brings into view.
+const FEED_PADDING = 16;
+const FEED_MAX_SHARE = 0.55;
+
 export function Feed() {
   const { live, ui, update, act, points, words, liveHelp, still } = useSay();
   const say = words.say;
@@ -154,18 +160,35 @@ export function Feed() {
     autoUntil.current = nowMs() + 700;
     box.scrollTo({ top: Math.max(0, top), behavior: smooth && !still ? "smooth" : "auto" });
   };
+  // An answer is never cut (2026-11-09): the zone grows to hold the open card whole, up to about half the panel (then it
+  // scrolls inside), and goes back to its own height when nothing is open. History never makes it grow.
+  const fit = () => {
+    const feed = ref.current;
+    if (!feed) return;
+    const open = liveIds.length ? feed.querySelector<HTMLElement>(`[data-id="${CSS.escape(target.current ?? "")}"]`) : null;
+    const room = Math.round((feed.parentElement?.clientHeight ?? 0) * FEED_MAX_SHARE);
+    const card = open ? Math.ceil(open.getBoundingClientRect().height) : 0;
+    // Grows only for a card its own height cannot hold whole; then exactly as much as that card needs.
+    const fits = card + FEED_PADDING <= FEED_HEIGHT;
+    feed.style.height = !fits && room > FEED_HEIGHT ? `${Math.min(card + FEED_PADDING, room)}px` : "";
+  };
   const signature = `${liveIds.join(",")}|${points.length}`;
   // While a card is being written it grows: the list keeps it in view, unless the rep scrolled up to read.
   useEffect(() => {
     const list = ref.current?.querySelector(".say-list");
     if (!list) return;
     const observer = new ResizeObserver(() => {
-      if (!reading() && nowMs() >= holdUntil.current) show(target.current, false);
+      // The height is set on the next frame: set inside the observer it would resize what is observed in the same pass.
+      requestAnimationFrame(() => {
+        fit();
+        if (!reading() && nowMs() >= holdUntil.current) show(target.current, false);
+      });
     });
     observer.observe(list);
     return () => observer.disconnect();
   });
   useEffect(() => {
+    fit();
     const before = seen.current;
     const arrived = liveIds.some((id) => !before.live.includes(id)) || points.length > before.count;
     seen.current = { live: liveIds, count: points.length };

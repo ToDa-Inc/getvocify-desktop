@@ -234,6 +234,11 @@ const S_DEEPEN = sayPoint(point("deepen", "deepen", "Dolor", "el CRM se rellena 
   answer: "¿Y cuánto tiempo os lleva a la semana perseguirles para que lo rellenen?",
   source: "Playbook · Dejar hablar y profundizar",
 }), ["t4"]);
+// A playbook answer of three sentences: shown whole, never cut (2026-11-09).
+const S_LONG = sayPoint(point("long", "objection", "Somos pocos vehículos", "somos pocos vehículos, no nos compensa", 150, {
+  answer: "Precisamente en flotas pequeñas un solo vehículo que no vuelve o un kilometraje que no se factura se nota mucho. En la reunión lo calculamos con vuestro número de vehículos y vemos si os compensa o no. ¿Cuántos vehículos tenéis ahora mismo en alquiler?",
+  source: "Playbook · Somos pocos vehículos",
+}), ["t6"]);
 const S_FRESH = sayPoint({ ...HUBSPOT, id: "fresh", saidAt: 148 }, ["t6"]);
 const S_DRAFT = { ...draft("¿y cuánto cuesta?", "Depende del número de comerciales. ¿Cuántos so"), turnIds: [], versions: [] };
 
@@ -264,6 +269,7 @@ const NEXT = { kind: "data", id: "n_comerciales", label: "N.º de comerciales", 
 
 export const sayFixtures = [
   { name: "say-empty", state: recording(sayView()), expect: { ...SAY, say: { cards: 0, quiet: "Qué decir", bar: ["Responder", "Resumen"], tab: "Pasos", contact: "Marta Ruiz", peek: null } } },
+  { name: "say-long-answer", state: recording(sayView([S_HUBSPOT, S_LONG])), expect: { ...SAY, say: { cards: 2, text: S_LONG.answer, cut: 0, whole: true, grown: true } } },
   { name: "say-answer", state: recording(sayView([S_HUBSPOT])), expect: { ...SAY, say: { cards: 1, kinds: ["Respuesta"], text: HUBSPOT.answer, sources: ["t6"] } } },
   { name: "say-kinds", state: recording(sayView([S_TIMING, S_DEEPEN, S_SINCE, S_HUBSPOT])), expect: { ...SAY, say: { cards: 4, kinds: ["No está en tu conocimiento", "Respuesta", "Puedes preguntar", "Respuesta"], faded: 1 } } },
   { name: "say-writing", state: recording(sayView([S_HUBSPOT, S_DRAFT])), expect: { ...SAY, say: { cards: 2, caret: true } } },

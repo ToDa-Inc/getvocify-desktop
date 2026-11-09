@@ -200,8 +200,9 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: bash ../scripts/import-apple-cert.sh
 
-      # A self-signed certificate signs only once macOS trusts it for code signing (electron-builder lists valid
-      # identities only). The runner cannot answer the trust prompt, so the admin trust right is opened first.
+      # The runner cannot be made to trust a self-signed certificate (macOS refuses the trust change without a
+      # person). It does not need to: codesign signs with it by SHA-1 once its keychain is on the search list, which
+      # import-apple-cert.sh does, and build/sign-vocify-dev.cjs hands electron-builder that SHA-1.
       - name: Import the Vocify Dev certificate
         if: steps.signing.outputs.mode == 'vocify-dev'
         env:
@@ -209,11 +210,7 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.VOCIFY_DEV_CERT_PASSWORD }}
         run: |
           bash ../scripts/import-apple-cert.sh
-          keychain="$RUNNER_TEMP/vocify-signing.keychain-db"
-          security find-certificate -c "Vocify Dev" -p "$keychain" > "$RUNNER_TEMP/vocify-dev.pem"
-          sudo security authorizationdb write com.apple.trust-settings.admin allow
-          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/vocify-dev.pem"
-          security find-identity -v -p codesigning "$keychain" | grep -q '"Vocify Dev"'
+          security find-identity -p codesigning "$RUNNER_TEMP/vocify-signing.keychain-db" | grep -q 70D4242A077672091CF69A7C118A8671C0995D8F
 
       # Developer ID: signed with the imported identity (CSC_* are set by import-apple-cert.sh) and notarized.
       # No secrets: whatever electron-builder finds (nothing on a runner), for hand-testing.

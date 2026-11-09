@@ -24,6 +24,8 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
 
     /// The first callback was reported (`io`): the device really runs.
     private var reportedIO = false
+    /// How long each part of `open()` took, in ms, sent with `started`: a slow start then says which part was slow.
+    private var timings: [String: String] = [:]
 
 
     private let queue = DispatchQueue(label: "vocify.helper.tap", qos: .userInteractive)
@@ -49,7 +51,7 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
                 return
             }
             self.lastWriteAt = Date()
-            status(["event": "started"])
+            status(["event": "started"].merging(self.timings) { first, _ in first })
             self.watch()
         }
     }
@@ -81,10 +83,18 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
     // MARK: The tap and the device it is read through (on `queue`)
 
     private func open() -> Bool {
-        let description = CATapDescription(monoGlobalTapButExcludeProcesses: Self.vocifyProcesses())
+        var mark = Date()
+        let lap = { (name: String) in
+            self.timings[name] = String(Int((Date().timeIntervalSince(mark) * 1000).rounded()))
+            mark = Date()
+        }
+        let excluded = Self.vocifyProcesses()
+        lap("processes_ms")
+        let description = CATapDescription(monoGlobalTapButExcludeProcesses: excluded)
         description.isPrivate = true
         description.muteBehavior = .unmuted
         guard AudioHardwareCreateProcessTap(description, &tap) == noErr else { return false }
+        lap("tap_ms")
         guard let output = Self.defaultDevice(kAudioHardwarePropertyDefaultSystemOutputDevice),
               let outputUID = Self.string(output, kAudioDevicePropertyDeviceUID) else {
             close()
@@ -105,6 +115,7 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
             close()
             return false
         }
+        lap("device_ms")
         var asbd = AudioStreamBasicDescription()
         var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         var formatAddress = Self.address(kAudioTapPropertyFormat)
@@ -125,6 +136,7 @@ final class TapAudioCapture: AudioCapture, @unchecked Sendable {
             close()
             return false
         }
+        lap("start_ms")
         return true
     }
 

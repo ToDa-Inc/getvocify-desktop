@@ -757,7 +757,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     islandPlacement: { get: placementSetting, set: setPlacement },
     emit: (channel, payload) => dashboard.emit(channel, payload),
     updates: { status: updateStatus, check: () => updater?.check() },
-    dashboardWindow: { compact: () => dashboard.compact, setCompact: (on) => dashboard.setCompact(on) },
+    dashboardWindow: { compact: () => dashboard.compact, setCompact: (on, options) => dashboard.setCompact(on, options) },
     showMainWindow: () => dashboard.show(),
     microphoneAccess: () => systemPreferences.getMediaAccessStatus("microphone"),
     askMicrophone: platform === "darwin" ? () => systemPreferences.askForMediaAccess("microphone") : undefined,

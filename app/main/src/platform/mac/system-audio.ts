@@ -50,6 +50,7 @@ export function createMacSystemAudio(deps: {
   const capture = (helper: HelperChild) =>
     new Promise<{ ok: boolean; reason?: string }>((resolve) => {
       const session = { helper, stopping: false };
+      const spawnedAt = Date.now();
       let started = false;
       let lostReason: string | null = null;
       let settled = false;
@@ -75,6 +76,12 @@ export function createMacSystemAudio(deps: {
         jsonLines((event) => {
           if (event.event === "started") {
             started = true;
+            // Where a slow start spent its time: the Core Audio steps the helper measured, and the rest (its launch).
+            const parts = ["processes_ms", "tap_ms", "device_ms", "start_ms"].filter((key) => typeof event[key] === "string");
+            const inHelper = parts.reduce((sum, key) => sum + Number(event[key]), 0);
+            if (parts.length) {
+              deps.log?.(`system audio helper: ${parts.map((key) => `${key.replace("_ms", "")} ${event[key]} ms`).join(", ")}, launch ${Date.now() - spawnedAt - inHelper} ms`);
+            }
             settle({ ok: true });
           } else if (event.event === "error") {
             settle({ ok: false, reason: typeof event.reason === "string" ? event.reason : "capture_failed" });

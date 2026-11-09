@@ -233,6 +233,7 @@ function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | n
   const lostListeners = new Set<(r: string) => void>();
   const micListeners = new Set<(p: ArrayBuffer) => void>();
   let compact = false;
+  const compactCalls: { on: boolean; callEnded: boolean }[] = [];
   const startOptions: ({ mic?: boolean } | undefined)[] = [];
   let loopbackStops = 0;
   let loopbackStarts = 0;
@@ -296,9 +297,9 @@ function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | n
     relaunch: () => {},
     fetch: async () => ({ status: 200, text: async () => "{}" }),
     log: (line) => logs.push(line),
-    ...(options.compactWindow ? { dashboardWindow: { compact: () => compact, setCompact: (on: boolean) => (compact = on) } } : {}),
+    ...(options.compactWindow ? { dashboardWindow: { compact: () => compact, setCompact: (on: boolean, how?: { callEnded?: boolean }) => (compactCalls.push({ on, callEnded: how?.callEnded === true }), (compact = on)) } } : {}),
   };
-  return { loopbackStarts: () => loopbackStarts, call: createBridge(deps), dialed, calendarWatches, emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, micListeners, startOptions, loopbackStops: () => loopbackStops };
+  return { loopbackStarts: () => loopbackStarts, call: createBridge(deps), dialed, calendarWatches, emitted, opened, logs, controller, mainWindow: () => mainWindow, pcmListeners, lostListeners, micListeners, startOptions, loopbackStops: () => loopbackStops, compactCalls };
 }
 
 test("bridge: the permission test shows both permissions as not asked until the dashboard asks for each", async () => {
@@ -549,5 +550,9 @@ test("bridge: the dashboard window turns compact and back, and says it is not wh
   assert.deepEqual(await t.call("window:setCompact", { compact: true }), { compact: true });
   assert.deepEqual(await t.call("window:setCompact", { compact: "yes" }), { compact: true }, "only a boolean changes it");
   assert.deepEqual(await t.call("window:setCompact", { compact: false }), { compact: false });
+  assert.deepEqual(t.compactCalls.at(-1), { on: false, callEnded: false }, "the rep's own expand keeps the window in view");
+  await t.call("window:setCompact", { compact: true });
+  await t.call("window:setCompact", { compact: false, callEnded: true });
+  assert.deepEqual(t.compactCalls.at(-1), { on: false, callEnded: true }, "a call that ended says so to the window");
   assert.deepEqual(await bridgeSetup().call("window:setCompact", { compact: true }), { compact: false });
 });

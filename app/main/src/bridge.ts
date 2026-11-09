@@ -36,7 +36,7 @@ export type BridgeDeps = {
   /** The app's version and self-update, for the dashboard's Settings ("updates:changed" carries each change). */
   updates?: { status(): UpdateStatus; check(): void };
   /** The dashboard's compact window (compact.ts). Absent where the app has no such window. */
-  dashboardWindow?: { compact(): boolean; setCompact(on: boolean): boolean };
+  dashboardWindow?: { compact(): boolean; setCompact(on: boolean, options?: { callEnded?: boolean }): boolean };
   showMainWindow(): void;
   /** Electron's `getMediaAccessStatus('microphone')`. */
   microphoneAccess(): string;
@@ -161,7 +161,7 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
       case "window:get":
         return { compact: deps.dashboardWindow?.compact() ?? false };
       case "window:setCompact":
-        if (typeof args.compact === "boolean") deps.dashboardWindow?.setCompact(args.compact);
+        if (typeof args.compact === "boolean") deps.dashboardWindow?.setCompact(args.compact, { callEnded: args.callEnded === true });
         return { compact: deps.dashboardWindow?.compact() ?? false };
       case "island:setPlacement":
         if (args.placement === "notch" || args.placement === "side") deps.islandPlacement.set(args.placement);

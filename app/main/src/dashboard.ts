@@ -41,6 +41,8 @@ export class DashboardHost {
   private permissionsSet = false;
   /** The window's size and place before it became compact; null while it is not compact. */
   private compactFrom: Rectangle | null = null;
+  /** The window was in view when it became compact (the rep had the dashboard open). */
+  private shownBeforeCompact = false;
 
   constructor(options: DashboardOptions) {
     this.options = options;
@@ -197,15 +199,18 @@ export class DashboardHost {
 
   /**
    * The compact window (compact.ts): narrow at the right of its screen and above the other windows, or back to the size
-   * and place it had. The page is told either way (`window:compact`), so every view of it agrees.
+   * and place it had. The page is told either way (`window:compact`), so every view of it agrees. `callEnded`: the call is
+   * over, so a window that was out of sight before the call (a recording started from the island) goes back out of sight
+   * instead of coming up whole over what the rep is doing.
    */
-  setCompact(on: boolean): boolean {
+  setCompact(on: boolean, options?: { callEnded?: boolean }): boolean {
     const win = this.window && !this.window.isDestroyed() ? this.window : null;
     if (!win || on === this.compact) return this.compact;
     if (on) {
       if (win.isFullScreen()) win.setFullScreen(false);
       if (win.isMaximized()) win.unmaximize();
       this.compactFrom = win.getBounds();
+      this.shownBeforeCompact = win.isVisible() && !win.isMinimized();
       win.setMinimumSize(COMPACT_MIN_SIZE.width, COMPACT_MIN_SIZE.height);
       win.setBounds(compactBounds(screen.getDisplayMatching(this.compactFrom).workArea));
       win.setAlwaysOnTop(true, "floating");
@@ -213,10 +218,11 @@ export class DashboardHost {
       const from = this.compactFrom!;
       this.compactFrom = null;
       win.setAlwaysOnTop(false);
+      if (options?.callEnded && !this.shownBeforeCompact) win.hide();
       win.setMinimumSize(FULL_MIN_SIZE.width, FULL_MIN_SIZE.height);
       win.setBounds(from);
     }
-    this.options.log(`dashboard window ${on ? "compact" : "back to its size"}`);
+    this.options.log(`dashboard window ${on ? "compact" : win.isVisible() ? "back to its size" : "back to its size, out of sight"}`);
     this.emit("window:compact", { compact: this.compact });
     return this.compact;
   }

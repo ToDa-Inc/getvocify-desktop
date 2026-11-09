@@ -19,7 +19,8 @@ reports no refusal: the tap then hears silence.
 - **stdout**: raw PCM, signed 16-bit little-endian, mono, 16 000 Hz, continuous, in chunks of any size. The app cuts it
   into 3200-byte (100 ms) frames. When nothing plays, silence is written, so the stream never stalls.
 - **stderr**, JSON lines:
-  - `{"event":"started"}` once capture runs.
+  - `{"event":"started"}` once capture runs. On macOS 14.2+ it also carries how long each step took, in ms, as strings:
+    `processes_ms` (finding Vocify's own processes), `tap_ms`, `device_ms` (the aggregate device), `start_ms`.
   - `{"event":"io"}` once the tap's device really runs (its first callback; macOS 14.2+).
   - `{"event":"error","reason":"<code>"}` then exit 1, when capture cannot start: `capture_failed`, and before
     macOS 14.2 `permission_denied` (Screen & System Audio Recording is off).

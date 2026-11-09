@@ -422,3 +422,14 @@ test("Mac capture: a mic helper that sends no audio is stopped and the page reco
   helpers.audio.stdout.emit("data", Buffer.alloc(3200));
   assert.deepEqual(call, [1600]);
 });
+
+test("Mac capture: the log says where a start spent its time (the helper's Core Audio steps, and its launch)", async () => {
+  const helper = fakeHelper();
+  const logs: string[] = [];
+  const audio = createMacSystemAudio({ spawn: () => helper as unknown as HelperChild, micAllowed: () => false, log: (l) => logs.push(l) });
+  const started = audio.start();
+  line(helper.stderr, { event: "started", processes_ms: "4", tap_ms: "12", device_ms: "7000", start_ms: "30" });
+  assert.deepEqual(await started, { ok: true, mic: false });
+  assert.match(logs.join("\n"), /system audio helper: processes 4 ms, tap 12 ms, device 7000 ms, start 30 ms, launch -?\d+ ms/);
+  await audio.stop();
+});

@@ -8,7 +8,7 @@
 //   No está en tu conocimiento   Vocify cannot answer it; a full card, amber; ends "✓ Apuntado para el seguimiento"
 //   Puedes preguntar             an opportunity to go deeper; an outlined card, never a task; ends "✓ Preguntado"
 //   Te falta saber               Responder with nothing to answer; an outlined card
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Check } from "../icons.tsx";
 import { TypingDots } from "../TypingDots.tsx";
 import { nowMs, useNow } from "../useNow.ts";
@@ -187,7 +187,9 @@ export function Feed() {
     observer.observe(list);
     return () => observer.disconnect();
   });
-  useEffect(() => {
+  // Before the frame is painted: a new answer is drawn already whole and in view, never cut for a frame first. As a
+  // passive effect this ran after the paint, which on a slow computer (the Windows runner) came long after the card.
+  useLayoutEffect(() => {
     fit();
     const before = seen.current;
     const arrived = liveIds.some((id) => !before.live.includes(id)) || points.length > before.count;

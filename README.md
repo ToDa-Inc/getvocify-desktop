@@ -15,7 +15,7 @@ Native macOS app with the Vocify dashboard embedded — records Zoom, Meet, and 
 
 ## Install (teammates)
 
-See **[docs/INSTALL.md](docs/INSTALL.md)** — download a DMG from [Releases](https://github.com/ToDa-Inc/getvocify-desktop/releases) or build locally with a signing cert.
+See **[docs/INSTALL.md](docs/INSTALL.md)**: one Terminal command, or the DMG from [Releases](https://github.com/ToDa-Inc/getvocify-desktop/releases) (macOS asks "Open Anyway" once). The app then updates itself.
 
 Quick start after install:
 

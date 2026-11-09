@@ -5,6 +5,7 @@ import type { PhoneDialer, PhoneDialFailure } from "./platform/types.ts";
 import { APP_INFO, MAC_SYSTEM_AUDIO_SETTINGS_URL, callAudioSettingsUrl, microphoneSettingsUrl, permissionSnapshot } from "./permissions.ts";
 import { saasRequest, type SaasResult } from "./saas.ts";
 import type { KeyEvent, ShortcutManager } from "./shortcut.ts";
+import type { UpdateStatus } from "./updater.ts";
 
 /**
  * What the dashboard can ask of the desktop shell: the operations behind `window.vocifyDesktop`, the same set as the
@@ -32,6 +33,8 @@ export type BridgeDeps = {
   islandPlacement: { get(): "notch" | "side"; set(placement: "notch" | "side"): void };
   /** To the dashboard page (`__vocifyEmit`). */
   emit(channel: string, payload: unknown): void;
+  /** The app's version and self-update, for the dashboard's Settings ("updates:changed" carries each change). */
+  updates?: { status(): UpdateStatus; check(): void };
   /** The dashboard's compact window (compact.ts). Absent where the app has no such window. */
   dashboardWindow?: { compact(): boolean; setCompact(on: boolean): boolean };
   showMainWindow(): void;
@@ -243,6 +246,11 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
         return permissions();
       case "permissions:appInfo":
         return APP_INFO;
+      case "updates:status":
+        return deps.updates?.status() ?? null;
+      case "updates:check":
+        deps.updates?.check();
+        return deps.updates?.status() ?? null;
       case "shell:state":
         if (typeof args.state === "object" && args.state !== null) {
           const state = args.state as Args;

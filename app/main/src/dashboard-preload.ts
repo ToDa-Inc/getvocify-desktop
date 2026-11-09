@@ -104,6 +104,13 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
     set: (combo: Record<string, unknown>) => call("shortcut:set", combo),
     clear: () => call("shortcut:clear"),
   },
+  // The app's version and self-update ({ version, state: "unavailable" | "idle" | "checking" | "current" |
+  // "downloading" | "ready" | "failed", ... }); `check` asks now, and each change arrives on `onChanged`.
+  updates: {
+    status: () => call("updates:status"),
+    check: () => call("updates:check"),
+    onChanged: on("updates:changed"),
+  },
   drafts: {
     save: (draft: object) => call("drafts:save", { draft }),
     list: () => call("drafts:list"),

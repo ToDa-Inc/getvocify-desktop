@@ -19,6 +19,7 @@ import { createLogger } from "./logger.ts";
 import { createAudioTrace, createTranscriptTrace } from "./transcript-trace.ts";
 import { JsonSettings } from "./settings.ts";
 import { ShortcutManager } from "./shortcut.ts";
+import type { UpdateState, UpdateStatus } from "./updater.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { micChoices, trayItems } from "./tray-menu.ts";
 import { launchCounts, parsePs, parseTasklist, processName, resourceLine, trackedChildren } from "./resources.ts";
@@ -73,8 +74,10 @@ export type AppHandle = {
   startedAfterUpdate: boolean;
   /** Called just before an update restarts the app. */
   markUpdateRestart(): void;
-  /** What "Check for updates" in the tray menu does (set by the updater, which starts after the app). */
-  onCheckForUpdates(fn: () => void): void;
+  /** The updater, which starts after the app: "Check for updates" in the tray and the dashboard's Settings use it. */
+  attachUpdater(updater: { check(): void; state(): UpdateState }): void;
+  /** The updater's state changed: the dashboard's Settings is told. */
+  updateStateChanged(state: UpdateState): void;
   /** Writes a line to the app's log file. */
   log(message: string): void;
   quit(): void;
@@ -605,7 +608,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     }, 420);
   };
 
-  let checkForUpdates: (() => void) | null = null;
+  let updater: { check(): void; state(): UpdateState } | null = null;
+  const updateStatus = (): UpdateStatus => ({ version: app.getVersion(), ...(updater?.state() ?? { state: "unavailable" }) });
   const dashboardHost = (() => {
     try {
       return new URL(options.dashboardUrl).hostname || "demo";
@@ -752,6 +756,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     callOnPhone: { get: () => settings.get("callOnPhone") === true, set: (on) => settings.set("callOnPhone", on) },
     islandPlacement: { get: placementSetting, set: setPlacement },
     emit: (channel, payload) => dashboard.emit(channel, payload),
+    updates: { status: updateStatus, check: () => updater?.check() },
     dashboardWindow: { compact: () => dashboard.compact, setCompact: (on) => dashboard.setCompact(on) },
     showMainWindow: () => dashboard.show(),
     microphoneAccess: () => systemPreferences.getMediaAccessStatus("microphone"),
@@ -1097,7 +1102,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     canInstallUpdate: () => !controller.isListening && !recordingOrFinishing() && controller.state.postCall === null,
     startedAfterUpdate,
     markUpdateRestart: () => settings.set("restartedForUpdate", true),
-    onCheckForUpdates: (fn) => void (checkForUpdates = fn),
+    attachUpdater: (attached) => {
+      updater = attached;
+      dashboard.emit("updates:changed", updateStatus());
+    },
+    updateStateChanged: () => dashboard.emit("updates:changed", updateStatus()),
     log,
     quit: () => app.quit(),
   };
@@ -1187,7 +1196,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
         if (item.id === "open") dashboard.show();
         else if (item.id === "record") controller.shortcutPressed();
         else if (item.id === "stop") controller.act({ name: "stop" });
-        else if (item.id === "update") checkForUpdates?.();
+        else if (item.id === "update") updater?.check();
         else if (item.id === "permissions") void shell.openExternal(microphoneSettingsUrl(platform));
         else app.quit();
       };

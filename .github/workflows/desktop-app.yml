@@ -165,9 +165,12 @@ jobs:
           bash native/mac-panel/build.sh
           test -f native/mac-panel/dist/mac_panel.node
 
-      # A Mac app is offered to installed apps only when it is signed with the Developer ID AND notarized: macOS
-      # refuses to update to anything else. Without all five secrets the build below is for hand-testing only.
-      - name: Is this build signed?
+      # Installed Macs update only to an app signed with the same certificate as the one they run. Two ways to sign:
+      # - developer-id: the five Apple secrets. Notarized: opens with a double-click.
+      # - vocify-dev: the team's own "Vocify Dev" certificate (VOCIFY_DEV_CERT_BASE64 + VOCIFY_DEV_CERT_PASSWORD).
+      #   macOS asks "Open Anyway" once on first install; updates install by themselves (tried 2026-11-09).
+      # Neither: the build is for hand-testing only and is not published.
+      - name: How is this build signed?
         id: signing
         env:
           CERT: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
@@ -175,23 +178,47 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          DEV_CERT: ${{ secrets.VOCIFY_DEV_CERT_BASE64 }}
+          DEV_CERT_PASSWORD: ${{ secrets.VOCIFY_DEV_CERT_PASSWORD }}
         run: |
           if [ -n "$CERT" ] && [ -n "$CERT_PASSWORD" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM" ]; then
+            echo "mode=developer-id" >> "$GITHUB_OUTPUT"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$DEV_CERT" ] && [ -n "$DEV_CERT_PASSWORD" ]; then
+            echo "mode=vocify-dev" >> "$GITHUB_OUTPUT"
             echo "signed=true" >> "$GITHUB_OUTPUT"
           else
+            echo "mode=none" >> "$GITHUB_OUTPUT"
             echo "signed=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::Apple signing secrets are missing: this Mac build is for hand-testing and will not be published."
+            echo "::warning::No Mac signing secrets: this Mac build is for hand-testing and will not be published."
           fi
 
       - name: Import Developer ID certificate
+        if: steps.signing.outputs.mode == 'developer-id'
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: bash ../scripts/import-apple-cert.sh
 
-      # Signed with the identity from the imported keychain (CSC_* are set by import-apple-cert.sh) and notarized when
-      # APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID are set.
+      # A self-signed certificate signs only once macOS trusts it for code signing (electron-builder lists valid
+      # identities only). The runner cannot answer the trust prompt, so the admin trust right is opened first.
+      - name: Import the Vocify Dev certificate
+        if: steps.signing.outputs.mode == 'vocify-dev'
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.VOCIFY_DEV_CERT_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.VOCIFY_DEV_CERT_PASSWORD }}
+        run: |
+          bash ../scripts/import-apple-cert.sh
+          keychain="$RUNNER_TEMP/vocify-signing.keychain-db"
+          security find-certificate -c "Vocify Dev" -p "$keychain" > "$RUNNER_TEMP/vocify-dev.pem"
+          sudo security authorizationdb write com.apple.trust-settings.admin allow
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/vocify-dev.pem"
+          security find-identity -v -p codesigning "$keychain" | grep -q '"Vocify Dev"'
+
+      # Developer ID: signed with the imported identity (CSC_* are set by import-apple-cert.sh) and notarized.
+      # No secrets: whatever electron-builder finds (nothing on a runner), for hand-testing.
       - name: Build the app
+        if: steps.signing.outputs.mode != 'vocify-dev'
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "true"
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -199,9 +226,23 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run dist:mac
 
+      # Vocify Dev: no hardened runtime (with a self-signed certificate macOS kills a hardened app at launch) and no
+      # notarization, the same build as `dist:mac:local`.
+      - name: Build the app (Vocify Dev)
+        if: steps.signing.outputs.mode == 'vocify-dev'
+        run: npm run dist:mac:self-signed
+
       - name: Verify code signature
         if: steps.signing.outputs.signed == 'true'
         run: codesign --verify --deep --strict release/mac-universal/Vocify.app
+
+      # Installed apps compare the update's certificate with their own: a different "Vocify Dev" (a new one, or a
+      # teammate's) would be downloaded and then refused on every Mac. Fail here instead.
+      - name: Signed with the team's Vocify Dev certificate
+        if: steps.signing.outputs.mode == 'vocify-dev'
+        run: |
+          codesign -d -r- release/mac-universal/Vocify.app 2>&1 | tee /dev/stderr \
+            | grep -q 'certificate leaf = H"70d4242a077672091cf69a7c118a8671c0995d8f"'
 
       - name: Helper is inside the app
         run: |
@@ -247,7 +288,7 @@ jobs:
           if [ "${{ needs.mac.outputs.signed }}" = "true" ]; then
             test "$(sed -n 's/^version: //p' release/latest-mac.yml)" = "$version"
           else
-            echo "::warning::No signed Mac build: release v$version has Windows files only; installed Mac apps get no update."
+            echo "::warning::No signed Mac build (no Mac signing secrets): release v$version has Windows files only; installed Mac apps get no update."
           fi
           ls -l release
           # Pre-release: the app's updater is set to read pre-releases (app/main/src/updater.ts).

@@ -70,8 +70,9 @@ if (!app.requestSingleInstanceLock()) {
           },
           log: (message) => handle?.log(`update: ${message}`),
           beforeInstall: () => handle?.markUpdateRestart(),
+          onState: (state) => handle?.updateStateChanged(state),
         });
-        handle?.onCheckForUpdates(updates.check);
+        handle?.attachUpdater(updates);
       }
       // The smoke test also proves the bundled update library loads, since an installed build depends on it.
       if (smoke) await import("electron-updater");

@@ -83,17 +83,27 @@ the `publish` box decides whether the result is released, off by default).
 
 - **Version:** `0.4.<commit count of main>`. It only grows on `main`, and both systems get the same number. (A
   per-workflow run number would restart at 1 in a new workflow and installed apps would never see it as newer.)
-- **Mac needs the Apple secrets** (`APPLE_CERTIFICATE_BASE64`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`,
-  `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`). Without all five, the Mac build is for hand-testing only: the
-  release then holds Windows files only, because macOS refuses to update to an app that is not signed with the same
-  Developer ID and notarized. A warning in the run says so.
+- **Mac signing.** An installed Mac app updates only to a build signed with the same certificate as itself. The
+  `mac` job signs one of two ways:
+  - **Vocify Dev** (what is used today): secrets `VOCIFY_DEV_CERT_BASE64` (the team's "Vocify Dev" identity as a
+    base64 `.p12`) and `VOCIFY_DEV_CERT_PASSWORD`. Built like `dist:mac:local`: no hardened runtime, no notarization.
+    Installs ask "Open Anyway" once (or use the one-line installer, [INSTALL.md](INSTALL.md)); updates then install
+    by themselves. Tried on 2026-11-09: a Vocify Dev 0.4.900 updated itself to 0.4.901 through electron-updater, from
+    the tray and from Settings. The job fails if the build is not signed with that exact certificate (SHA-1
+    `70D4242A077672091CF69A7C118A8671C0995D8F`, valid until 2028-12-31): any other one would be downloaded by every
+    Mac and then refused.
+  - **Developer ID** (once there is an Apple Developer account): the five Apple secrets (`APPLE_CERTIFICATE_BASE64`,
+    `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`) take precedence:
+    hardened runtime and notarization, no "Open Anyway". Apps signed with Vocify Dev will not update to it (a
+    different certificate): each Mac reinstalls once, and `scripts/install-mac.sh` needs the new certificate's check.
+  - Neither: the Mac build is for hand-testing only and the release holds Windows files only. A warning says so.
 - The legacy Swift app has its own workflows (`release-mac.yml`, `release-windows.yml`); they do not touch the
   Electron app.
 
 ### What that means
 
 - A merge to `main` that changes `app/` reaches every installed Windows app within 30 minutes of the workflow
-  finishing, and every installed Mac app too once the Apple secrets are set.
+  finishing, and every installed Mac app too once the Mac signing secrets are set (above).
 - Dashboard and backend changes need no release at all.
 - To hand someone a build without releasing: run the workflow by hand with `publish` off and send the
   `Vocify-Windows` or `Vocify-macOS` artifact. A local Mac build (`dist:mac:local`) runs only on the machine that made it.
@@ -101,5 +111,5 @@ the `publish` box decides whether the result is released, off by default).
 
 ## What is missing
 
-- Apple Developer ID secrets in the repo (not verified: listing secrets needs admin access).
+- An Apple Developer ID (Mac installs ask "Open Anyway" once without it; see Mac signing above).
 - Windows installers are unsigned ("unknown publisher" on first install). Auto-update works without a signature.

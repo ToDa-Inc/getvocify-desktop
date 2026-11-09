@@ -15,7 +15,10 @@ function setup(canInstall: () => boolean) {
     on: (event: string, listener: (arg: never) => void) => void (handlers[event] = listener),
   } as unknown as UpdateSource;
   const logs: string[] = [];
+  const states: string[] = [];
   const updater = startUpdater({
+    onState: (s) => void states.push(s.state),
+    now: () => 1000,
     source,
     canInstallNow: canInstall,
     every: (ms, fn) => {
@@ -26,8 +29,34 @@ function setup(canInstall: () => boolean) {
     log: (m) => logs.push(m),
     beforeInstall: () => void (calls.before += 1),
   });
-  return { source, handlers, timers, calls, logs, stop: () => updater.stop(), check: () => updater.check() };
+  return { source, handlers, timers, calls, logs, states, updater, stop: () => updater.stop(), check: () => updater.check() };
 }
+
+test("Settings sees each step: checking, then up to date", () => {
+  const t = setup(() => true);
+  assert.deepEqual(t.updater.state(), { state: "idle" });
+  t.handlers["checking-for-update"](undefined as never);
+  t.handlers["update-not-available"](undefined as never);
+  assert.deepEqual(t.states, ["checking", "current"]);
+  assert.deepEqual(t.updater.state(), { state: "current", checkedAt: 1000 });
+});
+
+test("Settings sees a newer build download and become ready; a later check does not hide it", () => {
+  const t = setup(() => false);
+  t.handlers["checking-for-update"](undefined as never);
+  t.handlers["update-available"]({ version: "0.4.9" } as never);
+  t.handlers["update-downloaded"]({ version: "0.4.9" } as never);
+  t.handlers["checking-for-update"](undefined as never);
+  t.handlers.error(new Error("offline") as never);
+  assert.deepEqual(t.states, ["checking", "downloading", "ready"]);
+  assert.deepEqual(t.updater.state(), { state: "ready", next: "0.4.9" });
+});
+
+test("a failed check says why", () => {
+  const t = setup(() => true);
+  t.handlers.error(new Error("net::ERR_INTERNET_DISCONNECTED") as never);
+  assert.deepEqual(t.updater.state(), { state: "failed", reason: "net::ERR_INTERNET_DISCONNECTED", checkedAt: 1000 });
+});
 
 test("it downloads in the background, accepts pre-releases and checks now and then every half hour", () => {
   const t = setup(() => true);

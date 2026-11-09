@@ -31,6 +31,10 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   let handle: Awaited<ReturnType<typeof startApp>> | null = null;
   app.on("second-instance", () => handle?.dashboard.show());
+  // A Mac opens a running app again (its Dock icon, Spotlight, the Applications folder) with `activate`, not a second
+  // instance: without this nothing came up while the dashboard was hidden. The island is never made active, so its
+  // clicks do not fire it.
+  app.on("activate", () => handle?.dashboard.show());
   // Closing every window must not quit: the island is always there.
   app.on("window-all-closed", () => {});
   // Electron emits `ready` only after an ES-module entry has finished loading, so no top-level await here.

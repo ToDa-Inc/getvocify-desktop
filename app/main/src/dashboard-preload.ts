@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
   island: {
     get: () => call("island:get"),
     setPlacement: (placement: "notch" | "side") => call("island:setPlacement", { placement }),
+    // Left out of screen shares and screenshots ({ hiddenFromCapture }).
+    setHiddenFromCapture: (on: boolean) => call("island:setHiddenFromCapture", { on }),
   },
   // The dashboard's own window: compact (narrow at the side of the screen, above the call) or its usual size ({ compact }).
   window: {

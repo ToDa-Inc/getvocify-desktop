@@ -495,6 +495,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   // Above the menu bar and the taskbar, on every desktop, over full-screen windows.
   island.setAlwaysOnTop(true, "screen-saver");
   island.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  // The rep's choice: the island stays out of what a screen share or a screenshot shows (macOS and Windows).
+  island.setContentProtection(settings.get("islandHiddenFromCapture") === true);
 
   type Frame = { x: number; y: number; width: number; height: number };
   /**
@@ -756,6 +758,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     takeRunningLoopback: () => callSound?.handOver() ?? false,
     callOnPhone: { get: () => settings.get("callOnPhone") === true, set: (on) => settings.set("callOnPhone", on) },
     islandPlacement: { get: placementSetting, set: setPlacement },
+    islandHiddenFromCapture: {
+      get: () => settings.get("islandHiddenFromCapture") === true,
+      set: (on) => {
+        settings.set("islandHiddenFromCapture", on);
+        island.setContentProtection(on);
+        log(`island: ${on ? "left out of" : "shown in"} screen shares and screenshots`);
+      },
+    },
     emit: (channel, payload) => dashboard.emit(channel, payload),
     updates: { status: updateStatus, check: () => updater?.check() },
     dashboardWindow: { compact: () => dashboard.compact, setCompact: (on, options) => dashboard.setCompact(on, options) },

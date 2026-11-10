@@ -234,8 +234,12 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
                 <span title="Your mic isn't sending audio" aria-label="Your mic isn't sending audio" className="warn-icon">
                   <AlertCircle size={12} />
                 </span>
-              ) : state.callAudioLost && (
+              ) : state.callAudioLost ? (
                 <span title="Not hearing the call: only your mic is recording" aria-label="Can't hear the call" className="warn-icon">
+                  <AlertCircle size={12} />
+                </span>
+              ) : state.transcriptPaused && (
+                <span title="Transcript paused: your call is still being recorded" aria-label="Transcript paused" className="warn-icon">
                   <AlertCircle size={12} />
                 </span>
               )}
@@ -958,7 +962,7 @@ export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
       {state.keypadOpen && state.dial?.phase === "active" && keypadAnchor && (
         <KeypadPopover anchor={keypadAnchor} onDigit={(digit) => act({ name: "digit", digit })} onClose={closeKeypad} />
       )}
-      {state.micSilent && !state.paused ? <MicSilentLine state={state} /> : state.callAudioLost && !state.paused ? <CallAudioLostLine /> : <MicNoticeLine state={state} />}
+      {state.micSilent && !state.paused ? <MicSilentLine state={state} /> : state.callAudioLost && !state.paused ? <CallAudioLostLine /> : state.transcriptPaused && !state.paused ? <TranscriptPausedLine /> : <MicNoticeLine state={state} />}
       {state.live?.view === "say" ? (
         // The live assistant, "Qué decir": what to say on top, the transcript, and the asks at the foot.
         <SayBody
@@ -1002,6 +1006,18 @@ function MicSilentLine({ state }: { state: IslandState }) {
       <div>
         <div className="lost-title">Your mic isn't sending audio</div>
         <div className="lost-body">{micSilentBody(state) ?? "Check it isn't muted and that the right input is selected."}</div>
+      </div>
+    </div>
+  );
+}
+
+function TranscriptPausedLine() {
+  return (
+    <div className="lost-line">
+      <AlertCircle size={11} style={{ color: "var(--warning)", marginTop: 2 }} />
+      <div>
+        <div className="lost-title">Transcript paused</div>
+        <div className="lost-body">We may be updating our servers. Your call is still being recorded.</div>
       </div>
     </div>
   );

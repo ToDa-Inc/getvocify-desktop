@@ -13,6 +13,7 @@ const base = {
   paused: false,
   recorderReady: true,
   callAudioLost: false,
+  transcriptPaused: false,
   micSilent: false,
   callContact: null,
   clock: { startedAt: NOW - CALL_SECONDS * 1000, pausedMs: 0, pausedAt: null },

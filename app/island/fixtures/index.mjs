@@ -14,6 +14,7 @@ const base = {
   paused: false,
   recorderReady: true,
   callAudioLost: false,
+  transcriptPaused: false,
   micSilent: false,
   callContact: null,
   clock: null,
@@ -253,6 +254,7 @@ export const fixtures = [
   { name: "recording-open-channel-list", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: channelTypeMenu, liveHelp: true }, steps: [".type-tag-button"], expect: { width: 460, height: 400 } },
   { name: "recording-open-channel-no-type", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Type", placeholder: true, proposed: false, channel: { title: "Reunión", rows: [{ key: "call", label: "Llamada", checked: false }, { key: "meeting", label: "Reunión", checked: true }] } }, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-audio-lost", state: { mode: { kind: "recording" }, expanded: true, clock: clock(95), turns: turns.slice(0, 2), typeMenu, liveHelp: true, callAudioLost: true }, expect: { width: 460, height: 400 } },
+  { name: "recording-open-transcript-paused", state: { mode: { kind: "recording" }, expanded: true, clock: clock(95), turns: turns.slice(0, 2), typeMenu, liveHelp: true, transcriptPaused: true }, expect: { width: 460, height: 400 } },
   // Which mic records the rep: Chromium's names for the mics, as the dashboard reports them.
   { name: "recording-open-mic-notice", state: { mode: { kind: "recording" }, expanded: true, clock: clock(12), turns: turns.slice(0, 2), typeMenu, liveHelp: true, mic: micFellBack }, expect: { width: 460, height: 400 } },
   { name: "recording-open-mic-list", state: { mode: { kind: "recording" }, expanded: true, clock: clock(12), turns: turns.slice(0, 2), typeMenu, liveHelp: true, mic: micFellBack }, steps: [".mic-line .type-tag-button"], expect: { width: 460, height: 400 } },

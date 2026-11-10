@@ -501,6 +501,15 @@ test("losing the call's audio opens a closed recording island once", () => {
   assert.equal(t.controller.state.expanded, false, "no change, no reopening");
 });
 
+test("a paused transcript opens a closed recording island, and clears", () => {
+  const t = recording();
+  t.controller.applyShellState({ transcriptPaused: true });
+  assert.equal(t.controller.state.transcriptPaused, true);
+  assert.equal(t.controller.state.expanded, true);
+  t.controller.applyShellState({ transcriptPaused: false });
+  assert.equal(t.controller.state.transcriptPaused, false);
+});
+
 test("a silent mic opens a closed recording island, and clears", () => {
   const t = recording();
   t.controller.applyShellState({ micSilent: true });

@@ -286,6 +286,8 @@ export type IslandState = {
   paused: boolean;
   recorderReady: boolean;
   callAudioLost: boolean;
+  /** The server's words stopped coming back (its speech-to-text is failing): the audio is still recorded. */
+  transcriptPaused: boolean;
   /** The mic has sent only silence for a while (muted, or the wrong input): the dashboard watches it. */
   micSilent: boolean;
   callContact: string | null;

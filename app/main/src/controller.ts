@@ -148,6 +148,7 @@ export class IslandController {
       paused: false,
       recorderReady: options.recorderReady ?? false,
       callAudioLost: false,
+      transcriptPaused: false,
       micSilent: false,
       callContact: null,
       clock: null,
@@ -255,6 +256,11 @@ export class IslandController {
     if (typeof update.callAudioLost === "boolean" && update.callAudioLost !== this.current.callAudioLost) {
       audioChange = [this.current.callAudioLost, update.callAudioLost];
       patch.callAudioLost = update.callAudioLost;
+    }
+    if (typeof update.transcriptPaused === "boolean" && update.transcriptPaused !== this.current.transcriptPaused) {
+      // Opens the island like a lost audio side: the rep sees why no words come, even with the dashboard hidden.
+      audioChange ??= [this.current.transcriptPaused, update.transcriptPaused];
+      patch.transcriptPaused = update.transcriptPaused;
     }
     if (typeof update.micSilent === "boolean" && update.micSilent !== this.current.micSilent) {
       // Opens the island the same way: a recording that hears nothing must say so even with the dashboard hidden.

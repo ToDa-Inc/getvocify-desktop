@@ -400,7 +400,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       return urls;
     },
     emit: (urls) => {
-      lastCrm = urls.length > 0 ? { urls: [...urls], at: Date.now() } : null;
+      // A browser window in front that is no CRM page (a dialer such as Ringover opened over Pipedrive) does not forget the
+      // record: a call within CRM_SEEN_FOR_MS is still with it. A CRM page in front (a list too) replaces it.
+      if (urls.length > 0) lastCrm = { urls: [...urls], at: Date.now() };
       dashboard.emit("crm:screen", { urls });
       // A call is on offer and the rep moves to another contact before pressing Record: the offer names the new one.
       // Once recording, the contact is the one it started with (the dashboard keeps it), so nothing is sent.

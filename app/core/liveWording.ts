@@ -75,6 +75,12 @@ type SayStrings = {
   question: string;
   /** A point spotted, its answer not written yet. */
   spotted: string;
+  /** The brain is reading (a reading is in flight). */
+  thinking: string;
+  /** The answers before the one on screen. */
+  older: string;
+  /** The step the call is on. */
+  now: string;
   fresh: string;
   freshHelp: string;
   readingMinute: string;
@@ -169,6 +175,9 @@ const ES: Strings = {
     quiet: "Aquí sale qué decir cuando el cliente pregunta, objeta o cuenta algo importante.",
     question: "Pregunta",
     spotted: "Preparando…",
+    thinking: "Pensando",
+    older: "Respuestas anteriores",
+    now: "Ahora",
     fresh: "Nuevo ↓",
     freshHelp: "Hay algo nuevo abajo",
     readingMinute: "Leyendo el último minuto",
@@ -264,6 +273,9 @@ const EN: Strings = {
     quiet: "What to say shows up here when they ask, object or say something important.",
     question: "Question",
     spotted: "Preparing…",
+    thinking: "Thinking",
+    older: "Earlier answers",
+    now: "Now",
     fresh: "New ↓",
     freshHelp: "Something new below",
     readingMinute: "Reading the last minute",

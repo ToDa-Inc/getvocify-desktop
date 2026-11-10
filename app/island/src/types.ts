@@ -157,6 +157,8 @@ export type LiveView = {
   /** "say": the Qué decir view (spec revised 2026-10-19); "tabs": the tabs view of 2026-10-16. */
   view: "say" | "tabs";
   contact: LiveContact | null;
+  /** A reading of the brain is in flight right now (asked, not answered yet): «Pensando». */
+  working?: boolean;
 };
 
 /** A rep's ask or action in the live assistant, forwarded to the dashboard (`shell.onLiveAction`). */

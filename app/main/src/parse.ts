@@ -411,6 +411,7 @@ export function parseLiveBrain(raw: unknown): LiveView | null {
     offlineSince: num(raw.offline_since) ?? null,
     view: raw.view === "say" ? "say" : "tabs",
     contact: parseLiveContact(raw.contact),
+    working: isRaw(raw.reading) ? bool(raw.reading.points) ?? false : false,
   };
 }
 

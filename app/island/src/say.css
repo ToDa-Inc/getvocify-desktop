@@ -2,8 +2,23 @@
    specification"). Values are the approved prototype's, in the island's own tokens (island.css) and on top of live.css
    (scroll, peek, recap, nodes, bar). No new colours. */
 
-/* ---------- Qué decir: a fixed height, one card and a glimpse of the one before ---------- */
-.say-feed { position: relative; flex: none; height: 84px; display: flex; flex-direction: column; padding: 6px 0; }
+/* ---------- Qué decir: a fixed height, one answer and the line the brain's work shows on ---------- */
+.say-feed { position: relative; flex: none; height: 102px; display: flex; flex-direction: column; padding: 6px 0; }
+/* The brain working, at the foot, always there (so it never moves the answer): empty, or the dots and «Pensando». */
+.say-work { flex: none; height: 18px; display: flex; align-items: flex-end; padding: 0 16px 0 25px; }
+.say-thinking { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: rgba(255, 255, 255, 0.5); animation: say-now-in 200ms var(--ease); }
+.say-thinking .dots { opacity: 0.6; }
+/* One answer at a time: the one a new answer takes the place of leaves as a line; the ones before it are already gone.
+   The icon on the answer's first line brings them all back, as the list they are. */
+.say-feed[data-older="false"] .say-card[data-live="false"] { flex: none; animation: say-leave 2600ms var(--ease) forwards; }
+.say-feed[data-older="false"] .say-card[data-live="false"] .say-text { display: none; }
+.say-feed[data-older="false"] .say-card[data-live="false"]:has(~ .say-card[data-live="false"]) { display: none; }
+@keyframes say-leave { 0%, 62% { max-height: 30px; opacity: 0.5; } 100% { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; margin-bottom: -6px; } }
+.say-older { position: absolute; z-index: 2; top: 11px; right: 21px; display: inline-flex; align-items: center; gap: 3px; height: 16px; padding: 0 5px; border-radius: 8px;
+  font-size: 10px; font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, 0.38); cursor: pointer; transition: color 120ms, background 120ms; }
+.say-older:hover { color: var(--secondary); background: rgba(255, 255, 255, 0.08); }
+.say-older[data-on="true"] { color: var(--beige); background: rgba(219, 192, 154, 0.16); }
+.say-feed[data-past="true"] .say-said { padding-right: 34px; }
 .say-feed .live-scroll { flex: 1; min-height: 0; padding: 0 14px; overflow-anchor: none; }
 .say-list { display: flex; flex-direction: column; gap: 6px; }
 .say-quiet { flex: 1; min-height: 0; position: relative; margin: 0 14px; }
@@ -94,12 +109,31 @@
   overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .say-steps-tab::-webkit-scrollbar { display: none; }
 .say-steps-tab .say-step-label { flex: 1; max-width: none; }
-/* The step that matters now: open and bright. What it asks, its parts as they are heard, the brain's question. */
-.say-now-step { display: flex; flex-direction: column; gap: 5px; margin: 1px -7px; padding: 8px 10px 9px; border-radius: 10px;
-  background: rgba(219, 192, 154, 0.1); box-shadow: inset 0 0 0 0.5px rgba(219, 192, 154, 0.32); animation: say-now-in 220ms var(--ease) both; }
-.say-now-step .live-node { border-color: var(--beige); }
-.say-now-label { min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.say-now-concept, .say-parts, .say-now-q, .say-now-ask { margin-left: 22px; }
+/* Pasos (2026-11-10): a line of progress, every step an equal row; the one the call is on carries «Ahora», a pending one
+   a question mark so it reads as something to press. A tap opens the row. */
+.say-progress { flex: none; display: flex; gap: 4px; margin: 0 0 5px; }
+.say-progress i { flex: 1; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); transition: background 400ms; }
+.say-progress i[data-s="done"] { background: var(--beige); }
+.say-progress i[data-s="now"] { background: rgba(219, 192, 154, 0.5); animation: say-progress-now 1.6s ease-in-out infinite; }
+@keyframes say-progress-now { 50% { opacity: 0.45; } }
+.say-row { flex: none; margin: 0 -7px; padding: 1px 7px; border-radius: 9px; transition: background 160ms; }
+.say-row:hover { background: rgba(255, 255, 255, 0.04); }
+.say-row[data-open="true"] { background: rgba(255, 255, 255, 0.06); padding-bottom: 8px; }
+.say-row-main { flex: 1; min-width: 0; height: 22px; display: flex; align-items: center; gap: 6px; padding: 0; text-align: left; font-size: 12px; color: var(--secondary); cursor: pointer; }
+.say-row-main .say-step-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.say-row[data-done="true"] .say-row-main { color: rgba(255, 255, 255, 0.45); }
+.say-row[data-now="true"] .say-row-main, .say-row[data-open="true"] .say-row-main { color: var(--text); }
+.say-row[data-now="true"] .live-node { border-color: var(--beige); }
+.say-now-mark { flex: none; display: inline-flex; align-items: center; height: 15px; padding: 0 6px; border-radius: 8px; font-size: 10px; color: var(--beige); background: rgba(219, 192, 154, 0.16); }
+.say-row-q { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: rgba(255, 255, 255, 0.32); transition: color 120ms; }
+.say-row-q span { display: none; }
+.say-row:hover .say-row-q, .say-row[data-open="true"] .say-row-q { color: var(--beige); }
+.say-row:hover .say-row-q span, .say-row[data-open="true"] .say-row-q span { display: inline; }
+.say-row-body { display: flex; flex-direction: column; gap: 5px; margin: 3px 0 0 22px; animation: say-now-in 200ms var(--ease) both; }
+.say-row-body > :is(.say-now-concept, .say-parts, .say-now-q, .say-step-q) { margin-left: 0; }
+.say-chip-value { color: rgba(255, 255, 255, 0.5); max-width: 150px; }
+.say-now-label { min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.say-now-concept, .say-parts, .say-now-q { margin-left: 22px; }
 .say-now-concept { font-size: 11.5px; line-height: 1.35; color: var(--secondary); }
 .say-parts, .say-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .say-part, .say-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; height: 20px; padding: 0 8px; border-radius: 10px; font-size: 11px;
@@ -108,9 +142,6 @@
 .say-part svg, .say-chip svg { flex: none; color: var(--beige); animation: say-pop 420ms var(--ease); }
 .say-part-need { font-size: 10.5px; color: rgba(255, 255, 255, 0.4); }
 .say-now-q { font-size: 12px; line-height: 1.4; color: var(--text); user-select: text; }
-.say-now-ask { align-self: flex-start; padding: 0; font-size: 11.5px; color: var(--beige); cursor: pointer; }
-.say-now-ask:hover { text-decoration: underline; text-underline-offset: 3px; }
-.say-now-step .say-step-q { margin-left: 22px; }
 /* What to find out: chips that tick themselves; the chip is the tick. */
 .say-find { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .say-chip { cursor: pointer; }
@@ -141,7 +172,9 @@
 :root[data-platform="win32"] :is(.say-card, .say-line, .say-step-q) { user-select: none; }
 
 /* reduced motion: nothing sweeps, pops or glides; it just appears */
-.island[data-reduce-motion="true"] :is(.say-card, .say-ended svg, .say-step .live-node svg, .say-now-step, .say-part svg, .say-chip svg) { animation: none; }
+.island[data-reduce-motion="true"] :is(.say-card, .say-ended svg, .say-step .live-node svg, .say-row-body, .say-thinking, .say-progress i, .say-part svg, .say-chip svg) { animation: none; }
+/* Without motion the answer that was replaced is simply gone (after its check, when it had one). */
+.island[data-reduce-motion="true"] .say-feed[data-older="false"] .say-card[data-live="false"][data-ended="none"] { display: none; }
 .island[data-reduce-motion="true"] .say-sweep { display: none; }
 .island[data-reduce-motion="true"] .say-card { transition: none; }
 .island[data-reduce-motion="true"] .say-step-text::after { transition: none; }

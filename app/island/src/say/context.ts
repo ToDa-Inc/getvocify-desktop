@@ -30,10 +30,12 @@ export type SayUi = {
   askStep: { kind: "step" | "data"; id: string; after: number; at: number } | null;
   /** "Otra forma" being written for a card: `had` versions when it was asked. */
   rewrite: { id: string; had: number; after: number; at: number } | null;
+  /** The answers before the one on screen are shown (the icon on the answer's first line). */
+  older: boolean;
 };
 
 export const initialSayUi = (): SayUi => ({
-  peek: null, tab: "steps", respond: null, recap: null, flashId: null, flashAt: null, reopened: [], dismissed: [], marks: {}, askStep: null, rewrite: null,
+  peek: null, tab: "steps", respond: null, recap: null, flashId: null, flashAt: null, reopened: [], dismissed: [], marks: {}, askStep: null, rewrite: null, older: false,
 });
 
 /** A card as the rep sees it: the rep's ✓ and Responder's bringing back applied. */

@@ -1,6 +1,8 @@
-// "Qué decir" as a list, like a chat: everything the prospect said that needed an answer, in the order they said it, the
-// newest at the bottom. What is still open is bright; what has been dealt with fades where it is. The list follows the
-// newest unless the rep scrolled up to read something. Nothing replaces anything and nothing hides behind a counter.
+// "Qué decir", one answer at a time (2026-11-10): the open answer is whole; the one it takes the place of shrinks to a
+// line and leaves (say.css); the ones before come back from the small icon on the answer's first line, as the list they
+// are underneath (everything said that needed an answer, in order, the dealt-with ones faded). At the foot, always in the
+// same place, the brain working: the dots and «Pensando» while a reading is really in flight. It promises no text: when
+// the reading ends with nothing it just stops.
 //
 // One fixed map, so every card reads the same way: the first line says what kind of help it is (or how it ended) and the
 // prospect's words; the second is what to say.
@@ -31,6 +33,7 @@ const kindOf = (point: SayPoint): Kind => (point.kind === "deepen" ? "explore" :
 const quoted = (title: string) => (/^[«"]/.test(title) ? title : `«${title}»`);
 
 const icon = (size: number) => ({ width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2.2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true });
+const HistoryIcon = () => <svg {...icon(11)}><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" /></svg>;
 const ReplyIcon = () => <svg {...icon(10)}><path d="m9 17-5-5 5-5" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></svg>;
 const KIND_ICON: Record<Kind, () => ReactNode> = { answer: ReplyIcon, unknown: () => <InfoIcon size={10} />, explore: () => <QuestionIcon size={10} /> };
 
@@ -107,8 +110,12 @@ function Offline({ since }: { since: number }) {
   );
 }
 
-/** Qué decir's own height (say.css .say-feed), its padding, and how much of the panel an open answer may take. */
-const FEED_HEIGHT = 84;
+/** «Pensando» waits this long: a reading that ends at once (most are skipped by the backend) never flashes it. */
+const THINKING_AFTER_MS = 400;
+/** Qué decir's own height (say.css .say-feed: a two-line answer and the line the brain's work shows on), its padding,
+ * that line, and how much of the panel an open answer may take. */
+const FEED_HEIGHT = 102;
+const WORK_ROW = 18;
 // Its padding (6 + 6) and the 2 px the list keeps above and below a card it brings into view.
 const FEED_PADDING = 16;
 const FEED_MAX_SHARE = 0.55;
@@ -167,12 +174,27 @@ export function Feed() {
     if (!feed) return;
     const open = liveIds.length ? feed.querySelector<HTMLElement>(`[data-id="${CSS.escape(target.current ?? "")}"]`) : null;
     const room = Math.round((feed.parentElement?.clientHeight ?? 0) * FEED_MAX_SHARE);
-    const card = open ? Math.ceil(open.getBoundingClientRect().height) : 0;
+    // With the earlier answers brought back, the whole list counts: it gets the room, and scrolls inside past it.
+    const list = older ? feed.querySelector<HTMLElement>(".say-list") : null;
+    const card = list ? Math.ceil(list.getBoundingClientRect().height) : open ? Math.ceil(open.getBoundingClientRect().height) : 0;
     // Grows only for a card its own height cannot hold whole; then exactly as much as that card needs.
-    const fits = card + FEED_PADDING <= FEED_HEIGHT;
-    feed.style.height = !fits && room > FEED_HEIGHT ? `${Math.min(card + FEED_PADDING, room)}px` : "";
+    const need = card + FEED_PADDING + WORK_ROW;
+    feed.style.height = need > FEED_HEIGHT && room > FEED_HEIGHT ? `${Math.min(need, room)}px` : "";
   };
-  const signature = `${liveIds.join(",")}|${points.length}`;
+  // The answers before the one on screen: how many, and whether the rep brought them back.
+  const past = points.filter((p) => !p.live && !p.draft).length;
+  const older = ui.older && past > 0;
+  // The brain working: only once the reading has been in flight a moment, and not over a card that already says so.
+  const working = Boolean(live.working) && !points.some((p) => p.draft);
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    if (!working) return setHeld(false);
+    const timer = window.setTimeout(() => setHeld(true), THINKING_AFTER_MS);
+    return () => window.clearTimeout(timer);
+  }, [working]);
+  // Without motion (or with a pinned clock) it does not wait: it is there with the reading.
+  const thinking = working && (held || still);
+  const signature = `${liveIds.join(",")}|${points.length}|${older}`;
   // While a card is being written it grows: the list keeps it in view, unless the rep scrolled up to read.
   useEffect(() => {
     const list = ref.current?.querySelector(".say-list");
@@ -244,6 +266,16 @@ export function Feed() {
   useNow(500, [...endedAt.current.values()].some((at) => now - at < ACK_MS));
 
   if (!liveHelp) return <div className="say-feed"><div className="say-quiet">{words.helpOff}</div></div>;
+  const work = (
+    <div className="say-work" aria-live="polite">
+      {thinking && (
+        <span className="say-thinking">
+          <TypingDots />
+          <span>{say.thinking}</span>
+        </span>
+      )}
+    </div>
+  );
 
   const respond = ui.respond;
   const from = respond?.from === "turn" ? say.thatTurn : say.lastMinute;
@@ -278,6 +310,8 @@ export function Feed() {
   return (
     <div
       className="say-feed"
+      data-older={older}
+      data-past={past > 0}
       ref={ref}
       onWheel={(event) => { if (event.deltaY < 0) away.current = true; }}
       onPointerEnter={() => {
@@ -298,6 +332,12 @@ export function Feed() {
       {live.offlineSince !== null && <Offline since={live.offlineSince} />}
       {fresh && (
         <button type="button" className="say-fresh" onClick={catchUp} title={say.freshHelp}>{say.fresh}</button>
+      )}
+      {past > 0 && (
+        <button type="button" className="say-older" data-on={older} title={say.older} aria-label={say.older} aria-pressed={older} onClick={() => update({ older: !ui.older })}>
+          <HistoryIcon />
+          <span>{past}</span>
+        </button>
       )}
       {points.length === 0 && !tail ? (
         // Nothing yet: an empty space with the view's name, small, at the top left.
@@ -321,6 +361,7 @@ export function Feed() {
           </div>
         </FollowScroll>
       )}
+      {work}
     </div>
   );
 }

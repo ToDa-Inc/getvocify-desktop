@@ -106,3 +106,15 @@ test("no further checks once an update is downloaded, and errors are logged, nev
   t.stop();
   assert.ok(t.timers.every((x) => x.stopped));
 });
+
+test("Restart now installs the downloaded build at once, and refuses while a recording makes it wait", () => {
+  let busy = true;
+  const t = setup(() => !busy);
+  assert.equal(t.updater.install(), false, "nothing downloaded yet");
+  t.handlers["update-downloaded"]({ version: "0.4.9" } as never);
+  assert.equal(t.updater.install(), false, "still recording");
+  assert.equal(t.calls.installs.length, 0);
+  busy = false;
+  assert.equal(t.updater.install(), true);
+  assert.deepEqual(t.calls.installs, [[true, true]]);
+});

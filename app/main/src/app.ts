@@ -75,7 +75,7 @@ export type AppHandle = {
   /** Called just before an update restarts the app. */
   markUpdateRestart(): void;
   /** The updater, which starts after the app: "Check for updates" in the tray and the dashboard's Settings use it. */
-  attachUpdater(updater: { check(): void; state(): UpdateState }): void;
+  attachUpdater(updater: { check(): void; install(): boolean; state(): UpdateState }): void;
   /** The updater's state changed: the dashboard's Settings is told. */
   updateStateChanged(state: UpdateState): void;
   /** Writes a line to the app's log file. */
@@ -613,7 +613,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     }, 420);
   };
 
-  let updater: { check(): void; state(): UpdateState } | null = null;
+  let updater: { check(): void; install(): boolean; state(): UpdateState } | null = null;
   const updateStatus = (): UpdateStatus => ({ version: app.getVersion(), ...(updater?.state() ?? { state: "unavailable" }) });
   const dashboardHost = (() => {
     try {
@@ -769,7 +769,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       },
     },
     emit: (channel, payload) => dashboard.emit(channel, payload),
-    updates: { status: updateStatus, check: () => updater?.check() },
+    updates: { status: updateStatus, check: () => updater?.check(), install: () => updater?.install() ?? false },
     dashboardWindow: { compact: () => dashboard.compact, setCompact: (on, options) => dashboard.setCompact(on, options) },
     showMainWindow: () => dashboard.show(),
     microphoneAccess: () => systemPreferences.getMediaAccessStatus("microphone"),
@@ -1112,14 +1112,19 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     detectCall: (caller) => controller.callChanged(caller),
     iconFor,
     permissions: () => bridge("permissions:status", {}),
-    canInstallUpdate: () => !controller.isListening && !recordingOrFinishing() && controller.state.postCall === null,
+    // A call's card left open waits for the rep, not for the app: its note and updates are on the call's page after the restart.
+    canInstallUpdate: () =>
+      !controller.isListening && !recordingOrFinishing() && !["writing", "applying"].includes(controller.state.postCall?.stage ?? ""),
     startedAfterUpdate,
     markUpdateRestart: () => settings.set("restartedForUpdate", true),
     attachUpdater: (attached) => {
       updater = attached;
       dashboard.emit("updates:changed", updateStatus());
     },
-    updateStateChanged: () => dashboard.emit("updates:changed", updateStatus()),
+    updateStateChanged: () => {
+      dashboard.emit("updates:changed", updateStatus());
+      refreshTray(controller.state);
+    },
     log,
     quit: () => app.quit(),
   };
@@ -1190,7 +1195,13 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   }
 
   function trayTemplate(state: IslandState): Electron.MenuItemConstructorOptions[] {
-    const items = trayItems(state, `Vocify ${app.getVersion()} · ${dashboardHost}`, microphoneLabel(systemPreferences.getMediaAccessStatus("microphone")));
+    const update = updater?.state();
+    const items = trayItems(
+      state,
+      `Vocify ${app.getVersion()} · ${dashboardHost}`,
+      microphoneLabel(systemPreferences.getMediaAccessStatus("microphone")),
+      update?.state === "ready" ? update.next : null,
+    );
     const mics = micChoices(state.mic);
     const entries: Electron.MenuItemConstructorOptions[] = items.map((item) => {
       if (item.id === "separator") return { type: "separator" as const };
@@ -1210,6 +1221,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
         else if (item.id === "record") controller.shortcutPressed();
         else if (item.id === "stop") controller.act({ name: "stop" });
         else if (item.id === "update") updater?.check();
+        else if (item.id === "install") updater?.install();
         else if (item.id === "permissions") void shell.openExternal(microphoneSettingsUrl(platform));
         else app.quit();
       };

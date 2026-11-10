@@ -111,6 +111,7 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
   updates: {
     status: () => call("updates:status"),
     check: () => call("updates:check"),
+    install: () => call("updates:install"),
     onChanged: on("updates:changed"),
   },
   drafts: {

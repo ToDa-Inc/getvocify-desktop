@@ -1,6 +1,7 @@
 /**
  * Self-update from GitHub Releases. The installed app checks for a newer build, downloads it in the background and
- * installs it as soon as nothing is being recorded or reviewed; otherwise it waits (and installs on the next quit).
+ * installs it as soon as nothing is being recorded; otherwise it waits (and installs on the next quit). The rep can also
+ * restart into it at once (`install`).
  */
 
 /** The part of electron-updater's `autoUpdater` this file uses. */
@@ -35,7 +36,7 @@ export type UpdateStatus = UpdateState & { version: string };
 
 export type UpdaterOptions = {
   source: UpdateSource;
-  /** True when nothing would be interrupted by a restart (no recording, no call update on screen). */
+  /** True when a restart would interrupt nothing (no recording, no call note being written or saved). */
   canInstallNow(): boolean;
   every(ms: number, fn: () => void): () => void;
   log(message: string): void;
@@ -53,6 +54,8 @@ export type Updater = {
   stop(): void;
   /** Asks now, outside the half-hourly rhythm. */
   check(): void;
+  /** The rep asked to restart into the downloaded build: true when it restarts, false when nothing is ready or it must wait. */
+  install(): boolean;
   state(): UpdateState;
 };
 
@@ -72,15 +75,15 @@ export function startUpdater(options: UpdaterOptions): Updater {
     options.onState?.(next);
   };
 
+  const installIfIdle = (): boolean => {
+    if (downloaded === null || !options.canInstallNow()) return false;
+    log(`updating to ${downloaded}`);
+    options.beforeInstall?.();
+    source.quitAndInstall(true, true);
+    return true;
+  };
   const installWhenIdle = () => {
-    if (downloaded === null) return;
-    if (options.canInstallNow()) {
-      log(`updating to ${downloaded}`);
-      options.beforeInstall?.();
-      source.quitAndInstall(true, true);
-      return;
-    }
-    stopWaiting ??= options.every(RETRY_INSTALL_MS, installWhenIdle);
+    if (!installIfIdle()) stopWaiting ??= options.every(RETRY_INSTALL_MS, installWhenIdle);
   };
 
   source.on("checking-for-update", () => {
@@ -113,6 +116,7 @@ export function startUpdater(options: UpdaterOptions): Updater {
   const stopChecking = options.every(CHECK_EVERY_MS, check);
   return {
     check,
+    install: installIfIdle,
     state: () => current,
     stop: () => {
       stopChecking();

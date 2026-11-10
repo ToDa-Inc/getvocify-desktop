@@ -36,7 +36,7 @@ export type BridgeDeps = {
   /** To the dashboard page (`__vocifyEmit`). */
   emit(channel: string, payload: unknown): void;
   /** The app's version and self-update, for the dashboard's Settings ("updates:changed" carries each change). */
-  updates?: { status(): UpdateStatus; check(): void };
+  updates?: { status(): UpdateStatus; check(): void; install(): boolean };
   /** The dashboard's compact window (compact.ts). Absent where the app has no such window. */
   dashboardWindow?: { compact(): boolean; setCompact(on: boolean, options?: { callEnded?: boolean }): boolean };
   showMainWindow(): void;
@@ -256,6 +256,9 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
       case "updates:check":
         deps.updates?.check();
         return deps.updates?.status() ?? null;
+      case "updates:install":
+        // True when the app restarts now; false while a recording, or a call note being saved, makes it wait.
+        return deps.updates?.install() ?? false;
       case "shell:state":
         if (typeof args.state === "object" && args.state !== null) {
           const state = args.state as Args;

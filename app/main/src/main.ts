@@ -68,6 +68,7 @@ if (!app.requestSingleInstanceLock()) {
         const updates = startUpdater({
           source: updater.autoUpdater as unknown as UpdateSource,
           canInstallNow: () => handle?.canInstallUpdate() ?? false,
+          canRestartNow: () => handle?.canRestartForUpdate() ?? false,
           every: (ms, fn) => {
             const timer = setInterval(fn, ms);
             return () => clearInterval(timer);

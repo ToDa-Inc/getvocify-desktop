@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CHECK_EVERY_MS, startUpdater, type UpdateSource } from "../src/updater.ts";
 
-function setup(canInstall: () => boolean) {
+function setup(canInstall: () => boolean, canRestart?: () => boolean) {
   const handlers: Record<string, (arg: never) => void> = {};
   const timers: { ms: number; fn: () => void; stopped: boolean }[] = [];
   const calls = { checks: 0, installs: [] as unknown[][], before: 0 };
@@ -21,6 +21,7 @@ function setup(canInstall: () => boolean) {
     now: () => 1000,
     source,
     canInstallNow: canInstall,
+    canRestartNow: canRestart,
     every: (ms, fn) => {
       const t = { ms, fn, stopped: false };
       timers.push(t);
@@ -117,4 +118,14 @@ test("Restart now installs the downloaded build at once, and refuses while a rec
   busy = false;
   assert.equal(t.updater.install(), true);
   assert.deepEqual(t.calls.installs, [[true, true]]);
+});
+
+test("an open window holds the automatic restart back, but not Restart now", () => {
+  let windowOpen = true;
+  const t = setup(() => !windowOpen, () => true);
+  t.handlers["update-downloaded"]({ version: "0.4.9" } as never);
+  assert.equal(t.calls.installs.length, 0, "the rep is looking at the app");
+  assert.equal(t.updater.install(), true);
+  assert.equal(t.calls.installs.length, 1);
+  windowOpen = false;
 });

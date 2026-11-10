@@ -70,6 +70,8 @@ export type AppHandle = {
   permissions(): Promise<unknown>;
   /** True when a restart would interrupt nothing: no recording and no call update on screen. */
   canInstallUpdate(): boolean;
+  /** Restart now: the same, except an open window does not hold it back (the rep asked). */
+  canRestartForUpdate(): boolean;
   /** True when this start is the restart after an automatic update. */
   startedAfterUpdate: boolean;
   /** Called just before an update restarts the app. */
@@ -357,6 +359,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   let quitting = false;
   // The dashboard page does the recording and, after Stop, the upload: it must stay until the call is handed over.
   const recordingOrFinishing = () => ["recording", "stopped", "finishing"].includes(controller.state.mode.kind);
+  // What an update restart must never cut: a recording, or a call note being written or saved. A call's card left open
+  // waits for the rep, not for the app: its note and updates are on the call's page after the restart.
+  const canRestartForUpdate = () =>
+    !controller.isListening && !recordingOrFinishing() && !["writing", "applying"].includes(controller.state.postCall?.stage ?? "");
   // A call offer on show (or a call) needs the page that resolved it and that dials.
   const calling = () => controller.state.onScreen !== null || controller.state.dial !== null || ["dialConfirm", "dialing"].includes(controller.state.mode.kind);
   // The meeting heads-up reads the rep's calendar in the dashboard page, so the page stays (hidden) while the dashboard
@@ -1112,9 +1118,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     detectCall: (caller) => controller.callChanged(caller),
     iconFor,
     permissions: () => bridge("permissions:status", {}),
-    // A call's card left open waits for the rep, not for the app: its note and updates are on the call's page after the restart.
-    canInstallUpdate: () =>
-      !controller.isListening && !recordingOrFinishing() && !["writing", "applying"].includes(controller.state.postCall?.stage ?? ""),
+    canRestartForUpdate,
+    // On its own the app never restarts under the rep's eyes: an open window waits until it is closed (or Restart now).
+    canInstallUpdate: () => !dashboard.visible && canRestartForUpdate(),
     startedAfterUpdate,
     markUpdateRestart: () => settings.set("restartedForUpdate", true),
     attachUpdater: (attached) => {

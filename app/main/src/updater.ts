@@ -1,6 +1,6 @@
 /**
  * Self-update from GitHub Releases. The installed app checks for a newer build, downloads it in the background and
- * installs it as soon as nothing is being recorded; otherwise it waits (and installs on the next quit). The rep can also
+ * installs it once nothing is being recorded and the window is closed; otherwise it waits (and installs on the next quit). The rep can also
  * restart into it at once (`install`).
  */
 
@@ -36,8 +36,10 @@ export type UpdateStatus = UpdateState & { version: string };
 
 export type UpdaterOptions = {
   source: UpdateSource;
-  /** True when a restart would interrupt nothing (no recording, no call note being written or saved). */
+  /** True when a restart would interrupt nothing (no recording, no call note being written or saved, the window closed). */
   canInstallNow(): boolean;
+  /** For Restart now: true when only the rep's own wish is in the way (not recording, no call note being saved). */
+  canRestartNow?(): boolean;
   every(ms: number, fn: () => void): () => void;
   log(message: string): void;
   /** Called just before the app quits to install. */
@@ -75,8 +77,8 @@ export function startUpdater(options: UpdaterOptions): Updater {
     options.onState?.(next);
   };
 
-  const installIfIdle = (): boolean => {
-    if (downloaded === null || !options.canInstallNow()) return false;
+  const installIfIdle = (allowed: () => boolean = options.canInstallNow): boolean => {
+    if (downloaded === null || !allowed()) return false;
     log(`updating to ${downloaded}`);
     options.beforeInstall?.();
     source.quitAndInstall(true, true);
@@ -116,7 +118,7 @@ export function startUpdater(options: UpdaterOptions): Updater {
   const stopChecking = options.every(CHECK_EVERY_MS, check);
   return {
     check,
-    install: installIfIdle,
+    install: () => installIfIdle(options.canRestartNow ?? options.canInstallNow),
     state: () => current,
     stop: () => {
       stopChecking();

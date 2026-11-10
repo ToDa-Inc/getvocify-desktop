@@ -118,6 +118,18 @@ missing value
   });
 });
 
+test("CrmPages frontRecordURLs", async (t) => {
+  await t.test("a record in front is the page", () => {
+    assert.deepStrictEqual(CrmPages.frontRecordURLs("https://acme.pipedrive.com/deal/7\nhttps://mail.google.com/"), ["https://acme.pipedrive.com/deal/7"]);
+  });
+  await t.test("HubSpot's calling window in front is no CRM page", () => {
+    assert.deepStrictEqual(
+      CrmPages.frontRecordURLs("https://app-eu1.hubspot.com/calling-integration-popup-ui/147506535\nhttps://app-eu1.hubspot.com/contacts/147506535/record/0-1/879829962968"),
+      [],
+    );
+  });
+});
+
 test("CrmPages browsersToRead", async (t) => {
   const order = CrmPages.browsersToRead(
     ["com.apple.finder", "com.apple.Safari", "com.google.Chrome", "com.example.Other"],

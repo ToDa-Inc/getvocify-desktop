@@ -55,6 +55,9 @@ function isCrmURL(url: string): boolean {
   return false;
 }
 
+/** HubSpot's calling window or frame: a dialer, not where the rep is (the server ignores it too, crm_url.py). */
+const HUBSPOT_CALLING = /\.hubspot\.com\/(?:calling-integration-popup-ui|calling-cross-tab-embed|calling)\//i;
+
 const browsers: Browser[] = [
   chromium("Google Chrome", "com.google.Chrome"),
   chromium("Arc", "company.thebrowser.Browser"),
@@ -107,6 +110,7 @@ export const CrmPages = {
       .split("\n")
       .map((line) => line.trim())
       .find((line) => line !== "");
-    return front && isCrmURL(front) ? [front] : [];
+    // A calling window in front counts as no CRM page: the record behind it stays the call's contact.
+    return front && isCrmURL(front) && !HUBSPOT_CALLING.test(front) ? [front] : [];
   },
 };

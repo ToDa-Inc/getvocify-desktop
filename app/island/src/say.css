@@ -232,6 +232,13 @@ html:has(.side-stage), body:has(.side-stage) { overflow: hidden; }
   background: linear-gradient(180deg, rgb(31, 31, 35) 0%, rgb(17, 17, 20) 100%); box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
   transition: background 160ms; }
 .side-strip[data-axis="h"] { left: calc(var(--strip-h) / -2); top: calc(var(--strip) / -2); width: var(--strip-h); height: var(--strip); flex-direction: row; gap: 6px; }
+/* Starting a recording: the pill grows in place to hold the mark, Record and one small button, the same dark glass. */
+.side-strip { transition: background 160ms, height 220ms var(--ease), width 220ms var(--ease), top 220ms var(--ease), left 220ms var(--ease); }
+.side-strip[data-inline="true"] { height: 148px; top: -74px; }
+.side-strip[data-axis="h"][data-inline="true"] { height: var(--strip); top: calc(var(--strip) / -2); width: 148px; left: -74px; }
+.side-strip[data-inline="true"] .pill-record .record-dot { width: 28px; height: 28px; background: rgba(255, 255, 255, 0.13); }
+.side-strip[data-inline="true"] .pill-record .record-dot span { width: 11px; height: 11px; }
+.side-stage[data-reduce-motion="true"] .side-strip { transition: background 160ms; }
 .side-strip:hover { background: linear-gradient(180deg, rgb(37, 37, 41) 0%, rgb(21, 21, 24) 100%); }
 .side-strip:focus-visible { box-shadow: 0 0 0 2px rgba(219, 192, 154, 0.7), 0 12px 30px rgba(0, 0, 0, 0.5); }
 .side-dock[data-dragging="true"] .side-strip { cursor: grabbing; }

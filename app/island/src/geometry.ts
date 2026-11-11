@@ -10,15 +10,6 @@ export const CALL_EAR = 46;
 export const POST_CALL_WIDTH = 420;
 /** The open island's width when the island rests at a screen edge (the after-call card gets 40 more, the recording, which shows a transcript, 100). */
 export const SIDE_WIDTH = 300;
-/** At the side, starting a recording is one small row: Record alone, or Record beside the detected call's name. */
-export const SIDE_COMPACT_IDLE = 176;
-export const SIDE_COMPACT_CALL = 280;
-export const SIDE_COMPACT_HEIGHT = 48;
-/** On a left or right edge the same card stands up: a slim capsule: the record dot and one small button under it. */
-export const SIDE_STACK_WIDTH = 44;
-export const SIDE_STACK_IDLE = 84;
-export const SIDE_STACK_CALL = 84;
-
 export const COLLAPSED_RADIUS = 12;
 export const OPEN_RADIUS = 22;
 export const OTHER_OPEN_RADIUS = 18;

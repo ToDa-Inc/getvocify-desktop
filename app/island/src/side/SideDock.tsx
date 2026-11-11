@@ -9,7 +9,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { DEFAULT_SPOT, dragCentre, lying, nearestEdge, panelBox, pillCentre, snap, type PillEdge, type PillSpot, type Point, type Size } from "../../../core/pill.ts";
 import { waveTitle } from "../MicCard.tsx";
-import { BlockedGlyph, CallGlyph, Elapsed, HangUpDot, LeftEar, NotchIsland, RecordDot, RecordingDot, VoiceWave } from "../Island.tsx";
+import { BlockedGlyph, CallGlyph, Elapsed, HangUpDot, IconButton, LeftEar, NotchIsland, RecordDot, RecordingDot, VoiceWave } from "../Island.tsx";
+import { ArrowUpRight, Close } from "../icons.tsx";
 import type { IslandAction, IslandState } from "../types.ts";
 import { HelpMarker, useHelpMarker } from "../say/Marker.tsx";
 
@@ -20,7 +21,11 @@ const DRAG_SLOP = 4;
 
 export function SideDock({ state, act }: { state: IslandState; act: Act }) {
   const kind = state.mode.kind;
-  const open = state.expanded && kind !== "starting";
+  const expanded = state.expanded && kind !== "starting";
+  // Starting a recording needs no card: the pill itself grows to hold Record, so it stays one object. (Anything with
+  // more to say, a meeting, a contact on screen, a recording, a finished call, opens the island out of it.)
+  const inline = expanded && ((kind === "idle" && !state.meeting && !state.onScreen && !state.crmBlocked) || (kind === "call" && !state.onScreen));
+  const open = expanded && !inline;
   const marker = useHelpMarker(state, open, act);
   const stage = useRef<HTMLDivElement>(null);
   const pill = useRef<HTMLDivElement>(null);
@@ -156,9 +161,10 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
             tabIndex={0}
             className="side-strip"
             data-axis={lying(edge) ? "h" : "v"}
-            title={open ? "Close · drag to move it" : "Open Vocify · drag to move it"}
-            aria-label={open ? "Close" : "Open Vocify"}
-            aria-expanded={open}
+            data-inline={inline}
+            title={open || inline ? "Close · drag to move it" : "Open Vocify · drag to move it"}
+            aria-label={open || inline ? "Close" : "Open Vocify"}
+            aria-expanded={open || inline}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={endPress}
@@ -172,7 +178,7 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
             <span className="strip-metal" aria-hidden />
             <span className="rim-light" aria-hidden />
             <span className="strip-sheen" aria-hidden />
-            <PillFace state={state} act={act} open={open} marker={marker} />
+            <PillFace state={state} act={act} open={open} inline={inline} marker={marker} />
           </div>
         </div>
       )}
@@ -193,8 +199,27 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
 
 /** What the closed pill shows: the recording's dot, time and voice; else the notch's icon for what the island is doing,
  * and its one quick action (record a detected call, call the contact on screen, hang up). */
-function PillFace({ state, act, open, marker }: { state: IslandState; act: Act; open: boolean; marker: string | null }) {
+function PillFace({ state, act, open, inline, marker }: { state: IslandState; act: Act; open: boolean; inline: boolean; marker: string | null }) {
   const mode = state.mode;
+  if (inline) {
+    // Grown in place: the mark, Record, and one small button (skip a detected call, or open Vocify).
+    const caller = mode.kind === "call" ? mode.caller.name : null;
+    return (
+      <>
+        <span className="pill-glyph"><LeftEar state={state} open={false} lifted /></span>
+        <span className="pill-action pill-record">
+          <RecordDot ready={state.recorderReady} title={state.recorderReady ? (caller ? `Record this ${caller} call` : "Record") : "Sign in to record"} onClick={() => act({ name: "record" })} />
+        </span>
+        <span className="pill-action">
+          {mode.kind === "call" ? (
+            <IconButton help="Skip this call" onClick={() => act({ name: "dismissCall" })}><Close size={11} /></IconButton>
+          ) : (
+            <IconButton help="Open Vocify" onClick={() => act({ name: "openApp" })}><ArrowUpRight size={12} /></IconButton>
+          )}
+        </span>
+      </>
+    );
+  }
   if (mode.kind === "recording") {
     return (
       <>

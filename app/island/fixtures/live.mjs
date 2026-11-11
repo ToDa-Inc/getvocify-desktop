@@ -342,7 +342,8 @@ sayFixtures.push(
   { name: "side-bottom-open", side: true, state: recording(sayView([S_HUBSPOT]), { placement: "side", pill: { edge: "bottom", at: 0.2 } }), expect: { ...STAGE, side: PILL("recording", { strip: { width: 104, height: 40, edge: "bottom", gap: 12 }, open: true, view: true, panel: "above", inside: true }) } },
   // Not recording, it is still the pill: the notch's icon (the Vocify mark at rest, the caller's app on a detected call).
   { name: "side-idle", side: true, state: { ...recording(null, { placement: "side" }), mode: { kind: "idle" }, expanded: false }, expect: { ...STAGE, side: PILL("idle") } },
-  { name: "side-idle-open", side: true, state: { ...recording(null, { placement: "side" }), mode: { kind: "idle" }, expanded: true }, expect: { ...STAGE, side: PILL("idle", { open: true, panel: "left", inside: true, glyph: true }) } },
+  { name: "side-idle-open", side: true, state: { ...recording(null, { placement: "side" }), mode: { kind: "idle" }, expanded: true }, expect: { ...STAGE, side: PILL("idle", { strip: { ...STRIP, height: 148 }, action: "record-dot", glyph: true }) } },
+  // Starting a recording needs no card: the pill itself grows to hold Record (a detected call: Record and skip).
   { name: "side-call", side: true, state: { ...recording(null, { placement: "side" }), mode: { kind: "call", caller: { name: "Zoom", appId: "us.zoom.xos", holding: true, icon: null } }, expanded: false }, expect: { ...STAGE, side: PILL("call", { action: "record-dot" }) } },
 );
 

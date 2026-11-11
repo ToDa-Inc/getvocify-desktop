@@ -51,6 +51,15 @@ const turns = [
   { id: "t6", you: false, label: "Marta Ruiz", text: "", pending: "and how long would that" },
 ];
 
+const voiceTurns = [
+  { id: "v1", you: true, label: null, text: "Thanks both for joining. Shall we start with how you run sales today?", pending: "" },
+  { id: "v2", you: false, label: "Voice 1", voice: 1, starts: [12.4], text: "Sure. We are six reps, all on HubSpot, and most calls happen on Teams.", pending: "" },
+  { id: "v3", you: false, label: "Voice 2", voice: 2, starts: [19.8], text: "And I look after the pipeline reviews every Monday, so the notes matter to me.", pending: "" },
+  { id: "v4", you: true, label: null, text: "Got it. What happens to the notes after a call today?", pending: "" },
+  { id: "v5", you: false, label: "Voice 1", voice: 1, starts: [31.2], text: "", pending: "honestly half of them never get" },
+];
+const voiceChoices = [{ id: 1, label: "Voice 1" }, { id: 2, label: "Voice 2" }];
+
 const ana = { provider: "hubspot", crmLabel: "HubSpot", name: "Ana Ruiz", phone: "+34600111222", callerId: "+34910000000", state: "callable" };
 const ago = (days) => new Date(NOW - days * 24 * 3600 * 1000).toISOString();
 const BRIEF = [
@@ -253,6 +262,8 @@ export const fixtures = [
   { name: "recording-open-channel", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: channelTypeMenu, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-channel-list", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: channelTypeMenu, liveHelp: true }, steps: [".type-tag-button"], expect: { width: 460, height: 400 } },
   { name: "recording-open-channel-no-type", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Type", placeholder: true, proposed: false, channel: { title: "Reunión", rows: [{ key: "call", label: "Llamada", checked: false }, { key: "meeting", label: "Reunión", checked: true }] } }, liveHelp: true }, expect: { width: 460, height: 400 } },
+  { name: "recording-open-voices", state: { mode: { kind: "recording" }, expanded: true, clock: clock(40), turns: voiceTurns, voices: voiceChoices, typeMenu, liveHelp: true }, expect: { width: 460, height: 400 } },
+  { name: "recording-open-voices-menu", state: { mode: { kind: "recording" }, expanded: true, clock: clock(40), turns: voiceTurns, voices: voiceChoices, typeMenu, liveHelp: true }, steps: [".voice-label"], expect: { width: 460, height: 400 } },
   { name: "recording-open-audio-lost", state: { mode: { kind: "recording" }, expanded: true, clock: clock(95), turns: turns.slice(0, 2), typeMenu, liveHelp: true, callAudioLost: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-transcript-paused", state: { mode: { kind: "recording" }, expanded: true, clock: clock(95), turns: turns.slice(0, 2), typeMenu, liveHelp: true, transcriptPaused: true }, expect: { width: 460, height: 400 } },
   // Which mic records the rep: Chromium's names for the mics, as the dashboard reports them.

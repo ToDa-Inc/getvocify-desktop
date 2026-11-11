@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { keyboardNow, keyboardOver, releaseKeyboardSoon } from "./keyboard.ts";
+import type { Language } from "../../core/typeProposal.ts";
 import type { IslandAction, Turn, VoiceChoice } from "./types.ts";
 
 /**
@@ -10,13 +11,19 @@ import type { IslandAction, Turn, VoiceChoice } from "./types.ts";
  */
 
 type Act = (action: IslandAction) => void;
-export type VoiceMenu = { voices: VoiceChoice[]; act: Act };
+export type VoiceMenu = { voices: VoiceChoice[]; act: Act; language: Language };
+
+const WORDS = {
+  en: { fix: "Name this voice, or fix who said it", menu: "Voice", rename: "Rename", same: "Same person as…", move: "Move this to…", someone: "Someone new", name: "Name", nameIt: "Name this voice" },
+  es: { fix: "Nombra esta voz o corrige quién lo dijo", menu: "Voz", rename: "Renombrar", same: "Misma persona que…", move: "Mover a…", someone: "Otra persona", name: "Nombre", nameIt: "Nombra esta voz" },
+};
 
 type View = "root" | "rename" | "merge" | "move";
 
 export function VoiceLabel({ turn, menu }: { turn: Turn; menu: VoiceMenu }) {
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const [view, setView] = useState<View>("root");
+  const words = WORDS[menu.language === "es" ? "es" : "en"];
   const voice = turn.voice as number;
   const others = menu.voices.filter((other) => other.id !== voice);
   const starts = turn.starts ?? [];
@@ -33,7 +40,7 @@ export function VoiceLabel({ turn, menu }: { turn: Turn; menu: VoiceMenu }) {
       <button
         type="button"
         className="turn-label voice-label"
-        title="Name this voice, or fix who said it"
+        title={words.fix}
         aria-haspopup="listbox"
         aria-expanded={anchor !== null}
         onClick={(event) => {
@@ -46,15 +53,15 @@ export function VoiceLabel({ turn, menu }: { turn: Turn; menu: VoiceMenu }) {
         {turn.label}
       </button>
       {anchor && (
-        <FloatMenu anchor={anchor} width={view === "rename" ? 190 : 168} onClose={close} label="Voice">
+        <FloatMenu anchor={anchor} width={view === "rename" ? 190 : 168} onClose={close} label={words.menu}>
           {view === "root" && (
             <>
-              <MenuRow label="Rename" selected={false} onPick={() => (keyboardNow(), setView("rename"))} />
-              {others.length > 0 && <MenuRow label="Same person as…" selected={false} onPick={() => setView("merge")} />}
-              {starts.length > 0 && <MenuRow label="Move this to…" selected={false} onPick={() => setView("move")} />}
+              <MenuRow label={words.rename} selected={false} onPick={() => (keyboardNow(), setView("rename"))} />
+              {others.length > 0 && <MenuRow label={words.same} selected={false} onPick={() => setView("merge")} />}
+              {starts.length > 0 && <MenuRow label={words.move} selected={false} onPick={() => setView("move")} />}
             </>
           )}
-          {view === "rename" && <NameField initial={turn.label ?? ""} onDone={(text) => (text === null ? close() : send({ name: "voice", op: "rename", voice, text }))} />}
+          {view === "rename" && <NameField initial={turn.label ?? ""} words={words} onDone={(text) => (text === null ? close() : send({ name: "voice", op: "rename", voice, text }))} />}
           {view === "merge" &&
             others.map((other) => (
               <MenuRow key={other.id} label={other.label} selected={false} onPick={() => send({ name: "voice", op: "merge", keep: other.id, drop: voice })} />
@@ -65,7 +72,7 @@ export function VoiceLabel({ turn, menu }: { turn: Turn; menu: VoiceMenu }) {
                 <MenuRow key={other.id} label={other.label} selected={false} onPick={() => send({ name: "voice", op: "move", starts, voice: other.id })} />
               ))}
               {others.length > 0 && <div className="hairline menu-divider" />}
-              <MenuRow label="Someone new" selected={false} onPick={() => send({ name: "voice", op: "move", starts, voice: null })} />
+              <MenuRow label={words.someone} selected={false} onPick={() => send({ name: "voice", op: "move", starts, voice: null })} />
             </>
           )}
         </FloatMenu>
@@ -75,7 +82,7 @@ export function VoiceLabel({ turn, menu }: { turn: Turn; menu: VoiceMenu }) {
 }
 
 /** One line to type a name in. Enter keeps it, Escape drops it; an empty name goes back to the default. */
-function NameField({ initial, onDone }: { initial: string; onDone: (text: string | null) => void }) {
+function NameField({ initial, words, onDone }: { initial: string; words: { name: string; nameIt: string }; onDone: (text: string | null) => void }) {
   const ref = useRef<HTMLInputElement>(null);
   const done = useRef(false);
   const finish = (text: string | null) => {
@@ -94,8 +101,8 @@ function NameField({ initial, onDone }: { initial: string; onDone: (text: string
         className="value-input"
         defaultValue={initial}
         maxLength={60}
-        placeholder="Name"
-        aria-label="Name this voice"
+        placeholder={words.name}
+        aria-label={words.nameIt}
         spellCheck={false}
         autoComplete="off"
         onMouseEnter={keyboardOver}

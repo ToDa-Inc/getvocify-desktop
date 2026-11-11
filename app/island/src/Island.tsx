@@ -894,7 +894,7 @@ export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
   const menu = state.typeMenu;
   const hasBrief = Boolean(state.dial?.brief?.length || state.dial?.companyBrief);
   // The other side's voices, when the dashboard tells them apart: a name above a line then opens the list to fix it.
-  const voiceMenu: VoiceMenu | undefined = state.voices?.length ? { voices: state.voices, act } : undefined;
+  const voiceMenu: VoiceMenu | undefined = state.voices?.length ? { voices: state.voices, act, language: state.language } : undefined;
   return (
     <div className={state.live ? "open-island live" : "open-island"}>
       <div className="controls">

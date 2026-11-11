@@ -43,13 +43,23 @@ export function createMacPageReader(exec: Exec) {
 
     /** The CRM URLs of a supported browser's windows, front window first, and whether macOS let Vocify read it. */
     async read(bundleID: string): Promise<{ urls: string[] | null; access: MacAccess }> {
+      const { out, access } = await this.script(bundleID);
+      return { urls: out === null ? null : CrmPages.frontRecordURLs(out), access };
+    },
+
+    /** Every window's active tab, front window first (a Meet tab is the call even with a CRM window in front of it). */
+    async pages(bundleID: string): Promise<{ urls: string[] | null; access: MacAccess }> {
+      const { out, access } = await this.script(bundleID);
+      return { urls: out === null ? null : CrmPages.windowURLs(out), access };
+    },
+
+    async script(bundleID: string): Promise<{ out: string | null; access: MacAccess }> {
       const browser = CrmPages.browser(bundleID);
-      if (!browser) return { urls: null, access: "never_requested" };
+      if (!browser) return { out: null, access: "never_requested" };
       try {
-        const out = await exec("/usr/bin/osascript", ["-e", browser.script], 10_000);
-        return { urls: CrmPages.frontRecordURLs(out), access: "authorized" };
+        return { out: await exec("/usr/bin/osascript", ["-e", browser.script], 10_000), access: "authorized" };
       } catch (error) {
-        return { urls: null, access: NOT_ALLOWED.test(String((error as Error)?.message ?? error)) ? "denied" : "never_requested" };
+        return { out: null, access: NOT_ALLOWED.test(String((error as Error)?.message ?? error)) ? "denied" : "never_requested" };
       }
     },
   };

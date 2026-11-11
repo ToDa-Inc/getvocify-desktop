@@ -97,6 +97,14 @@ export const CrmPages = {
       .filter((line) => isCrmURL(line));
   },
 
+  /** Every window's active tab as the browser script lists them, front window first. */
+  windowURLs(fromScriptOutput: string): string[] {
+    return fromScriptOutput
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line !== "");
+  },
+
   isCrmURL(url: string): boolean {
     return isCrmURL(url);
   },

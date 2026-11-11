@@ -230,6 +230,15 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   };
 
   const sourceOf = (caller: Caller | null, pages: BrowserPage[]): CallSource | null => callSourceForExe(caller?.appId) ?? CallSource.page(pages.map((p) => p.url));
+  // Mac: the page a browser on the microphone shows is what the call is (a Meet tab, a dialer), in any of its windows.
+  // A slow or refused read names nothing rather than holding the island back.
+  const macCallPage = async (appId: string | null | undefined): Promise<CallSource | null> => {
+    const reader = os.crmScreenReader;
+    if (platform !== "darwin" || !appId || !reader.callPages || !reader.isBrowser(appId)) return null;
+    const pages = await Promise.race([reader.callPages(appId), new Promise<null>((done) => setTimeout(() => done(null), 2000).unref())]);
+    const source = pages && pages.length > 0 ? CallSource.page(pages) : null;
+    return source && source.name !== "HubSpot" ? source : null;
+  };
 
   /* ---------- the island's brain ---------- */
 
@@ -297,7 +306,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
             // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
             if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
             const pageSource = urls.length > 0 ? CallSource.page(urls) : null;
-            const source = CallSource.app(caller?.appId ?? undefined) ?? pageSource;
+            const source = CallSource.app(caller?.appId ?? undefined) ?? (await macCallPage(caller?.appId)) ?? pageSource;
             dashboard.emit("call:source", source?.json ?? null);
             if (urls.length > 0) dashboard.emit("call:pages", { urls });
           });
@@ -316,12 +325,16 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
           const source = CallSource.app(appId);
           if (source) return dashboard.emit("call:source", source.json);
           if (!caller) return;
-          // If no known app, try to read the CRM pages in the browser
-          void os.crmScreenReader.front().then((app) => {
-            if (!app) return;
-            return os.crmScreenReader.read(app as string).then((urls) => {
-              const pageSource = urls && urls.length > 0 ? CallSource.page(urls as string[]) : null;
-              dashboard.emit("call:source", pageSource?.json ?? null);
+          // A browser on the microphone: its own tabs say what the call is (a Meet tab behind a CRM window counts).
+          void macCallPage(caller.appId).then((page) => {
+            if (page) return dashboard.emit("call:source", page.json);
+            // If no known app, try to read the CRM pages in the browser
+            return os.crmScreenReader.front().then((app) => {
+              if (!app) return;
+              return os.crmScreenReader.read(app as string).then((urls) => {
+                const pageSource = urls && urls.length > 0 ? CallSource.page(urls as string[]) : null;
+                dashboard.emit("call:source", pageSource?.json ?? null);
+              });
             });
           });
         }
@@ -943,9 +956,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       browserCalls.released();
       unnamedPages = null;
       told = detected ? "app" : "none";
-      // A browser that reaches here (the Mac cannot read which page is the call) is not named: "Google Chrome call"
-      // is a guess, and the island says "Call in progress" instead.
-      controller.callChanged(detected ? { name: detected.browser ? null : detected.name, appId: detected.appId, holding: detected.holding, icon: await iconFor(detected.path) } : null);
+      // A browser on a Mac is named by the tab that is the call ("Google Meet"); with none, "Google Chrome call" would be a
+      // guess, and the island says "Call in progress" instead.
+      const page = detected?.browser ? await macCallPage(detected.appId) : null;
+      if (detected?.browser) log(`browser on the mic, its tabs name ${page ? page.name : "no call"}`);
+      controller.callChanged(detected ? { name: detected.browser ? (page?.name ?? null) : detected.name, appId: detected.appId, holding: detected.holding, icon: await iconFor(detected.path) } : null);
     });
   };
   os.callDetector?.start(report);

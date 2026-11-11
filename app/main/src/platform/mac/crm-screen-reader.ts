@@ -25,19 +25,22 @@ export function createMacCrmScreenReader(deps: {
     front: () => reader.front(),
     isBrowser: (app) => reader.isBrowser(app) && deps.access() !== "never_requested",
     refused: (app) => refused.has(app),
-    async read(app) {
-      if ((refusedUntil.get(app) ?? 0) > now()) return null;
-      const { urls, access } = await reader.read(app);
-      if (access === "denied") {
-        refusedUntil.set(app, now() + REFUSED_RETRY_MS);
-        refused.add(app);
-        deps.onDenied?.();
-      } else if (urls !== null) {
-        refusedUntil.delete(app);
-        refused.delete(app);
-        deps.onAllowed?.();
-      }
-      return urls;
-    },
+    read: (app) => remember(app, () => reader.read(app)),
+    callPages: (app) => remember(app, () => reader.pages(app)),
   };
+
+  async function remember(app: string, read: () => Promise<{ urls: string[] | null; access: MacAccess }>): Promise<string[] | null> {
+    if ((refusedUntil.get(app) ?? 0) > now()) return null;
+    const { urls, access } = await read();
+    if (access === "denied") {
+      refusedUntil.set(app, now() + REFUSED_RETRY_MS);
+      refused.add(app);
+      deps.onDenied?.();
+    } else if (urls !== null) {
+      refusedUntil.delete(app);
+      refused.delete(app);
+      deps.onAllowed?.();
+    }
+    return urls;
+  }
 }

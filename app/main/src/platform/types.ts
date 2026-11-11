@@ -46,6 +46,9 @@ export interface CrmScreenReader {
   isBrowser(app: string): boolean;
   /** The CRM record URLs the browser's front tab shows ([] for none), or null when it could not be read. */
   read(app: string): Promise<string[] | null>;
+  /** Every window's active tab of the browser, raw (a Meet or a dialer tab names the call), or null when it could not be
+   * read. Absent where the browser's pages are read another way (Windows: pagesOutput). */
+  callPages?(app: string): Promise<string[] | null>;
   /** The OS refused Vocify this browser (Mac: Automation), until it is read again. Absent where the OS never refuses. */
   refused?(app: string): boolean;
   /** Every browser window's address, read by the reader already running (Windows), as the page script writes it; null

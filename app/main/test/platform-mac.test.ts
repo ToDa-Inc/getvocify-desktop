@@ -45,6 +45,24 @@ crmScreenReaderContract("Mac", () => {
   };
 });
 
+test("Mac: a browser's call pages are every window's active tab, a Meet behind a CRM window included", async () => {
+  const exec = async (_file: string, args: string[]): Promise<string> =>
+    args[1] === FRONT_APP ? "com.google.Chrome\n" : "https://app.hubspot.com/contacts/1/record/0-1/2\nhttps://meet.google.com/abc-defg-hij\n";
+  const reader = createMacCrmScreenReader({ exec, access: () => "authorized" });
+  assert.deepEqual(await reader.callPages!("com.google.Chrome"), ["https://app.hubspot.com/contacts/1/record/0-1/2", "https://meet.google.com/abc-defg-hij"]);
+  // The CRM read still keeps only the front window's record.
+  assert.deepEqual(await reader.read("com.google.Chrome"), ["https://app.hubspot.com/contacts/1/record/0-1/2"]);
+});
+
+test("Mac: a refused browser gives no call pages", async () => {
+  const exec = async (): Promise<string> => {
+    throw new Error("Not authorized to send Apple events to Google Chrome. (-1743)");
+  };
+  const reader = createMacCrmScreenReader({ exec, access: () => "authorized" });
+  assert.equal(await reader.callPages!("com.google.Chrome"), null);
+  assert.equal(reader.refused!("com.google.Chrome"), true);
+});
+
 permissionsContract("Mac", () => {
   let microphone = "not-determined";
   let crmTabs: Status | undefined;

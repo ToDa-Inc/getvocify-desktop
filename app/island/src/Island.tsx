@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
-import { backgroundLine, cornerRadius, earWidth, islandSize, offerBriefLines, showsConversation, showsMeeting } from "./geometry.ts";
+import { backgroundLine, cornerRadius, earWidth, islandSize, offerBriefLines, showsConversation, showsMeeting, SIDE_COMPACT_CALL, SIDE_COMPACT_HEIGHT, SIDE_COMPACT_IDLE, SIDE_STACK_CALL, SIDE_STACK_IDLE, SIDE_STACK_WIDTH } from "./geometry.ts";
 import { JobsBadge, JobsLine, jobsIndicator } from "./Background.tsx";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, transcriptText, turnParts, turnPlainText } from "./helpers.ts";
@@ -37,9 +37,17 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
   const column = useRef<HTMLDivElement>(null);
   // As tall as its content: the after-call card, and a call offer or call carrying the contact's brief (it wraps).
   const natural = open && (kind === "postCall" || offerBriefLines(state) > 0);
-  const shape = islandSize(state.geometry, kind, open, undefined, offerBriefLines(state), showsMeeting(state), showsConversation(state));
+  const shape = islandSize(state.geometry, kind, open, undefined, offerBriefLines(state), showsMeeting(state), showsConversation(state), state.placement === "side");
   const jobsLine = open ? backgroundLine(state) : 0;
-  const size = natural && cardHeight !== null ? { width: shape.width, height: cardHeight } : { ...shape, height: shape.height + jobsLine };
+  // At the side, starting a recording is one small row (Record, and the call's name): no empty notch bar, no width for nothing.
+  const compact = open && state.placement === "side" && ((kind === "idle" && !state.meeting && !state.onScreen && !state.crmBlocked) || (kind === "call" && !state.onScreen));
+  // On a left or right edge the pill stands up, so its card does too: a column, not a bar.
+  const stacked = compact && (state.pill?.edge ?? "right") !== "top" && (state.pill?.edge ?? "right") !== "bottom";
+  const size = stacked
+    ? { width: SIDE_STACK_WIDTH, height: (kind === "idle" ? SIDE_STACK_IDLE : SIDE_STACK_CALL) + jobsLine }
+    : compact
+    ? { width: kind === "idle" ? SIDE_COMPACT_IDLE : SIDE_COMPACT_CALL, height: SIDE_COMPACT_HEIGHT + jobsLine }
+    : natural && cardHeight !== null ? { width: shape.width, height: cardHeight } : { ...shape, height: shape.height + jobsLine };
   const radius = cornerRadius(kind, open);
   const [hovered, setHovered] = useState(false);
   const lifted = hovered && !open && kind !== "starting";
@@ -51,7 +59,7 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
   useLayoutEffect(() => {
     const el = column.current;
     if (!natural || !el) return;
-    const measure = () => setCardHeight(Math.ceil(el.getBoundingClientRect().height));
+    const measure = () => setCardHeight(el.offsetHeight); // layout height: a bounding box is scaled while the side panel's open animation runs
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(el);
@@ -82,6 +90,7 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
       data-material={state.material}
       data-reduce-motion={state.reduceMotion}
       data-natural={natural}
+      data-stack={stacked}
       onMouseEnter={() => {
         setHovered(true);
         act({ name: "pointer", inside: true });
@@ -93,7 +102,7 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
     >
       <Background open={open} />
       <div className="column" ref={column}>
-        <div
+        {!compact && <div
           className="topbar"
           style={{ height: bar, padding: open ? "0 6px" : 0 }}
           title={helpText({ kind, open, stage: state.postCall?.stage ?? null, crmName: state.postCall ? postCallCrmName(state.postCall) : null, pending: state.postCall ? postCallPending(state.postCall) : 0, finishLine: finishLine(state.finish), dialLine: state.mode.kind === "phoneCall" ? CallWording.onPhone(state.mode.name, state.mode.failed).title : dialLine(state.dial) })}
@@ -115,7 +124,7 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
               </div>
             </>
           )}
-        </div>
+        </div>}
         {open && <Body state={state} act={act} onPopupExtent={setPopupBottom} />}
         {jobsLine > 0 && <JobsLine state={state} act={act} />}
       </div>

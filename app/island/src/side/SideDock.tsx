@@ -142,6 +142,8 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
   const edge = drag?.edge ?? spot.edge;
   const centre = drag?.centre ?? rest;
   const box = area && panelSize && !drag ? panelBox(spot, area, panelSize) : null;
+  // The most the screen leaves it: not its own measured height, or a card that grows after it was measured (the after-call one) would stay cut.
+  const maxHeight = area && panelSize ? panelBox(spot, area, { width: panelSize.width, height: Infinity }).height : null;
   // The open island is the notch's own, with no notch to sit around and rounded on every corner.
   const panelState: IslandState = { ...state, geometry: { ...state.geometry, notchWidth: 0 } };
   return (
@@ -180,7 +182,7 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
           className="side-panel"
           data-edge={spot.edge}
           data-placed={box !== null}
-          style={box ? { left: `${box.x}px`, top: `${box.y}px`, ["--panel-max-h" as string]: `${box.height}px` } : undefined}
+          style={box ? { left: `${box.x}px`, top: `${box.y}px`, ["--panel-max-h" as string]: `${maxHeight ?? box.height}px` } : undefined}
         >
           <NotchIsland state={panelState} act={act} />
         </div>

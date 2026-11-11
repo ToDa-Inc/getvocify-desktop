@@ -8,6 +8,16 @@ export const IDLE_EAR = 36;
 /** Room for an app icon or a small record dot, no more. */
 export const CALL_EAR = 46;
 export const POST_CALL_WIDTH = 420;
+/** The open island's width when the island rests at a screen edge (the after-call card gets 40 more, the recording, which shows a transcript, 100). */
+export const SIDE_WIDTH = 300;
+/** At the side, starting a recording is one small row: Record alone, or Record beside the detected call's name. */
+export const SIDE_COMPACT_IDLE = 176;
+export const SIDE_COMPACT_CALL = 280;
+export const SIDE_COMPACT_HEIGHT = 48;
+/** On a left or right edge the same card stands up: a slim capsule: the record dot and one small button under it. */
+export const SIDE_STACK_WIDTH = 44;
+export const SIDE_STACK_IDLE = 84;
+export const SIDE_STACK_CALL = 84;
 
 export const COLLAPSED_RADIUS = 12;
 export const OPEN_RADIUS = 22;
@@ -59,9 +69,10 @@ export function showsConversation(state: { mode: { kind: Kind }; live?: unknown;
   return state.mode.kind === "recording" && Boolean(state.live) && state.liveTab === "conversation";
 }
 
-export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody = 44, briefLines = 0, meeting = false, conversation = false): Size {
+export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody = 44, briefLines = 0, meeting = false, conversation = false, side = false): Size {
   const closed = { width: gap(g) + earWidth(kind, false) * 2, height: g.barHeight };
-  const wide = (min: number) => Math.max(gap(g) + EAR * 2, min);
+  // At the side of the screen the open island is a narrow card, not the notch's wide bar.
+  const wide = (min: number) => (side ? (min >= 460 ? SIDE_WIDTH + 100 : min >= 420 ? SIDE_WIDTH + 40 : SIDE_WIDTH) : Math.max(gap(g) + EAR * 2, min));
   const brief = briefLines > 0 ? BRIEF_HEAD + briefLines * BRIEF_LINE : 0;
   switch (kind) {
     case "idle":

@@ -41,6 +41,15 @@ async function open(fixture) {
   if (started) await win.webContents.executeJavaScript(`window.__setIslandState(${JSON.stringify(fixture.state)}); true`);
   // A card sized from its content animates to its height after it is measured; the pill's island grows out of it.
   await (fixture.fit || fixture.natural || fixture.side ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
+  // A fixture can have the pointer resting on an element (its hover state).
+  if (fixture.hover) {
+    const at = await win.webContents.executeJavaScript(`(() => { const r = document.querySelector(${JSON.stringify(fixture.hover)})?.getBoundingClientRect(); return r ? { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) } : null; })()`);
+    if (!at) errors.push(`hover target ${fixture.hover} not found`);
+    else {
+      win.webContents.sendInputEvent({ type: "mouseMove", x: at.x, y: at.y });
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
   return { win, errors };
 }
 

@@ -239,6 +239,18 @@ html:has(.side-stage), body:has(.side-stage) { overflow: hidden; }
 .side-strip[data-inline="true"] .pill-record .record-dot { width: 28px; height: 28px; background: rgba(255, 255, 255, 0.13); }
 .side-strip[data-inline="true"] .pill-record .record-dot span { width: 11px; height: 11px; }
 .side-stage[data-reduce-motion="true"] .side-strip { transition: background 160ms; }
+/* The Record button answers the pointer: it lights up with a red ring, and a label says what it does (the pill is a click-through
+   window, so a native tooltip would never show). The label comes out on the side away from the screen edge. */
+.side-strip[data-inline="true"] .pill-record .record-dot { transition: background 120ms, box-shadow 120ms, transform 120ms; }
+.side-strip[data-inline="true"] .pill-record .record-dot:hover { background: rgba(255, 255, 255, 0.19); box-shadow: 0 0 0 1px rgba(224, 82, 82, 0.35); }
+.pill-record[data-tip]::after { content: attr(data-tip); position: absolute; white-space: nowrap; padding: 4px 9px; border-radius: 10px; font-size: 11px; font-weight: 500; color: var(--secondary);
+  background: linear-gradient(180deg, rgb(37, 37, 41) 0%, rgb(21, 21, 24) 100%); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), inset 0 0 0 0.5px rgba(255, 255, 255, 0.12);
+  opacity: 0; pointer-events: none; transition: opacity 140ms 120ms; }
+.pill-record[data-tip]:hover::after { opacity: 1; }
+.side-dock[data-edge="right"] .pill-record::after { right: calc(100% + 14px); }
+.side-dock[data-edge="left"] .pill-record::after { left: calc(100% + 14px); }
+.side-dock[data-edge="top"] .pill-record::after { top: calc(100% + 16px); }
+.side-dock[data-edge="bottom"] .pill-record::after { bottom: calc(100% + 16px); }
 .side-strip:hover { background: linear-gradient(180deg, rgb(37, 37, 41) 0%, rgb(21, 21, 24) 100%); }
 .side-strip:focus-visible { box-shadow: 0 0 0 2px rgba(219, 192, 154, 0.7), 0 12px 30px rgba(0, 0, 0, 0.5); }
 .side-dock[data-dragging="true"] .side-strip { cursor: grabbing; }

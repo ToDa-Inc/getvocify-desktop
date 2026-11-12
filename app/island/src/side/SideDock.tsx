@@ -207,7 +207,7 @@ function PillFace({ state, act, open, inline, marker }: { state: IslandState; ac
     return (
       <>
         <span className="pill-glyph"><LeftEar state={state} open={false} lifted /></span>
-        <span className="pill-action pill-record">
+        <span className="pill-action pill-record" data-tip={state.recorderReady ? (state.language === "es" ? "Empezar a grabar" : "Start recording") : (state.language === "es" ? "Inicia sesión para grabar" : "Sign in to record")}>
           <RecordDot ready={state.recorderReady} title={state.recorderReady ? (caller ? `Record this ${caller} call` : "Record") : "Sign in to record"} onClick={() => act({ name: "record" })} />
         </span>
         <span className="pill-action">

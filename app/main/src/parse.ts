@@ -199,6 +199,13 @@ export function parseVoices(overlay: unknown): VoiceChoice[] {
   });
 }
 
+/** Who the calendar says is in the meeting (the rep left out): the names the rep can give a voice with one tap. */
+export function parsePeople(overlay: unknown): string[] {
+  if (!isRaw(overlay)) return [];
+  const names = (Array.isArray(overlay.people) ? overlay.people : []).flatMap((raw: unknown) => (typeof raw === "string" && raw.trim() ? [raw.trim().slice(0, 60)] : []));
+  return [...new Set(names)].slice(0, 12);
+}
+
 export function parseClock(raw: unknown): Clock | null {
   if (!isRaw(raw)) return null;
   const startedAt = num(raw.startedAt);

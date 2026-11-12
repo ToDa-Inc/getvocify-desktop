@@ -843,8 +843,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
    * it while the pointer is over a field ("over"), so the rep's own click in the field focuses it the way any click does
    * (Windows refuses a window that pulls itself to the front), and gives it back when the typing is done ("release").
    * A card appearing, or a click elsewhere in it, never takes it. macOS: the window can take it while the card is shown,
-   * so the click in a field itself focuses it.
+   * so the click in a field itself focuses it; during a call (a voice being named) it can take it while the pointer is
+   * over a field and on the click, and gives it back when the typing is done.
    */
+  let cardTakesKeys = false;
   ipcMain.handle("island:keyboard", (event, mode: string) => {
     if (!fromIsland(event.sender)) return false;
     const windows = platform === "win32";
@@ -853,10 +855,16 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       if (island.isFocused()) island.blur();
     };
     if (mode === "available") {
+      cardTakesKeys = true;
       if (!windows) island.setFocusable(true);
     } else if (mode === "over") {
       // Electron's setFocusable on Windows also drops focus: never call it when nothing changes (it would blur a field).
-      if (windows && !island.isFocusable()) island.setFocusable(true);
+      if (!island.isFocusable()) island.setFocusable(true);
+    } else if (mode === "now" && !windows) {
+      // The island is a panel that never activates the app: focusing it gives its field the keys without taking the call's window away.
+      if (!island.isFocusable()) island.setFocusable(true);
+      if (!island.isFocused()) island.focus();
+      island.webContents.focus();
     } else if (mode === "now") {
       // Windows: the click in the field was input to this app, so it may bring its window to the front; a window created
       // "never activate" is not activated by the click itself. Each way is tried until the island has the keyboard.
@@ -871,9 +879,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
         log(`keyboard for typing in the island: ${island.isFocused() ? "taken" : "not given by Windows"}`);
       }
     } else if (mode === "release") {
-      if (windows && !island.isFocused()) island.setFocusable(false);
-      else if (windows) giveBack();
+      if (!windows && cardTakesKeys) return true;
+      if (!island.isFocused()) island.setFocusable(false);
+      else giveBack();
     } else {
+      cardTakesKeys = false;
       giveBack();
     }
     return true;

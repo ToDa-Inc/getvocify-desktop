@@ -779,6 +779,14 @@ test("an overlay's voices reach the island, turns without them stay as they were
   assert.deepEqual(t.controller.state.voices, []);
 });
 
+test("the meeting's people reach the island once each, and what is not a name is dropped", () => {
+  const t = recording();
+  t.controller.applyShellState({ overlay: { turns: [], people: ["Toni Mora", " Javier Ramirez ", "", 3, "Toni Mora"] } });
+  assert.deepEqual(t.controller.state.people, ["Toni Mora", "Javier Ramirez"]);
+  t.controller.applyShellState({ overlay: { turns: [] } });
+  assert.deepEqual(t.controller.state.people, []);
+});
+
 test("the rep's rename, merge and move of a voice go to the dashboard as one command", () => {
   const t = recording();
   const sent = () => JSON.parse(String(t.last("shell:command")).slice("voice:".length));

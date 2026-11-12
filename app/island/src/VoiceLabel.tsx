@@ -3,36 +3,37 @@ import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import { keyboardNow, keyboardOver, releaseKeyboardSoon } from "./keyboard.ts";
 import type { Language } from "../../core/typeProposal.ts";
 import type { IslandAction, Turn, VoiceChoice } from "./types.ts";
+import { pickName, voiceNames } from "./voiceNames.ts";
 
 /**
- * The name above a line from the other side, when the dashboard tells that side's voices apart. A click opens a small
- * list to get a voice right: name it, say it is the same person as another voice, or move this paragraph to another
- * voice (or to someone new). The dashboard holds the transcript, so the island only asks; the lines change at once.
+ * The name above a line from the other side, when the dashboard tells that side's voices apart. One tap opens the people
+ * in the meeting (from the calendar, and the names already given): picking one names this voice, and picking a name
+ * another voice already has makes them one person. "Someone else" types a name. The dashboard holds the transcript, so
+ * the island only asks; the lines change at once.
  */
 
 type Act = (action: IslandAction) => void;
-export type VoiceMenu = { voices: VoiceChoice[]; act: Act; language: Language };
+export type VoiceMenu = { voices: VoiceChoice[]; people: string[]; act: Act; language: Language };
 
 const WORDS = {
-  en: { fix: "Name this voice, or fix who said it", menu: "Voice", rename: "Rename", same: "Same person as…", move: "Move this to…", someone: "Someone new", name: "Name", nameIt: "Name this voice" },
-  es: { fix: "Nombra esta voz o corrige quién lo dijo", menu: "Voz", rename: "Renombrar", same: "Misma persona que…", move: "Mover a…", someone: "Otra persona", name: "Nombre", nameIt: "Nombra esta voz" },
+  en: { fix: "Who is this?", menu: "Who is this?", someone: "Someone else…", name: "Name", nameIt: "Name this voice" },
+  es: { fix: "¿Quién es?", menu: "¿Quién es?", someone: "Otra persona…", name: "Nombre", nameIt: "Nombra esta voz" },
 };
-
-type View = "root" | "rename" | "merge" | "move";
 
 export function VoiceLabel({ turn, menu }: { turn: Turn; menu: VoiceMenu }) {
   const [anchor, setAnchor] = useState<Anchor | null>(null);
-  const [view, setView] = useState<View>("root");
+  const [typing, setTyping] = useState(false);
   const words = WORDS[menu.language === "es" ? "es" : "en"];
   const voice = turn.voice as number;
-  const others = menu.voices.filter((other) => other.id !== voice);
-  const starts = turn.starts ?? [];
+  const names = voiceNames(menu);
+  const current = (turn.label ?? "").trim().toLowerCase();
   const close = () => {
     setAnchor(null);
-    setView("root");
+    setTyping(false);
   };
-  const send = (action: IslandAction) => {
-    menu.act(action);
+  const choose = (name: string) => {
+    const action = pickName(menu, voice, name);
+    if (action) menu.act(action);
     close();
   };
   return (
@@ -46,33 +47,23 @@ export function VoiceLabel({ turn, menu }: { turn: Turn; menu: VoiceMenu }) {
         onClick={(event) => {
           // A click on the label is not a click on the island: it would close it.
           event.stopPropagation();
-          setView("root");
+          setTyping(false);
           setAnchor((open) => (open ? null : anchorOf(event.currentTarget)));
         }}
       >
         {turn.label}
       </button>
       {anchor && (
-        <FloatMenu anchor={anchor} width={view === "rename" ? 190 : 168} onClose={close} label={words.menu}>
-          {view === "root" && (
+        <FloatMenu anchor={anchor} width={190} onClose={close} label={words.menu}>
+          {typing ? (
+            <NameField initial="" words={words} onDone={(text) => (text === null || !text.trim() ? close() : choose(text))} />
+          ) : (
             <>
-              <MenuRow label={words.rename} selected={false} onPick={() => (keyboardNow(), setView("rename"))} />
-              {others.length > 0 && <MenuRow label={words.same} selected={false} onPick={() => setView("merge")} />}
-              {starts.length > 0 && <MenuRow label={words.move} selected={false} onPick={() => setView("move")} />}
-            </>
-          )}
-          {view === "rename" && <NameField initial={turn.label ?? ""} words={words} onDone={(text) => (text === null ? close() : send({ name: "voice", op: "rename", voice, text }))} />}
-          {view === "merge" &&
-            others.map((other) => (
-              <MenuRow key={other.id} label={other.label} selected={false} onPick={() => send({ name: "voice", op: "merge", keep: other.id, drop: voice })} />
-            ))}
-          {view === "move" && (
-            <>
-              {others.map((other) => (
-                <MenuRow key={other.id} label={other.label} selected={false} onPick={() => send({ name: "voice", op: "move", starts, voice: other.id })} />
+              {names.map((name) => (
+                <MenuRow key={name} label={name} selected={name.trim().toLowerCase() === current} onPick={() => choose(name)} />
               ))}
-              {others.length > 0 && <div className="hairline menu-divider" />}
-              <MenuRow label={words.someone} selected={false} onPick={() => send({ name: "voice", op: "move", starts, voice: null })} />
+              {names.length > 0 && <div className="hairline menu-divider" />}
+              <MenuRow label={words.someone} selected={false} onPick={() => (keyboardNow(), setTyping(true))} />
             </>
           )}
         </FloatMenu>

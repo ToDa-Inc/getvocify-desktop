@@ -314,6 +314,8 @@ export type IslandState = {
   mic?: MicView | null;
   /** The voices heard on the other side (two or more, or one the rep may name); empty when the dashboard does not tell them apart. */
   voices?: VoiceChoice[];
+  /** Who the calendar says is in the meeting, besides the rep: a voice is named by picking one. */
+  people?: string[];
   /** The finished calls the dashboard is still on; null when it does not report them (then the island waits on a spinner after a recording, as before). */
   background?: BackgroundJob[] | null;
   /** The recording that just ended, until its memo is being written; null when the dashboard says nothing. */

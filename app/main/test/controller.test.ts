@@ -74,7 +74,7 @@ test("the pointer holds the card open, and leaving lets it run out but never sna
   t.controller.act({ name: "toggle" });
   t.advance(4);
   t.controller.act({ name: "pointer", inside: true });
-  t.advance(60);
+  t.advance(10);
   assert.equal(t.controller.state.expanded, true);
   assert.ok(Math.abs((t.controller.state.countdown?.remaining ?? 0) - 1) < 0.01);
   t.controller.act({ name: "pointer", inside: false });
@@ -324,6 +324,36 @@ test("stopping while already paused sends no extra pause or resume", () => {
   t.controller.act({ name: "stop" });
   t.controller.act({ name: "resume" });
   assert.deepEqual(t.commands(), ["listen"]);
+});
+
+test("leaving resumes the countdown from where the pointer left it, not from its full length", () => {
+  const t = setup();
+  t.controller.act({ name: "toggle" });
+  t.advance(1);
+  t.controller.act({ name: "pointer", inside: true });
+  t.advance(3);
+  t.controller.act({ name: "pointer", inside: false });
+  assert.equal(t.controller.state.countdown?.remaining, 4);
+  t.advance(3.9);
+  assert.equal(t.controller.state.expanded, true);
+  t.advance(0.2);
+  assert.equal(t.controller.state.expanded, false);
+});
+
+test("a pointer whose leave never arrives cannot hold the countdown forever: it runs out after the hold cap", () => {
+  const t = setup();
+  t.controller.act({ name: "toggle" });
+  t.advance(1);
+  t.controller.act({ name: "pointer", inside: true });
+  t.advance(19.9);
+  assert.equal(t.controller.state.expanded, true, "held while the pointer rests on it");
+  // The hold ends 20 s after it began (at 21 s), with 4 s left: the card runs out from there.
+  t.advance(1.1);
+  t.advance(2.8);
+  assert.equal(t.controller.state.expanded, true);
+  t.advance(0.4);
+  assert.equal(t.controller.state.expanded, false);
+  assert.equal(t.controller.state.countdown, null);
 });
 
 test("the pointer cannot hold the stop grace open", () => {
@@ -1412,7 +1442,7 @@ test("where the call is heard, not seen on the mic: its sound starts the recordi
   assert.equal(t.mode(), "recording");
 });
 
-test("15 s with no call sound and the rep not speaking ends it, as a hang-up", () => {
+test("10 s with no sound on either side ends a call on the phone, as a hang-up", () => {
   const t = dialOnPhoneHeard();
   t.log.soundWatch?.();
   t.controller.show();
@@ -1426,23 +1456,95 @@ test("15 s with no call sound and the rep not speaking ends it, as a hang-up", (
     t.advance(1);
   }
   assert.equal(t.mode(), "recording", "the rep talking alone is still the call");
-  // The last activity was the loop's last second: 15 s on from it, the call has gone quiet.
+  // The last sound was a second before the loop ended: 10 s on from it, the call has gone quiet.
   t.controller.applyShellState({ callActivity: { them: false, you: false } });
-  t.advance(13);
+  t.advance(8);
   assert.equal(t.mode(), "recording");
-  t.advance(1.1);
+  t.advance(2);
   assert.equal(t.mode(), "stopped");
   assert.equal(t.controller.state.mode.kind === "stopped" && t.controller.state.mode.title, "Call ended");
 });
 
-test("other recordings never end on silence", () => {
-  const t = setup({ callSound: true });
+test("a recording whose far side is never heard (a dictation, a call that never connects) never ends on silence", () => {
+  const t = setup();
+  t.controller.act({ name: "record" });
+  t.controller.show();
+  for (let i = 0; i < 30; i++) {
+    t.controller.applyShellState({ callActivity: { them: false, you: i < 10 } });
+    t.advance(1);
+  }
+  t.advance(120);
+  assert.equal(t.mode(), "recording");
+});
+
+test("any recording, not only a call on the phone, ends after 10 s of silence on both sides once the far side was heard", () => {
+  const t = recording();
+  t.controller.applyShellState({ callActivity: { them: true, you: false } });
+  t.advance(9.9);
+  assert.equal(t.mode(), "recording", "the silence counts from the far side's last sound");
+  t.controller.applyShellState({ callActivity: { them: false, you: false } });
+  t.advance(0.2);
+  assert.equal(t.mode(), "stopped");
+  assert.equal(t.controller.state.mode.kind === "stopped" && t.controller.state.mode.title, "Call ended", "silence is a hang-up");
+  assert.deepEqual(t.commands().slice(-1), ["pause"]);
+});
+
+test("the silence does not start before the far side is heard, however long both sides are quiet", () => {
+  const t = recording();
+  t.controller.applyShellState({ callActivity: { them: false, you: true } });
+  t.advance(30);
+  t.controller.applyShellState({ callActivity: { them: false, you: false } });
+  t.advance(60);
+  assert.equal(t.mode(), "recording");
+  t.controller.applyShellState({ callActivity: { them: true, you: false } });
+  t.advance(9.9);
+  assert.equal(t.mode(), "recording");
+  t.advance(0.2);
+  assert.equal(t.mode(), "stopped", "heard once, the silence after it counts");
+});
+
+test("the far side talking keeps a meeting going while the rep is silent, however long", () => {
+  const t = recording();
+  for (let i = 0; i < 300; i++) {
+    t.controller.applyShellState({ callActivity: { them: i % 9 === 0, you: false } });
+    t.advance(1);
+  }
+  assert.equal(t.mode(), "recording", "a sound every 9 s on the far side, both sides quiet between: never 10 s of silence");
+});
+
+test("the rep talking alone keeps a recording going once the far side was heard", () => {
+  const t = recording();
+  t.controller.applyShellState({ callActivity: { them: true, you: false } });
+  for (let i = 0; i < 60; i++) {
+    t.controller.applyShellState({ callActivity: { them: false, you: i % 2 === 0 } });
+    t.advance(1);
+  }
+  assert.equal(t.mode(), "recording");
+});
+
+test("a paused recording is not measured for silence, and the silence counts again once it is resumed", () => {
+  const t = recording();
+  t.controller.applyShellState({ callActivity: { them: true, you: false } });
+  t.controller.applyShellState({ paused: true });
+  t.advance(30);
+  assert.equal(t.mode(), "recording", "paused: the silence says nothing");
+  t.controller.applyShellState({ paused: false });
+  t.advance(9.5);
+  assert.equal(t.mode(), "recording");
+  t.advance(1);
+  assert.equal(t.mode(), "stopped");
+});
+
+test("a call app letting go of the mic still ends the recording while the far side is talking", () => {
+  const t = setup();
   t.controller.callChanged(zoom);
   t.controller.act({ name: "record" });
   t.controller.show();
-  t.controller.applyShellState({ callActivity: { them: false, you: false } });
-  t.advance(120);
-  assert.equal(t.mode(), "recording");
+  t.controller.applyShellState({ callActivity: { them: true, you: false } });
+  t.controller.callChanged(null);
+  t.advance(3.1);
+  assert.equal(t.mode(), "stopped");
+  assert.equal(t.controller.state.mode.kind === "stopped" && t.controller.state.mode.title, "Call ended");
 });
 
 test("the listening stops once the call is heard, cancelled, or never connects", () => {
@@ -1457,15 +1559,18 @@ test("the listening stops once the call is heard, cancelled, or never connects",
   assert.equal(never.log.soundStops, 1);
 });
 
-test("a paused call on the phone never ends on silence", () => {
+test("a paused call on the phone is not measured for silence", () => {
   const t = dialOnPhoneHeard();
   t.log.soundWatch?.();
   t.controller.show();
+  t.controller.applyShellState({ callActivity: { them: true, you: false } });
   t.controller.applyShellState({ paused: true });
   t.advance(120);
   assert.equal(t.mode(), "recording");
   t.controller.applyShellState({ paused: false });
-  t.advance(15.1);
+  t.advance(9.5);
+  assert.equal(t.mode(), "recording");
+  t.advance(1);
   assert.equal(t.mode(), "stopped", "after the pause, silence counts again");
 });
 

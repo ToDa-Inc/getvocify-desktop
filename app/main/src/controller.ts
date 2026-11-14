@@ -38,8 +38,13 @@ const PHONE_CONNECT_TIMEOUT = 45;
 /** How long the island says a call on the phone didn't connect, or that an ended recording was not kept. */
 const PHONE_FAILED_LINGER = 10;
 const SKIPPED_LINGER = 4;
-/** A call on the phone heard through the PC's sound ends after this long with no call sound and the rep not speaking. */
-const CALL_SILENCE = 15;
+/** Both sides silent this long ends the recording, in any app (a call, a meeting, a softphone that keeps the mic open). Ten
+ * seconds is past a conversation's normal gaps and a thinking pause, and short enough that a call which is over stops soon
+ * after the last word. Hold music is sound, so it never counts. Only once the far side has been heard (see `farSideHeard`). */
+const CALL_END_SILENCE = 10;
+/** A pointer resting on a countdown holds it, but never this long: a leave the island never hears (a click-through window,
+ * a menu that took the pointer) must not keep the card open for good. */
+const HOVER_HOLD_CAP = 20;
 /** What the island says when the dashboard never took a call, and for how long (s). */
 const DIAL_FAILED = "Couldn't start the call";
 const DIAL_FAILED_HOLD = 4;
@@ -96,7 +101,7 @@ export type Effects = {
 /** How long "Recording with … · Change" stays once the island is open (the call type's line has 4 s; this one is read and acted on). */
 const MIC_NOTE_SECONDS = 8;
 
-type Timers = "autoClose" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout" | "dialFailedHold" | "phoneConnect" | "callSilence" | "typeNote" | "micNote";
+type Timers = "autoClose" | "hoverHold" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout" | "dialFailedHold" | "phoneConnect" | "callSilence" | "typeNote" | "micNote";
 
 export class IslandController {
   private effects: Effects;
@@ -125,8 +130,11 @@ export class IslandController {
   private shownSide: "you" | "them" = "them";
   /** The Vocify call on show was answered: its end waits for the memo ("processing"), not back to rest. */
   private dialAnswered = false;
-  /** Recording a call on the phone that started on its sound: silence on both sides is its hang-up. */
+  /** Recording a call on the phone that started on its sound: its audio session stopping is its hang-up. */
   private soundCall = false;
+  /** The far side has been heard in this recording. Until then (ringing, a silent connect, a dictation) silence on both
+   * sides ends nothing. */
+  private farSideHeard = false;
   /** Meetings already announced: each opens the island once. */
   private announcedMeetings = new Set<string>();
   /** One meeting at one time: a meeting moved to another time is announced (and can be closed) again. */
@@ -711,7 +719,8 @@ export class IslandController {
     }
   }
 
-  /** The pointer holds a self-closing card open; leaving lets the line run out again, never snapping it shut. */
+  /** The pointer holds a self-closing card open; leaving lets the line run out again, never snapping it shut. The hold is
+   * capped (HOVER_HOLD_CAP): the leave can be lost (see app.ts's click-through window), and then the card still runs out. */
   pointer(inside: boolean): void {
     const countdown = this.current.countdown;
     // The stop grace always runs out: a pointer resting where Stop was clicked must not hold the memo back.
@@ -719,8 +728,11 @@ export class IslandController {
     const now = this.effects.now();
     if (inside && countdown.runningSince !== null) {
       this.stopTimer("autoClose");
+      this.start("hoverHold", HOVER_HOLD_CAP, () => this.pointer(false));
       this.set({ countdown: { ...countdown, remaining: countdown.remaining - (now - countdown.runningSince) / 1000, runningSince: null } });
     } else if (!inside && countdown.runningSince === null) {
+      this.stopTimer("hoverHold");
+      // Resumes from where it was; the floor only keeps a card that was nearly done from snapping shut the moment it is left.
       const remaining = Math.max(countdown.remaining, MIN_HOLD_AFTER_LEAVE);
       this.set({ countdown: { ...countdown, remaining, runningSince: now } });
       this.scheduleAutoClose(remaining);
@@ -746,12 +758,19 @@ export class IslandController {
     });
   }
 
-  /** The dashboard's reading of the last second: the call side played sound, the rep spoke. Either keeps a call on the
-   * phone heard through the PC's sound going. */
+  /** The dashboard's reading of the last second: the far side played sound, the rep spoke. Any sound restarts the countdown
+   * to silence, so a meeting where the others talk and the rep is quiet never ends; the far side's first sound latches
+   * `farSideHeard`, which the silence needs. */
   private callActivity(raw: unknown): void {
-    if (!this.soundCall || this.mode !== "recording" || typeof raw !== "object" || raw === null) return;
+    if (this.mode !== "recording" || typeof raw !== "object" || raw === null) return;
     const { them, you } = raw as { them?: unknown; you?: unknown };
-    if (them === true || you === true) this.start("callSilence", CALL_SILENCE, () => this.callWentSilent());
+    if (them === true) this.farSideHeard = true;
+    if (them === true || you === true) this.armSilence();
+  }
+
+  /** Counts the silence that ends the recording, once the far side has been heard. */
+  private armSilence(): void {
+    if (this.farSideHeard) this.start("callSilence", CALL_END_SILENCE, () => this.callWentSilent());
   }
 
   /** The call on the phone stopped playing in its audio session (Windows): its hang-up, with a call app's grace. */
@@ -768,9 +787,9 @@ export class IslandController {
   }
 
   private callWentSilent(): void {
-    if (!this.soundCall || this.mode !== "recording") return;
+    if (this.mode !== "recording") return;
     // Paused, nothing is measured: the silence says nothing about the call.
-    if (this.current.paused) return this.start("callSilence", CALL_SILENCE, () => this.callWentSilent());
+    if (this.current.paused) return this.armSilence();
     this.stop(true);
   }
 
@@ -793,7 +812,7 @@ export class IslandController {
     this.grace = null;
     this.run(grace.onResume);
     this.transition({ kind: "recording" }, false);
-    if (this.soundCall) this.start("callSilence", CALL_SILENCE, () => this.callWentSilent());
+    this.armSilence();
   }
 
   /** Ending the recording hands it to the dashboard; the memo is written in the background. */
@@ -842,6 +861,7 @@ export class IslandController {
     // Only a call app already holding the mic is the one being handled (until it lets go). A recording that is not a detected
     // call (a Vocify call, a meeting) must not hide the next call app from the island.
     this.callHandled = this.currentCaller !== null;
+    if (this.mode !== "recording") this.farSideHeard = false;
     this.stopTimer("startTimeout");
     // The dashboard ends a Vocify call; another app letting go of the mic says nothing about it.
     if (this.vocifyCallUp) this.recordingCaller = null;
@@ -853,7 +873,6 @@ export class IslandController {
     this.transition({ kind: "recording" }, keepsShape && this.current.expanded);
     // The call app let go of the mic while the recording was still starting: nothing else will say so, so the hang-up is watched now.
     if (this.recordingCaller?.appId && !holds(this.currentCaller, this.recordingCaller.appId)) this.watchForHangUp(this.currentCaller);
-    if (this.soundCall) this.start("callSilence", CALL_SILENCE, () => this.callWentSilent());
   }
 
   /** Ends the stop grace now, without waiting for its line to run out. */
@@ -1169,6 +1188,7 @@ export class IslandController {
 
   private transition(mode: Mode, expanded: boolean): void {
     this.stopTimer("autoClose");
+    this.stopTimer("hoverHold");
     // Every recording starts on its transcript.
     this.set({ mode, expanded, countdown: null, ...(mode.kind !== "recording" && this.current.liveTab !== "transcript" ? { liveTab: "transcript" as const } : {}) });
     // A meeting that came up while a call, a recording or a card held the island is announced once it is back at rest.

@@ -17,6 +17,9 @@ export type BrowserCallDeps = {
 };
 
 const LOOK_EVERY_MS = 4000;
+/** Looks skipped after this many looks that found nothing: every 4 s, then about 16 s, then about 32 s. A browser that is
+ * only holding the microphone rarely shows a call, and each look reads every browser window (UI Automation). */
+const skipAfterMisses = (misses: number) => (misses < 3 ? 0 : misses < 6 ? 3 : 7);
 
 export function createBrowserCallWatch(deps: BrowserCallDeps) {
   let watching: { appId: string; stop: () => void } | null = null;
@@ -34,13 +37,25 @@ export function createBrowserCallWatch(deps: BrowserCallDeps) {
       const watch = { appId: browser.appId, stop: () => {} };
       watching = watch;
       let looking = false;
+      // A new browser holding the microphone starts again from every 4 s: the count is kept for this browser only.
+      let misses = 0;
+      let skip = 0;
       const look = async () => {
         if (looking || watching !== watch) return;
+        if (skip > 0) {
+          skip--;
+          return;
+        }
         looking = true;
         try {
           const source = await deps.readSource().catch(() => null);
           // The browser may have let go, or another one taken over, while the pages were read.
-          if (watching !== watch || !source) return;
+          if (watching !== watch) return;
+          if (!source) {
+            misses++;
+            skip = skipAfterMisses(misses);
+            return;
+          }
           // Offered once; the watch stays so the same browser is not looked at again, and ends when it lets go.
           watch.stop();
           deps.announce({ name: source.name, appId: browser.appId, icon: browser.icon });

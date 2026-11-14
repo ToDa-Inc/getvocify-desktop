@@ -35,6 +35,9 @@ contextBridge.exposeInMainWorld("vocifyIsland", {
   pillDrop(spot: PillSpot) {
     ipcRenderer.send("island:pill-drop", spot);
   },
+  sideHits(hits: { boxes: { x: number; y: number; width: number; height: number }[]; hold: boolean }) {
+    ipcRenderer.send("island:side-hits", hits);
+  },
   copy(text: string): Promise<boolean> {
     return ipcRenderer.invoke("island:copy", text);
   },

@@ -65,6 +65,29 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
     return () => observer.disconnect();
   }, [open, kind]);
 
+  // Windows: the app reads the cursor and lets clicks through except over these boxes (a forwarded pointer move does not
+  // reach a click-through window there), so they are reported after every change, and while a press is under way.
+  const reported = useRef("");
+  const reportHits = useCallback(() => {
+    if (window.vocifyIsland?.platform !== "win32") return;
+    const boxes = [pill.current, panel.current, document.querySelector<HTMLElement>(".float-menu")].flatMap((el) => {
+      const box = el?.getBoundingClientRect();
+      return box && box.width > 0 && box.height > 0 ? [{ x: box.left, y: box.top, width: box.width, height: box.height }] : [];
+    });
+    const hits = { boxes, hold: press.current !== null };
+    const key = JSON.stringify(hits);
+    if (key === reported.current) return;
+    reported.current = key;
+    window.vocifyIsland?.sideHits?.(hits);
+  }, []);
+  useLayoutEffect(() => reportHits());
+  // A menu opened from the island (the call type) is added to the page's top level, after the render that opened it.
+  useEffect(() => {
+    const observer = new MutationObserver(reportHits);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [reportHits]);
+
   // Clicks pass through the window except over the pill and the open island (and all through a drag).
   const interactive = useRef<boolean | null>(null);
   const setInteractive = useCallback((on: boolean) => {
@@ -107,7 +130,8 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
       // A pointer that cannot be captured (a synthetic one) still drags while it stays over the window.
     }
     press.current = { x: event.clientX, y: event.clientY, grabX: event.clientX - rest.x, grabY: event.clientY - rest.y, moved: false };
-  }, [rest]);
+    reportHits();
+  }, [rest, reportHits]);
   const onPointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const p = press.current;
     if (!p || !area) return;
@@ -122,6 +146,7 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
   const endPress = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const p = press.current;
     press.current = null;
+    reportHits();
     if (!p?.moved || !area) return;
     suppressClick.current = true;
     const point = local(event, p.grabX, p.grabY);
@@ -129,7 +154,7 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
     setSpot(next);
     setDrag(null);
     window.vocifyIsland?.pillDrop?.(next);
-  }, [area]);
+  }, [area, reportHits]);
   // A drag ends with a click on the same element: that one does not open or close it.
   const onClick = () => {
     if (suppressClick.current) {

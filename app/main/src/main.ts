@@ -24,7 +24,16 @@ const DEFAULT_DASHBOARD = PRODUCTION_DASHBOARD;
 // Windows: the island is a see-through window, and drawn by the graphics card it left old words and black patches
 // inside bubbles whenever the transcript moved smoothly. Drawn in software it is clean (test/paint-island.mjs, on a
 // Windows machine). `--gpu` keeps hardware acceleration, to compare on a given PC.
-if (process.platform === "win32" && !process.argv.includes("--gpu")) app.disableHardwareAcceleration();
+/** A graphics process that died twice is counted by the app (app.ts): this PC draws in software from then on. */
+const graphicsKeepsDying = (): boolean => {
+  try {
+    const saved = JSON.parse(readFileSync(join(app.getPath("userData"), "settings.json"), "utf8")) as { gpuCrashes?: unknown };
+    return typeof saved.gpuCrashes === "number" && saved.gpuCrashes >= 2;
+  } catch {
+    return false;
+  }
+};
+if (!process.argv.includes("--gpu") && (process.platform === "win32" || graphicsKeepsDying())) app.disableHardwareAcceleration();
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();

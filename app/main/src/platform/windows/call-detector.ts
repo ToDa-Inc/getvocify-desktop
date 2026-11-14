@@ -1,7 +1,7 @@
 import { MicWatcher } from "../../windows/mic-use.ts";
 import type { CallDetector, DetectedCaller } from "../types.ts";
 
-/** The microphone-use record Windows keeps (see windows/mic-use.ts), polled once a second. */
+/** The microphone-use record Windows keeps (see windows/mic-use.ts), polled every two seconds. */
 export function createWindowsCallDetector(deps: {
   /** `reg query <MIC_CONSENT_KEY> /s`. */
   read(): Promise<string>;

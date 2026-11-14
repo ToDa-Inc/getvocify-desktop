@@ -246,7 +246,10 @@ export type PostCallData = {
   crmUrl: string | null;
   /** Nobody answered (a voicemail): the card offers only the lead status and tasks, and no note. */
   noAnswer: boolean;
+  /** Where the call is saved (note, call, tasks), deal first, as the company's settings choose; empty when unknown. */
+  savedOn: PostCallSavedOn[];
 };
+export type PostCallSavedOn = { kind: "deal" | "company" | "contact"; name: string };
 
 /** What a finished call still needs. Working: Vocify is writing it up. Needs: an update waits for the rep. Failed: it could not be written, and stays until retried. Followup: logged as no answer, with an optional follow-up. Done: saved, for a moment. */
 export type BackgroundJobState = "working" | "needs" | "failed" | "followup" | "done";
@@ -401,6 +404,8 @@ export type IslandHost = {
   pillDrag?(screenX: number, screenY: number): void;
   /** The pill was let go: its edge and place, remembered with the screen it is on. */
   pillDrop?(spot: PillSpot): void;
+  /** As a pill on Windows: the boxes (window px) the clicks belong to, and whether a press is under way (a drag). */
+  sideHits?(hits: { boxes: { x: number; y: number; width: number; height: number }[]; hold: boolean }): void;
   /**
    * The island never takes the keyboard (a click must not take it from the call) unless the rep types in it:
    * "available" while a card with fields is shown, "over" while the pointer is over a field (so the click in it focuses

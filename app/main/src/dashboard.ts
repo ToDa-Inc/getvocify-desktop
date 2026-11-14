@@ -28,6 +28,8 @@ export type DashboardOptions = {
   isQuitting(): boolean;
   /** The rep closed the window: the app quits (nothing recording) or asks first. */
   onUserClose(): void;
+  /** The page's process died (not a clean exit): the page is loaded again, and the app counts these. */
+  onRendererGone?(reason: string): void;
   log(line: string): void;
 };
 
@@ -104,7 +106,26 @@ export class DashboardHost {
     });
     win.webContents.on("render-process-gone", (_event, details) => {
       this.options.log(`dashboard renderer gone: ${details.reason}`);
-      if (details.reason !== "clean-exit" && !win.isDestroyed()) win.webContents.reloadIgnoringCache();
+      if (details.reason === "clean-exit" || win.isDestroyed()) return;
+      this.options.onRendererGone?.(details.reason);
+      win.webContents.reloadIgnoringCache();
+    });
+    // A page busy for a while (a long list, a slow sync) is left alone; one still stuck after 30 s is ended, which loads it
+    // again through the event above. Only once nothing is recording: the recording lives in this page.
+    let stuck: ReturnType<typeof setTimeout> | null = null;
+    win.webContents.on("unresponsive", () => {
+      this.options.log("dashboard page stopped responding");
+      stuck = setTimeout(() => {
+        stuck = null;
+        if (win.isDestroyed() || !this.options.canDestroy()) return;
+        this.options.log("dashboard page did not respond for 30 seconds, loading it again");
+        win.webContents.forcefullyCrashRenderer();
+      }, 30_000);
+    });
+    win.webContents.on("responsive", () => {
+      if (stuck) clearTimeout(stuck);
+      stuck = null;
+      this.options.log("dashboard page responds again");
     });
     // Opened at login, the Mac often has no network yet: the page fails with ERR_NAME_NOT_RESOLVED and would stay blank
     // for good, and a blank page records nothing. It is loaded again, a little later each time, until it loads.

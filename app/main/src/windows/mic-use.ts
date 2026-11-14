@@ -143,7 +143,7 @@ export type MicWatcherDeps = {
   onActive?(apps: string[]): void;
 };
 
-const POLL_MS = 1000;
+const POLL_MS = 2000;
 const SETTLE_MS = 300;
 
 /** Polls the microphone-use record and reports the caller only when it changes. */

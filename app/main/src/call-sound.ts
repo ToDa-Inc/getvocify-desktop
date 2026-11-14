@@ -30,6 +30,8 @@ export class CallSoundWatch {
   private heard = false;
   /** When each sounding frame arrived, and how long it was (ms). */
   private sound: { at: number; ms: number }[] = [];
+  /** Bumped by every stop and handover: a capture still starting when that happens is released as soon as it starts. */
+  private turn = 0;
 
   constructor(deps: CallSoundWatch["deps"]) {
     this.deps = deps;
@@ -38,6 +40,7 @@ export class CallSoundWatch {
   /** Listens until the call is heard (`onSound`, once) or `stop`/`handOver`. */
   async start(onSound: () => void): Promise<void> {
     await this.stop();
+    const turn = this.turn;
     this.heard = false;
     this.sound = [];
     this.unsubscribe = this.deps.loopback.onPcm((pcm) => {
@@ -53,6 +56,13 @@ export class CallSoundWatch {
       }
     });
     const started = await this.deps.loopback.start();
+    // Stopped (or handed over) while the capture was starting: nothing else will release it, so it is released here.
+    if (turn !== this.turn) {
+      this.unsubscribe?.();
+      this.unsubscribe = null;
+      if (started.ok) await this.deps.loopback.stop();
+      return;
+    }
     this.running = started.ok;
     if (!started.ok) {
       this.deps.log(`call sound: could not listen (${started.reason ?? "unknown"})`);
@@ -63,6 +73,7 @@ export class CallSoundWatch {
 
   /** The recording takes the capture as it is: true when it is running and heard the call. */
   handOver(): boolean {
+    this.turn++;
     const take = this.running && this.heard;
     this.unsubscribe?.();
     this.unsubscribe = null;
@@ -72,6 +83,7 @@ export class CallSoundWatch {
 
   /** Stops listening, and the capture unless it was handed over. */
   async stop(): Promise<void> {
+    this.turn++;
     this.unsubscribe?.();
     this.unsubscribe = null;
     if (this.running) {

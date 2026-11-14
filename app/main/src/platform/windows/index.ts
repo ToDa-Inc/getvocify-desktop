@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { encodePowerShell, READER_LOOP_SCRIPT } from "../../windows/browser-pages.ts";
 import { MIC_CONSENT_KEY } from "../../windows/mic-use.ts";
 import { parsePhoneLinkCall, phoneLinkCallScript } from "../../windows/phone-link-call.ts";
@@ -14,18 +14,14 @@ import { createWindowsPermissions } from "./permissions.ts";
 import { createWindowsPhone } from "./phone.ts";
 import { createWindowsSystemAudio } from "./system-audio.ts";
 
-const reg = (args: string[]) => (countLaunch("reg.exe"), execFileSync("reg.exe", ["query", ...args], { encoding: "utf8", timeout: 5000, windowsHide: true }));
+/** `reg query`, answered in the background: a registry read that waits for the answer must never stall the app's thread.
+ * A key that does not exist (or no registry answer) is "". */
+const regQuery = (args: string[]): Promise<string> => runQuiet("reg.exe", ["query", ...args], 5000).catch(() => "");
 
 /** The app the rep chose for TEL links (Settings › Default apps), as the UserChoice ProgId Windows keeps; null for none. */
-function telProgId(): string | null {
-  try {
-    return /ProgId\s+REG_SZ\s+(\S+)/.exec(reg(["HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\tel\\UserChoice", "/v", "ProgId"]))?.[1] ?? null;
-  } catch {
-    return null;
-  }
+async function telProgId(): Promise<string | null> {
+  return /ProgId\s+REG_SZ\s+(\S+)/.exec(await regQuery(["HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\tel\\UserChoice", "/v", "ProgId"]))?.[1] ?? null;
 }
-
-const hasDefaultTelApp = () => telProgId() !== null;
 
 /**
  * Phone Link is installed (its package, Microsoft.YourPhone) even when the rep never made it the default for TEL links,
@@ -33,34 +29,21 @@ const hasDefaultTelApp = () => telProgId() !== null;
  * kept (longer when yes) instead of asking at every look.
  */
 let phoneLinkSeen: { installed: boolean; at: number } | null = null;
-function phoneLinkInstalled(): boolean {
+async function phoneLinkInstalled(): Promise<boolean> {
   const now = Date.now();
   if (phoneLinkSeen && now - phoneLinkSeen.at < (phoneLinkSeen.installed ? 10 * 60_000 : 30_000)) return phoneLinkSeen.installed;
-  let installed = false;
-  try {
-    countLaunch("powershell.exe");
-    const out = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "(Get-AppxPackage -Name Microsoft.YourPhone | Measure-Object).Count"], {
-      encoding: "utf8",
-      timeout: 8000,
-      windowsHide: true,
-    });
-    installed = Number(out.trim()) > 0;
-  } catch {
-    installed = false;
-  }
+  const out = await runQuiet("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", "(Get-AppxPackage -Name Microsoft.YourPhone | Measure-Object).Count"], 8000).catch(() => "");
+  const installed = Number(out.trim()) > 0;
   phoneLinkSeen = { installed, at: now };
   return installed;
 }
 
 /** That app is Phone Link: its package (Microsoft.YourPhone), whatever the language shows as its name. */
-function telAppIsPhoneLink(name: string): boolean {
-  const progId = telProgId();
+async function telAppIsPhoneLink(name: string): Promise<boolean> {
+  const progId = await telProgId();
   if (!progId) return false;
-  try {
-    if (/Microsoft\.YourPhone/i.test(reg([`HKCR\\${progId}\\Application`, "/v", "AppUserModelID"]))) return true;
-  } catch {
-    // No package details for this ProgId: the name decides.
-  }
+  if (/Microsoft\.YourPhone/i.test(await regQuery([`HKCR\\${progId}\\Application`, "/v", "AppUserModelID"]))) return true;
+  // No package details for this ProgId: the name decides.
   return /phone link|enlace m[oó]vil|yourphone/i.test(name);
 }
 
@@ -106,6 +89,32 @@ function createAudioSessionReader(log: (line: string) => void): AudioSessionRead
 export function createWindowsPlatform(env: PlatformEnv): Platform {
   /** The Phone Link Call press still waiting, if any. */
   let pressing: ReturnType<typeof spawn> | null = null;
+  /** Bumped by each press and each stop: a press still asking Windows whether Phone Link is the app does nothing once
+   * another press was asked or the call has started. */
+  let pressTurn = 0;
+  /** The app calls open in, as last asked of Windows. It is asked in the background, at start and then at most every ten
+   * minutes while the dashboard looks, so the answer never waits for the registry or PowerShell. */
+  let telAppNow = "";
+  let telAppAskedAt = Number.NEGATIVE_INFINITY;
+  let telAppAsking = false;
+  const askTelApp = () => {
+    telAppAskedAt = Date.now();
+    if (telAppAsking) return;
+    telAppAsking = true;
+    void (async () => {
+      // Only a default Windows keeps for TEL links counts: without one, Electron names Windows' own app picker
+      // ("Choose an app", in the system's language) as if it were an app.
+      // With none chosen, an installed Phone Link still counts: the link opens Windows' own picker, where it is one click.
+      telAppNow = (await telProgId()) !== null ? env.protocolApp("tel:") : (await phoneLinkInstalled()) ? "Phone Link" : "";
+    })()
+      .catch((error) => {
+        // Asked again at the next look, not in ten minutes.
+        telAppAskedAt = Number.NEGATIVE_INFINITY;
+        env.log(`calls app not read: ${String(error)}`);
+      })
+      .finally(() => (telAppAsking = false));
+  };
+  askTelApp();
   return {
     // Naming the other side's speakers is Mac-only for now (Zoom Accessibility, Meet through the extension's Mac host).
     speakers: null,
@@ -138,31 +147,35 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
     island: { prepare: () => "non-activating (Windows: not focusable)" },
     audioSessions: createAudioSessionReader(env.log),
     phone: createWindowsPhone({
-      // Only a default Windows keeps for TEL links counts: without one, Electron names Windows' own app picker
-      // ("Choose an app", in the system's language) as if it were an app.
-      // With none chosen, an installed Phone Link still counts: the link opens Windows' own picker, where it is one click.
-      telApp: () => (hasDefaultTelApp() ? env.protocolApp("tel:") : phoneLinkInstalled() ? "Phone Link" : ""),
+      telApp: () => {
+        if (Date.now() - telAppAskedAt > 10 * 60_000) askTelApp();
+        return telAppNow;
+      },
       openExternal: env.openExternal,
       openSoundRecording: () => void runQuiet("control.exe", ["mmsys.cpl,,1"], 10_000).catch((error) => env.log(`sound settings did not open: ${String(error)}`)),
       // Only Phone Link has a Call button Vocify knows; another app for TEL links is left to the rep.
       pressCall: (number) => {
-        if (!telAppIsPhoneLink(env.protocolApp("tel:"))) return;
-        pressing?.kill();
-        const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(phoneLinkCallScript(number))], {
-          windowsHide: true,
-          stdio: ["ignore", "pipe", "ignore"],
-        });
-        pressing = child;
-        countLaunch("powershell.exe");
-        let output = "";
-        child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString("utf8")));
-        child.on("exit", () => {
-          if (pressing !== child) return env.log("phone link call button: stopped, the call had started");
-          pressing = null;
-          env.log(`phone link call button: ${parsePhoneLinkCall(output)}`);
-        });
+        const turn = ++pressTurn;
+        void (async () => {
+          if (!(await telAppIsPhoneLink(env.protocolApp("tel:"))) || turn !== pressTurn) return;
+          pressing?.kill();
+          const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(phoneLinkCallScript(number))], {
+            windowsHide: true,
+            stdio: ["ignore", "pipe", "ignore"],
+          });
+          pressing = child;
+          countLaunch("powershell.exe");
+          let output = "";
+          child.stdout?.on("data", (chunk: Buffer) => (output += chunk.toString("utf8")));
+          child.on("exit", () => {
+            if (pressing !== child) return env.log("phone link call button: stopped, the call had started");
+            pressing = null;
+            env.log(`phone link call button: ${parsePhoneLinkCall(output)}`);
+          });
+        })().catch((error) => env.log(`phone link call button: ${String(error)}`));
       },
       stopPressing: () => {
+        pressTurn++;
         const child = pressing;
         pressing = null;
         child?.kill();

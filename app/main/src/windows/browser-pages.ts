@@ -12,12 +12,23 @@ import { CrmPages } from "../../../core/crmPages.ts";
  * page (Document controls), so reading the address bar never touches page content. The address bar is the text field in
  * the top band of the window, not found by its (translated) name.
  */
-/** Shared by both scripts: UI Automation set-up, and the address bar of one browser window (the walk skips the page). */
+/** Shared by both scripts: UI Automation set-up, and the address bar of one browser window (the walk skips the page).
+ * A window that has stopped answering (IsHungAppWindow) is skipped: UI Automation would wait on it for its whole timeout,
+ * and that wait is what restarted the reader. */
 const UIA_SETUP = String.raw`
 $ErrorActionPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public static class VocifyWindows {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+  [DllImport("user32.dll")] public static extern bool IsHungAppWindow(IntPtr window);
+}
+"@
 $AE = [System.Windows.Automation.AutomationElement]
 $CT = [System.Windows.Automation.ControlType]
 $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
@@ -48,8 +59,8 @@ function Find-Address($w) {
 }
 `;
 
-export const READ_PAGES_SCRIPT = String.raw`
-${UIA_SETUP}
+/** Every browser window's address bar, one `browser<TAB>address` line each; needs UIA_SETUP first. */
+const READ_PAGES_BODY = String.raw`
 $browsers = @{}
 Get-Process -Name chrome,msedge,brave,opera,vivaldi,firefox,arc | ForEach-Object { $browsers[$_.Id] = $_.ProcessName }
 $chromium = New-Object System.Windows.Automation.PropertyCondition($AE::ClassNameProperty, 'Chrome_WidgetWin_1')
@@ -58,10 +69,13 @@ $either = New-Object System.Windows.Automation.OrCondition($chromium, $firefox)
 $windows = $AE::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $either)
 foreach ($w in $windows) {
   if (-not $browsers.ContainsKey($w.Current.ProcessId)) { continue }
+  if ([VocifyWindows]::IsHungAppWindow([IntPtr]$w.Current.NativeWindowHandle)) { continue }
   $found = Find-Address $w
   if ($found) { Write-Output ($browsers[$w.Current.ProcessId] + [char]9 + $found) }
 }
 `;
+
+export const READ_PAGES_SCRIPT = String.raw`${UIA_SETUP}${READ_PAGES_BODY}`;
 
 /** `-EncodedCommand` takes the script as UTF-16LE base64, which needs no quoting. */
 export function encodePowerShell(script: string): string {
@@ -145,27 +159,19 @@ export const WATCHED_BROWSERS = new Set(["chrome", "msedge", "brave", "opera", "
  */
 export const READER_LOOP_SCRIPT = String.raw`
 ${UIA_SETUP}
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-public static class VocifyForeground {
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
-}
-"@
 function Read-Pages {
-${READ_PAGES_SCRIPT}
+${READ_PAGES_BODY}
 }
 while ($true) {
   $line = [Console]::In.ReadLine()
   if ($line -eq $null) { break }
   if ($line -eq 'front' -or $line -eq 'page') {
-    $window = [VocifyForeground]::GetForegroundWindow()
+    $window = [VocifyWindows]::GetForegroundWindow()
     [uint32]$owner = 0
-    [void][VocifyForeground]::GetWindowThreadProcessId($window, [ref]$owner)
+    [void][VocifyWindows]::GetWindowThreadProcessId($window, [ref]$owner)
     $process = Get-Process -Id $owner
     if ($process -and $line -eq 'front') { Write-Output $process.ProcessName }
-    if ($process -and $line -eq 'page') {
+    if ($process -and $line -eq 'page' -and -not [VocifyWindows]::IsHungAppWindow($window)) {
       $address = Find-Address ($AE::FromHandle($window))
       if ($address) { Write-Output ($process.ProcessName + [char]9 + $address) }
     }

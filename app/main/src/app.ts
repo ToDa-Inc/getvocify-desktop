@@ -137,8 +137,38 @@ const trustedHostsFor = (dashboardUrl: string) => {
   };
 };
 
+/** Page crashes within this window are counted together; more than a few in it means a reload will not hold. */
+const CRASH_WINDOW_MS = 5 * 60_000;
+
 export async function startApp(options: AppOptions): Promise<AppHandle> {
   const log = createLogger(join(options.userDataDir, "logs", "vocify.log"));
+  // A page that dies is loaded again where it is handled (the island, the dashboard). When that keeps happening, a reload
+  // is not enough: the rep is offered a restart, once per window of time, and the app stays up meanwhile.
+  const pageCrashes: number[] = [];
+  let restartOfferedAt = Number.NEGATIVE_INFINITY;
+  const pageCrashed = () => {
+    const now = Date.now();
+    pageCrashes.push(now);
+    while (pageCrashes.length > 0 && now - pageCrashes[0] > CRASH_WINDOW_MS) pageCrashes.shift();
+    if (pageCrashes.length <= 3 || now - restartOfferedAt < CRASH_WINDOW_MS) return;
+    restartOfferedAt = now;
+    const spanish = ProposalWording.language(app.getLocale()) === "es";
+    void dialog
+      .showMessageBox({
+        type: "warning",
+        message: spanish ? "Vocify ha tenido que recargar varias veces seguidas." : "Vocify has had to reload several times in a row.",
+        detail: spanish ? "Reiniciarlo suele arreglarlo. Una grabación en curso se corta." : "Restarting usually fixes it. A recording in progress is cut.",
+        buttons: [spanish ? "Reiniciar Vocify" : "Restart Vocify", spanish ? "Seguir así" : "Keep going"],
+        defaultId: 1,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0) {
+          app.relaunch();
+          app.quit();
+        }
+      });
+  };
   // An uncaught error in the main process would otherwise stop at Electron's error box, which holds the app (and so the
   // island) until it is answered, and leaves nothing in the log.
   process.on("uncaughtException", (error) => log(`uncaught exception: ${error.stack ?? String(error)}`));
@@ -403,6 +433,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     isQuitting: () => quitting,
     // Closing Vocify's window closes Vocify (the island too); a meeting still recording is asked about first.
     onUserClose: () => app.quit(),
+    onRendererGone: () => pageCrashed(),
     log,
   });
   dashboardHolder.host = dashboard;
@@ -462,6 +493,35 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     screen.getAllDisplays().find((display) => display.id === pillDisplayId) ?? chosenDisplay() ?? screen.getPrimaryDisplay();
   const sideFrame = () => ({ ...pillDisplay().workArea });
   let sideActive = false;
+  /**
+   * Windows only: where the pill, its open panel and any menu they open are, as the page reports them (window px), and
+   * whether a press is under way. The window takes clicks only there (see reachFromCursor).
+   */
+  let sideHits: { boxes: { x: number; y: number; width: number; height: number }[]; hold: boolean } = { boxes: [], hold: false };
+  let sideReaching = false;
+  let sideReach: ReturnType<typeof setInterval> | null = null;
+  /**
+   * Windows: forwarded pointer moves do not reliably reach a click-through window, so the pill would never take a click
+   * after the first one. The cursor is read instead, a few times a second, and the window takes clicks while it is over
+   * the pill (or a press is under way, so a drag may leave the pill). The Mac keeps the forwarded moves.
+   */
+  const reachFromCursor = () => {
+    if (island.isDestroyed()) return;
+    const cursor = screen.getCursorScreenPoint();
+    const at = island.getBounds();
+    const x = cursor.x - at.x;
+    const y = cursor.y - at.y;
+    const reach = sideHits.hold || sideHits.boxes.some((box) => x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height);
+    if (reach === sideReaching) return;
+    sideReaching = reach;
+    island.setIgnoreMouseEvents(!reach, { forward: true });
+  };
+  const stopReaching = () => {
+    if (sideReach) clearInterval(sideReach);
+    sideReach = null;
+    sideHits = { boxes: [], hold: false };
+    sideReaching = false;
+  };
   /** Into the side column, or back to the notch; true while at the side. */
   const followPlacement = (state: IslandState): boolean => {
     const side = sideNow(state);
@@ -475,11 +535,20 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       }
       place(sideFrame());
       island.setIgnoreMouseEvents(true, { forward: true });
+      if (platform === "win32") {
+        sideReach = setInterval(reachFromCursor, 75);
+        sideReach.unref();
+      }
       log(`island: a pill on the ${controller.state.pill.edge} edge of screen ${pillDisplay().id}`);
     } else if (!side && sideActive) {
       sideActive = false;
       lastKey = "";
+      stopReaching();
       island.setIgnoreMouseEvents(false);
+      // Back under the notch the window is the notch's, not the work area it had at the side: a window that size would
+      // take the clicks meant for the apps under it until the island is fitted (a fit uses what was last asked).
+      const notch = targetSize(state);
+      requested = { width: notch.width, height: notch.height };
       log("island: back under the notch");
     }
     return side;
@@ -689,6 +758,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   }
 
   await island.loadFile(join(here, "../../island/dist/index.html"));
+  // Before the first state is sent: a pill saved at boot is drawn in its side column, not in the notch window.
+  followPlacement(controller.state);
   island.webContents.send("island:state", controller.state);
   /**
    * An island page that hangs or dies (the app having run for days, the PC woken from sleep) would sit there taking no
@@ -702,9 +773,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   // A reloaded page has no state until it is given one, and nothing else would send it while the state stays as it is: the
   // page asks as soon as it listens (a state sent when the load finishes can arrive before that).
   ipcMain.on("island:ready", (event) => {
-    if (!island.isDestroyed() && event.sender === island.webContents) island.webContents.send("island:state", controller.state);
+    if (island.isDestroyed() || event.sender !== island.webContents) return;
+    followPlacement(controller.state);
+    island.webContents.send("island:state", controller.state);
   });
-  island.webContents.on("render-process-gone", (_event, details) => reloadIsland(`its page process is gone (${details.reason})`));
+  island.webContents.on("render-process-gone", (_event, details) => {
+    if (details.reason !== "clean-exit") pageCrashed();
+    reloadIsland(`its page process is gone (${details.reason})`);
+  });
   let hung: ReturnType<typeof setTimeout> | null = null;
   island.webContents.on("unresponsive", () => {
     log("island: its page stopped responding");
@@ -895,8 +971,18 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     return true;
   });
   ipcMain.on("island:interactive", (event, on: unknown) => {
-    if (!fromIsland(event.sender) || !sideActive || island.isDestroyed()) return;
+    // Windows reads the cursor instead (see reachFromCursor): the page's pointer moves are not what decides there.
+    if (platform === "win32" || !fromIsland(event.sender) || !sideActive || island.isDestroyed()) return;
     island.setIgnoreMouseEvents(on !== true, { forward: true });
+  });
+  ipcMain.on("island:side-hits", (event, raw: unknown) => {
+    if (platform !== "win32" || !fromIsland(event.sender) || !sideActive || typeof raw !== "object" || raw === null) return;
+    const { boxes, hold } = raw as { boxes?: unknown; hold?: unknown };
+    const finite = (box: { x: number; y: number; width: number; height: number }) => [box.x, box.y, box.width, box.height].every(Number.isFinite);
+    sideHits = {
+      boxes: Array.isArray(boxes) ? boxes.slice(0, 8).filter(finite) : [],
+      hold: hold === true,
+    };
   });
   // A pill dragged onto another screen takes the window with it: the page keeps drawing it under the pointer.
   ipcMain.on("island:pill-drag", (event, x: unknown, y: unknown) => {
@@ -974,7 +1060,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     });
   };
   os.callDetector?.start(report);
-  app.on("will-quit", () => os.callDetector?.stop());
+  app.on("will-quit", () => {
+    os.callDetector?.stop();
+    // The call's capture is released with the app, not left to the window's teardown.
+    void callSound?.stop();
+  });
 
   const reposition = () => {
     const next = measureNow();
@@ -1012,7 +1102,13 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   powerMonitor.on("resume", () => setTimeout(() => redraw("woke from sleep"), 3000).unref());
   powerMonitor.on("unlock-screen", () => setTimeout(() => redraw("screen unlocked"), 3000).unref());
   app.on("child-process-gone", (_event, details) => {
-    if (details.type === "GPU") redraw(`the graphics process is gone (${details.reason})`);
+    log(`${details.type} process is gone (${details.reason}, exit code ${details.exitCode})`);
+    if (details.type !== "GPU") return;
+    if (details.reason !== "clean-exit") {
+      // Read at the next launch (main.ts): a graphics process that keeps dying is drawn in software from then on.
+      settings.set("gpuCrashes", (Number(settings.get("gpuCrashes")) || 0) + 1);
+    }
+    redraw(`the graphics process is gone (${details.reason})`);
   });
   // Windows can lose the island without telling anyone: another always-on-top window takes its place in the stack, a
   // "show the desktop" hides or minimises it, a screen is unplugged with the window on it. Every 15 s it is shown again,

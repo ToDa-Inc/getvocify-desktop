@@ -106,6 +106,11 @@ export function parsePostCall(raw: unknown): PostCallData | null {
     type,
     crmUrl: webUrl(raw.crmUrl),
     noAnswer: bool(raw.noAnswer) ?? false,
+    savedOn: list(raw.savedOn).flatMap((r) => {
+      const kind = r.kind === "deal" || r.kind === "company" || r.kind === "contact" ? r.kind : undefined;
+      const name = nonBlank(r.name);
+      return kind && name ? [{ kind, name }] : [];
+    }),
   };
 }
 

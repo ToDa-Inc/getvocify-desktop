@@ -67,6 +67,12 @@ export const Waveform = ({ size = 12, stroke = 2.2, style, className }: IconProp
 );
 
 /* The after-call card's symbols (SF Symbols in the Mac app), drawn with the same stroke as the others. */
+export const Briefcase = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><path d="M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" /><rect x="2" y="6" width="20" height="14" rx="2" /></svg>
+);
+export const UserRound = ({ size = 11, stroke = 2, style, className }: IconProps) => (
+  <svg {...base(size, stroke, style, className)}><circle cx="12" cy="8" r="5" /><path d="M20 21a8 8 0 0 0-16 0" /></svg>
+);
 export const IdCard = ({ size = 11, stroke = 2, style, className }: IconProps) => (
   <svg {...base(size, stroke, style, className)}><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="9" cy="11" r="2" /><path d="M6 16c.6-1.4 1.7-2 3-2s2.4.6 3 2M14.5 10h3.5M14.5 13.5h3.5" /></svg>
 );

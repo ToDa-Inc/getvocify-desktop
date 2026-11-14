@@ -290,6 +290,19 @@ button.type-tag:hover { color: var(--text); }
 .line-icon { width: 14px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--beige); }
 .line-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dim { color: var(--secondary); }
+/* Where the call is saved: one chip per record (deal, company, contact). On = beige outline; off = faded, still tappable. */
+.saved-on { flex: none; display: flex; align-items: center; gap: 5px; min-width: 0; font-size: 11.5px; overflow: hidden; }
+.saved-on > .dim { flex: none; margin-right: 1px; }
+.saved-chip { flex: 0 1 auto; min-width: 0; height: 20px; display: inline-flex; align-items: center; gap: 4px; padding: 0 8px; border-radius: 10px; border: 1px solid rgba(219, 192, 154, 0.45); background: rgba(219, 192, 154, 0.12); color: var(--text); font-size: 11px; transition: background 120ms, border-color 120ms, color 120ms, opacity 120ms; }
+.saved-chip svg { flex: none; color: var(--beige); }
+.saved-chip:hover:not([aria-disabled="true"]) { background: rgba(219, 192, 154, 0.2); }
+.saved-chip[data-on="false"] { border-color: rgba(255, 255, 255, 0.12); background: transparent; color: var(--secondary); }
+.saved-chip[data-on="false"] svg { color: var(--secondary); }
+.saved-chip[data-on="false"] .saved-chip-name { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.3); }
+.saved-chip[aria-disabled="true"] { cursor: default; }
+.saved-chip-name { min-width: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.group-record { color: var(--secondary); font-weight: 400; text-transform: none; letter-spacing: 0; }
+.group-label[data-off="true"] { opacity: 0.5; }
 
 /* The changes: no box, grouped under small captions; a long list scrolls and fades at its bottom edge. */
 .changes-list { flex: none; overflow-y: auto; scrollbar-width: none; }

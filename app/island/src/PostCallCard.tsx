@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
-import { ArrowUpRight, Calendar, Check, ChevronDown, Close, ExclamationCircle, FileText, IdCard, Mail, PhoneDown, Plus, Users } from "./icons.tsx";
+import { ArrowUpRight, Briefcase, Building, Calendar, Check, ChevronDown, Close, ExclamationCircle, FileText, IdCard, Mail, PhoneDown, Plus, UserRound, Users } from "./icons.tsx";
 import { dayAfter, dueLabel, dueOfMoment, type TaskDue } from "../../core/taskDates.ts";
 import { keyboardNow, keyboardOver, releaseKeyboardSoon } from "./keyboard.ts";
 import { TaskDatePicker } from "./TaskDatePicker.tsx";
-import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallData, type PostCallMeeting } from "./types.ts";
+import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallData, type PostCallMeeting, type PostCallSavedOn } from "./types.ts";
 
 /**
  * The after-call card: a port of `PostCallMenu` (MeetingPill.swift) with its layout numbers (`PostCallLayout`).
@@ -28,11 +28,17 @@ const GROUPS = [
   { object: "other", title: "Other" },
 ];
 
+type SavedKind = PostCallSavedOn["kind"];
+const SAVED_ICONS: Record<SavedKind, typeof Briefcase> = { deal: Briefcase, company: Building, contact: UserRound };
+/** Each CRM's own word for the record (Pipedrive: organization, person). */
+const savedTitle = (kind: SavedKind, crm: string | null) =>
+  crm === "Pipedrive" ? { deal: "Deal", company: "Organization", contact: "Person" }[kind] : { deal: "Deal", company: "Company", contact: "Contact" }[kind];
+
 /** The changes the card lists, by record. */
 function groupedChanges(postCall: PostCallData) {
   return GROUPS.flatMap((group) => {
     const changes = postCall.changes.filter((c) => c.object === group.object || (group.object === "other" && !["contact", "company", "deal"].includes(c.object)));
-    return changes.length ? [{ title: group.title, changes }] : [];
+    return changes.length ? [{ title: group.title, object: group.object, changes }] : [];
   });
 }
 
@@ -83,6 +89,10 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   }, [postCall.stage]);
 
   const groups = groupedChanges(postCall);
+  const recordName = (object: string) => (postCall.savedOn ?? []).find((r) => r.kind === object)?.name ?? null;
+  const [offTargets, setOffTargets] = useState<Set<SavedKind>>(() => new Set());
+  // Another call's card starts from Settings again.
+  useEffect(() => setOffTargets(new Set()), [postCall.memoId]);
   const nothingSure = groups.length === 0;
   const noteEditable = postCall.stage === "ready" && postCall.canApprove;
   const noteText = noteDraft ?? postCall.summary ?? "";
@@ -91,7 +101,14 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   if (!postCall.noAnswer && (postCall.notes || postCall.summary !== null || noteEditable)) tabs.push("notes");
   const tab = tabs.includes(activeTab) ? activeTab : "crm";
   // A change with nothing proposed (the lead status) is written only once the rep has picked a value for it.
-  const isKept = (key: string) => !dropped.has(key) && !(postCall.changes.find((c) => c.key === key)?.pending && edited[key] === undefined);
+  // A record left out of this call is not touched: its changes are not written either.
+  const isOff = (object: string | undefined) =>
+    offTargets.has(object as SavedKind) && (postCall.savedOn ?? []).some((r) => r.kind === object);
+  const isKept = (key: string) => {
+    const change = postCall.changes.find((c) => c.key === key);
+    if (isOff(change?.object)) return false;
+    return !dropped.has(key) && !(change?.pending && edited[key] === undefined);
+  };
   const keptCount = postCall.changes.filter((c) => isKept(c.key)).length;
   const hasNote = noteDraft !== null && noteDraft.trim() !== "";
   const canSave = keptCount > 0 || hasNote || tasks.length > 0;
@@ -112,12 +129,24 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
     setDateMenu(null);
   }, []);
 
-  const toggleChange = (key: string) =>
+  const toggleChange = (key: string) => {
+    // Ticking a change of a record left out puts the call back on that record, with that change ticked.
+    const object = postCall.changes.find((c) => c.key === key)?.object;
+    if (isOff(object)) {
+      setOffTargets((current) => {
+        const next = new Set(current);
+        next.delete(object as SavedKind);
+        return next;
+      });
+      keep(key);
+      return;
+    }
     setDropped((previous) => {
       const next = new Set(previous);
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
     });
+  };
   const keep = (key: string) =>
     setDropped((previous) => {
       if (!previous.has(key)) return previous;
@@ -150,7 +179,8 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
         .map(([key, edit]) => [key, { ...(edit.title !== undefined ? { title: edit.title } : {}), ...(edit.due ? { due: edit.due, ...(edit.time ? { time: edit.time } : {}) } : {}) }]),
     );
     const added = tasks.map((task) => ({ title: task.title, due: task.due, ...(task.time ? { time: task.time } : {}) }));
-    act({ name: "postCall", type: "approve", details: { omit, edits, ...(noteDraft !== null ? { note: noteDraft } : {}), ...(added.length > 0 ? { tasks: added } : {}), ...(Object.keys(moved).length > 0 ? { taskEdits: moved } : {}) } });
+    const targets = offTargets.size ? (postCall.savedOn ?? []).map((r) => r.kind).filter((kind) => !offTargets.has(kind)) : [];
+    act({ name: "postCall", type: "approve", details: { omit, edits, ...(targets.length ? { targets } : {}), ...(noteDraft !== null ? { note: noteDraft } : {}), ...(added.length > 0 ? { tasks: added } : {}), ...(Object.keys(moved).length > 0 ? { taskEdits: moved } : {}) } });
   };
 
   const send = (type: string, details?: Record<string, unknown>) => act({ name: "postCall", type, details });
@@ -162,6 +192,47 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
       <span>{saveLabel(keptCount + tasks.length, hasNote, postCall.crm ?? "the CRM", postCall.noAnswer)}</span>
     </button>
   );
+
+  // Where the call is saved (note, call, tasks): one chip per record, as Settings choose; a tap moves it for this call.
+  // At least one stays on. Without the deal, its field changes are not written either.
+  const savedOn = postCall.savedOn ?? [];
+  const isOn = (kind: SavedKind) => savedOn.some((r) => r.kind === kind) && !offTargets.has(kind);
+  const onCount = savedOn.filter((r) => isOn(r.kind)).length;
+  const savedOnRow =
+    postCall.canApprove && savedOn.length > 0 ? (
+      <div className="saved-on" style={{ height: L.line }}>
+        <span className="dim">Saved on</span>
+        {savedOn.map((record) => {
+          const on = isOn(record.kind);
+          // On: a check, as in Vocify's review and Settings; off: what the record is.
+          const Icon = on ? Check : SAVED_ICONS[record.kind];
+          return (
+            <button
+              key={record.kind}
+              type="button"
+              className="saved-chip"
+              data-on={on}
+              aria-disabled={on && onCount === 1}
+              title={on ? `${record.name}. Tap to leave it out of this call: no note, tasks or changes there` : `Also save on ${record.name}`}
+              aria-pressed={on}
+              onClick={() =>
+                // The last place the call goes stays on.
+                !(on && onCount === 1) &&
+                setOffTargets((current) => {
+                  const next = new Set(current);
+                  if (on) next.add(record.kind);
+                  else next.delete(record.kind);
+                  return next;
+                })
+              }
+            >
+              <Icon size={10} />
+              <span className="saved-chip-name">{savedTitle(record.kind, postCall.crm)}</span>
+            </button>
+          );
+        })}
+      </div>
+    ) : null;
 
   const count = (t: Tab) => (t === "crm" ? (postCall.stage === "ready" ? keptCount : postCall.stage === "review" ? 1 : 0) : t === "email" && postCall.email?.state === "ready" ? 1 : 0);
 
@@ -216,6 +287,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
             )}
             {postCall.stage === "ready" && nothingSure && postCall.canApprove && (
               <>
+                {savedOnRow}
                 <AddTask tasks={tasks} onChange={setTasks} onPopupExtent={onPopupExtent} />
                 <div className="postcall-actions" style={{ height: L.actions }}>
                   {saveButton}
@@ -226,10 +298,14 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
             )}
             {postCall.stage === "ready" && !nothingSure && (
               <>
+                {savedOnRow}
                 <ChangesList>
                   {groups.map((group) => (
                     <div key={group.title}>
-                      <div className="group-label" style={{ height: L.groupLabel }}>{group.title}</div>
+                      <div className="group-label" style={{ height: L.groupLabel }} data-off={isOff(group.object)}>
+                        {group.title}
+                        {recordName(group.object) ? <span className="group-record"> · {recordName(group.object)}</span> : null}
+                      </div>
                       {group.changes.map((change) => (
                         <ChangeRow
                           key={change.key}

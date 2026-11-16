@@ -317,7 +317,7 @@ export const fixtures = [
   // a company that works by contact only: one chip, which can't be switched off
   { name: "postcall-open-saved-on-contact", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, savedOn: [SAVED_ON[2]] }) }, expect: { width: 420 }, fit: true },
   // a call without a deal where the company creates them: "+ New deal" is offered, off until ticked
-  { name: "postcall-open-new-deal", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, savedOn: [SAVED_ON[2]], dealCreatable: true }) }, expect: { width: 420 }, fit: true },
+  { name: "postcall-open-new-deal", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [leadStatusToPick], canApprove: true, savedOn: SAVED_ON.slice(1), dealCreatable: true, summary: "Llamada en frío.", notes: true, email: { state: "ready", to: "j@acme.com", subject: "Hola", preview: "Hola" } }) }, expect: { width: 420 }, fit: true },
   { name: "postcall-open-new-deal-on", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, savedOn: [SAVED_ON[2]], dealCreatable: true }) }, expect: { width: 420 }, fit: true, steps: [".saved-chip[data-offer]"] },
   // nothing to change on the record, but the call has its note: it can still be saved
   { name: "postcall-open-note-only", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [], canApprove: true, savedOn: [SAVED_ON[0]], summary: "Revisamos el presupuesto con Marta.", notes: true }) }, expect: { width: 420 }, fit: true },

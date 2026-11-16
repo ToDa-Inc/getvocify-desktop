@@ -211,20 +211,6 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
     postCall.canApprove && (savedOn.length > 0 || offerNewDeal) ? (
       <div className="saved-on" style={{ height: L.line }}>
         <span className="dim">Saved on</span>
-        {offerNewDeal ? (
-          <button
-            type="button"
-            className="saved-chip"
-            data-on={newDeal}
-            data-offer="true"
-            aria-pressed={newDeal}
-            title={newDeal ? "A new deal is created on save. Tap to save without one" : "Create a deal for this call on save"}
-            onClick={() => setNewDeal((on) => !on)}
-          >
-            {newDeal ? <Check size={10} /> : <Plus size={10} />}
-            <span className="saved-chip-name">New deal</span>
-          </button>
-        ) : null}
         {savedOn.map((record) => {
           const on = isOn(record.kind);
           // On: a check, as in Vocify's review and Settings; off: what the record is.
@@ -254,6 +240,21 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
             </button>
           );
         })}
+        {/* What the call has first; what can be added, last. */}
+        {offerNewDeal ? (
+          <button
+            type="button"
+            className="saved-chip"
+            data-on={newDeal}
+            data-offer="true"
+            aria-pressed={newDeal}
+            title={newDeal ? "A new deal is created on save. Tap to save without one" : "Create a deal for this call on save"}
+            onClick={() => setNewDeal((on) => !on)}
+          >
+            {newDeal ? <Check size={10} /> : <Plus size={10} />}
+            <span className="saved-chip-name">New deal</span>
+          </button>
+        ) : null}
       </div>
     ) : null;
 

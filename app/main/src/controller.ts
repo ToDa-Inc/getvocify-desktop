@@ -25,10 +25,9 @@ const MEETING_LINGER = 60;
 const CALL_LINGER = 8;
 const POST_CALL_LINGER = 14;
 const DONE_LINGER = 3;
-/** A call app can drop the mic for a moment (device switch); a hang-up lasts. */
-const HANG_UP_GRACE = 3;
+/** A call app can drop the mic for a moment (device switch); a hang-up lasts. 2 s covers a switch and keeps the end quick. */
+const HANG_UP_GRACE = 2;
 const START_TIMEOUT = 8;
-const MIN_HOLD_AFTER_LEAVE = 1.5;
 const LEVEL_FADE_SECONDS = 0.5;
 /** Waiting for the dashboard to report the call the rep just placed from the island. */
 const DIAL_TIMEOUT = 8;
@@ -724,8 +723,9 @@ export class IslandController {
     }
   }
 
-  /** The pointer holds a self-closing card open; leaving lets the line run out again, never snapping it shut. The hold is
-   * capped (HOVER_HOLD_CAP): the leave can be lost (see app.ts's click-through window), and then the card still runs out. */
+  /** The pointer holds a self-closing card open; leaving starts its countdown again from the full length, so the rep who
+   * looked at it always gets the whole time back. The hold is capped (HOVER_HOLD_CAP): the leave can be lost (see app.ts's
+   * click-through window), and then the card still runs out. */
   pointer(inside: boolean): void {
     const countdown = this.current.countdown;
     if (!countdown || !this.current.expanded) return;
@@ -746,8 +746,8 @@ export class IslandController {
       this.set({ countdown: { ...countdown, remaining: countdown.remaining - (now - countdown.runningSince) / 1000, runningSince: null } });
     } else if (!inside && countdown.runningSince === null) {
       this.stopTimer("hoverHold");
-      // Resumes from where it was; the floor only keeps a card that was nearly done from snapping shut the moment it is left.
-      const remaining = Math.max(countdown.remaining, MIN_HOLD_AFTER_LEAVE);
+      // The rep was looking at it: the full countdown again, not what was left.
+      const remaining = countdown.total;
       this.set({ countdown: { ...countdown, remaining, runningSince: now } });
       this.scheduleAutoClose(remaining);
     }

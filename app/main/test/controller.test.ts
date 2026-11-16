@@ -69,17 +69,17 @@ test("clicking the idle island opens it and a countdown closes it after 5 s", ()
   assert.equal(t.controller.state.countdown, null);
 });
 
-test("the pointer holds the card open, and leaving lets it run out but never snaps it shut", () => {
+test("the pointer holds the card open, and leaving starts its countdown again from the full length", () => {
   const t = setup();
   t.controller.act({ name: "toggle" });
-  t.advance(4);
+  const total = t.controller.state.countdown?.total ?? 0;
+  t.advance(total - 1);
   t.controller.act({ name: "pointer", inside: true });
   t.advance(10);
   assert.equal(t.controller.state.expanded, true);
-  assert.ok(Math.abs((t.controller.state.countdown?.remaining ?? 0) - 1) < 0.01);
   t.controller.act({ name: "pointer", inside: false });
-  assert.ok((t.controller.state.countdown?.remaining ?? 0) >= 1.5, "at least 1.5 s after leaving");
-  t.advance(1.4);
+  assert.equal(t.controller.state.countdown?.remaining, total, "the whole time back, not the 1 s that was left");
+  t.advance(total - 0.1);
   assert.equal(t.controller.state.expanded, true);
   t.advance(0.2);
   assert.equal(t.controller.state.expanded, false);
@@ -350,15 +350,16 @@ test("stopping while already paused sends no extra pause or resume", () => {
   assert.deepEqual(t.commands(), ["listen"]);
 });
 
-test("leaving resumes the countdown from where the pointer left it, not from its full length", () => {
+test("hovering again restarts the countdown each time", () => {
   const t = setup();
   t.controller.act({ name: "toggle" });
-  t.advance(1);
-  t.controller.act({ name: "pointer", inside: true });
-  t.advance(3);
-  t.controller.act({ name: "pointer", inside: false });
-  assert.equal(t.controller.state.countdown?.remaining, 4);
-  t.advance(3.9);
+  const total = t.controller.state.countdown?.total ?? 0;
+  for (let i = 0; i < 3; i++) {
+    t.advance(total - 0.5);
+    t.controller.act({ name: "pointer", inside: true });
+    t.controller.act({ name: "pointer", inside: false });
+  }
+  t.advance(total - 0.1);
   assert.equal(t.controller.state.expanded, true);
   t.advance(0.2);
   assert.equal(t.controller.state.expanded, false);
@@ -367,13 +368,14 @@ test("leaving resumes the countdown from where the pointer left it, not from its
 test("a pointer whose leave never arrives cannot hold the countdown forever: it runs out after the hold cap", () => {
   const t = setup();
   t.controller.act({ name: "toggle" });
+  const total = t.controller.state.countdown?.total ?? 0;
   t.advance(1);
   t.controller.act({ name: "pointer", inside: true });
   t.advance(19.9);
   assert.equal(t.controller.state.expanded, true, "held while the pointer rests on it");
-  // The hold ends 20 s after it began (at 21 s), with 4 s left: the card runs out from there.
-  t.advance(1.1);
-  t.advance(2.8);
+  // The hold ends 20 s after it began, as if the pointer had left: the full countdown runs from there.
+  t.advance(0.2);
+  t.advance(total - 0.3);
   assert.equal(t.controller.state.expanded, true);
   t.advance(0.4);
   assert.equal(t.controller.state.expanded, false);
@@ -511,13 +513,13 @@ test("no offer while the dashboard is already recording", () => {
   assert.equal(t.mode(), "idle");
 });
 
-test("recording a detected call: the call app letting go of the mic for 3 s stops it as a hang-up", () => {
+test("recording a detected call: the call app letting go of the mic for 2 s stops it as a hang-up", () => {
   const t = setup();
   t.controller.callChanged(zoom);
   t.controller.act({ name: "record" });
   t.controller.show();
   t.controller.callChanged(null);
-  t.advance(2.9);
+  t.advance(1.9);
   assert.equal(t.mode(), "recording");
   t.advance(0.2);
   assert.equal(t.mode(), "stopped", "a hang-up waits for Resume like a stop, in case the call only dropped");
@@ -530,7 +532,7 @@ test("recording a detected call: the call app letting go of the mic for 3 s stop
   assert.ok(t.emitted.some((e) => e.channel === "call:ended"));
 });
 
-test("a mic dropout shorter than 3 s (a device switch) is not a hang-up", () => {
+test("a mic dropout shorter than 2 s (a device switch) is not a hang-up", () => {
   const t = setup();
   t.controller.callChanged(zoom);
   t.controller.act({ name: "record" });
@@ -1625,7 +1627,7 @@ test("the call's audio session stopping is its hang-up, with the same grace as a
   t.log.soundWatch?.();
   t.controller.show();
   t.controller.callAudioEnded();
-  t.advance(2);
+  t.advance(1.5);
   t.controller.callAudioBack();
   t.advance(10);
   assert.equal(t.mode(), "recording", "back within the grace: the call goes on");
@@ -1674,9 +1676,9 @@ test("a browser call that ends while the rep records stops the recording after t
   t.controller.act({ name: "record" });
   t.controller.show();
   t.controller.callChanged(null);
-  t.advance(2);
+  t.advance(1.5);
   assert.equal(t.mode(), "recording", "a brief drop of the mic is not the end of the call");
-  t.advance(2);
+  t.advance(1);
   assert.equal(t.mode(), "stopped", "the mic released for the grace period ends the recording, as for Zoom");
 });
 

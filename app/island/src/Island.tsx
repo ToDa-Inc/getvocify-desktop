@@ -1637,13 +1637,6 @@ function TypeControl({ menu, language, reduceMotion, listOpen, onOpenList, onUnd
 function TypeTag({ menu }: { menu: TypeMenuView }) {
   return (
     <span className="type-tag" data-placeholder={menu.placeholder}>
-      {menu.channel && (
-        <>
-          <span className="type-tag-icon" aria-hidden>{menu.channel.rows.find((r) => r.checked)?.key === "call" ? <Phone size={10} /> : <Video size={10} />}</span>
-          <span className="type-tag-channel">{menu.channel.title}</span>
-          <span aria-hidden>·</span>
-        </>
-      )}
       <span className="type-tag-label">{menu.title}</span>
       <ChevronDown size={7} stroke={3.6} />
     </span>

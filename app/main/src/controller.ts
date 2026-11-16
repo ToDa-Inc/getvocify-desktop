@@ -25,7 +25,9 @@ const MEETING_LINGER = 60;
 const CALL_LINGER = 8;
 const POST_CALL_LINGER = 14;
 const DONE_LINGER = 3;
-/** A call app can drop the mic for a moment (device switch); a hang-up lasts. 2 s covers a switch and keeps the end quick. */
+/** A call app can drop the mic for a moment (device switch); a hang-up lasts. 2 s covers a switch and keeps the end quick.
+ * Where the mic is polled (Windows, every 2 s) the app passes a longer one: a grace no longer than the poll would turn one
+ * late reading into a hang-up. */
 const HANG_UP_GRACE = 2;
 const START_TIMEOUT = 8;
 const LEVEL_FADE_SECONDS = 0.5;
@@ -116,6 +118,7 @@ export class IslandController {
   private callHandled = false;
   /** The rep's preference: Stop or a hang-up finishes the recording at once, without the countdown (Discard / Resume). */
   private finishOnStop = false;
+  private readonly hangUpGrace: number;
   /** The pointer has left the stopped card since Stop: coming back over it restarts the countdown. */
   private leftStoppedCard = false;
   private lastPostCallStage: PostCallData["stage"] | null = null;
@@ -151,8 +154,9 @@ export class IslandController {
   /** True when a native recorder draws the transcript itself; the dashboard's overlay then must not overwrite it. */
   nativeTranscript = false;
 
-  constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean; language?: Language; placement?: "notch" | "side"; pill?: PillSpot; finishOnStop?: boolean }) {
+  constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean; language?: Language; placement?: "notch" | "side"; pill?: PillSpot; finishOnStop?: boolean; hangUpGrace?: number }) {
     this.effects = effects;
+    this.hangUpGrace = options.hangUpGrace ?? HANG_UP_GRACE;
     this.finishOnStop = options.finishOnStop ?? false;
     this.current = {
       mode: { kind: "idle" },
@@ -790,7 +794,7 @@ export class IslandController {
   /** The call on the phone stopped playing in its audio session (Windows): its hang-up, with a call app's grace. */
   callAudioEnded(): void {
     if (!this.soundCall || this.mode !== "recording") return;
-    this.start("hangUp", HANG_UP_GRACE, () => {
+    this.start("hangUp", this.hangUpGrace, () => {
       if (this.soundCall && this.mode === "recording") this.stop(true);
     });
   }
@@ -1156,7 +1160,7 @@ export class IslandController {
     this.stopTimer("hangUp");
     // Its own app letting go is the hang-up, whichever other apps still hold the mic.
     if (holds(caller, this.recordingCaller.appId)) return;
-    this.start("hangUp", HANG_UP_GRACE, () => {
+    this.start("hangUp", this.hangUpGrace, () => {
       if (this.mode === "recording" && !holds(this.currentCaller, this.recordingCaller?.appId ?? null)) this.stop(true);
     });
   }

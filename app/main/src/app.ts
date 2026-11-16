@@ -376,6 +376,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       placement: settings.get("islandPlacement") === "side" ? "side" : "notch",
       pill: readSpot(settings.get("islandPill")),
       finishOnStop: settings.get("islandFinishOnStop") === true,
+      // Windows reads who holds the mic every 2 s (windows/mic-use.ts): the hang-up waits one reading more than that.
+      hangUpGrace: process.platform === "win32" ? 3 : 2,
     },
   );
   /** Where the island sits (the rep's choice, kept across launches): the island follows it at once. */

@@ -92,6 +92,8 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
   // The mic the rep picked in the island or the app's menu ({ id, label }, or null for the system's default).
   microphones: { onChoose: on("mic:choose") },
   saas: { request: (payload: Record<string, unknown>) => call("saas:request", { payload }) },
+  // The end of the app's log, which the dashboard sends to Vocify by itself ({ platform, version, log }).
+  diagnostics: { log: () => call("diagnostics:log") },
   crm: {
     pages: (options: Record<string, unknown> = {}) => call("crm:pages", options),
     openAutomationSettings: () => call("crm:open-automation-settings"),

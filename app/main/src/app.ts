@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, screen, shell, systemPreferences, Tray, webContents } from "electron";
 import { freemem, totalmem } from "node:os";
 import { existsSync } from "node:fs";
+import { open as openFile } from "node:fs/promises";
 import { CallSource } from "../../core/callSource.ts";
 import { readSpot } from "../../core/pill.ts";
 import { ProposalWording } from "../../core/typeProposal.ts";
@@ -899,7 +900,32 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     },
     () => controller.shortcutPressed(),
   );
+  /** The last `bytes` of a file, or "" when there is none. */
+  const tailOf = async (file: string, bytes: number): Promise<string> => {
+    try {
+      const handle = await openFile(file, "r");
+      try {
+        const { size } = await handle.stat();
+        const length = Math.min(size, bytes);
+        const buffer = Buffer.alloc(length);
+        await handle.read(buffer, 0, length, size - length);
+        return buffer.toString("utf8");
+      } finally {
+        await handle.close();
+      }
+    } catch {
+      return "";
+    }
+  };
+  const LOG_SENT_BYTES = 400 * 1024;
   const bridge = createBridge({
+    diagnosticsLog: async () => {
+      const file = join(options.userDataDir, "logs", "vocify.log");
+      const current = await tailOf(file, LOG_SENT_BYTES);
+      // Just rotated: the end of the previous file too, so a freeze before the rotation is still there.
+      const before = current.length < LOG_SENT_BYTES / 2 ? await tailOf(`${file}.1`, LOG_SENT_BYTES / 2) : "";
+      return { platform: platform === "win32" ? "win32" : "darwin", version: app.getVersion(), log: (before + current).slice(-LOG_SENT_BYTES) };
+    },
     platform,
     reportedPlatform: options.reportedPlatform,
     testPermissions: options.testPermissions === true,

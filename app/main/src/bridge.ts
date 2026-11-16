@@ -51,6 +51,8 @@ export type BridgeDeps = {
   relaunch(): void;
   fetch(url: string, init: { method: string; headers: Record<string, string>; body?: string }): Promise<{ status: number; text(): Promise<string> }>;
   log(line: string): void;
+  /** The end of the app's log (newest last), which the dashboard sends to Vocify on its own: no rep copies anything. */
+  diagnosticsLog?(): Promise<{ platform: "win32" | "darwin"; version: string; log: string }>;
   /** A draft was saved or removed: the dashboard page may now be needed, or no longer. */
   onDraftsChanged?(): void;
   /**
@@ -160,6 +162,8 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
           deps.log(`calls go ${args.onPhone ? `to the rep's phone (${deps.phone.app() ?? "no app for calls"})` : "through Vocify"}`);
         }
         return calling();
+      case "diagnostics:log":
+        return (await deps.diagnosticsLog?.()) ?? null;
       case "island:get":
         return {
           placement: deps.islandPlacement.get(),

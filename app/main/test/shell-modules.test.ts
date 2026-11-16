@@ -223,7 +223,7 @@ test("a saved shortcut is restored on the next launch, and 'off' stays off", () 
 
 /* ---------- the bridge ---------- */
 
-function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | null; phoneFails?: "no_dialer" | "invalid_number" | "open_failed"; microphone?: string; loopbackStart?: { ok: boolean; reason?: string; mic?: boolean }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void>; systemAudioAccess?: () => string; askSystemAudio?: () => Promise<void>; compactWindow?: boolean } = {}) {
+function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | null; phoneFails?: "no_dialer" | "invalid_number" | "open_failed"; microphone?: string; loopbackStart?: { ok: boolean; reason?: string; mic?: boolean }; platform?: NodeJS.Platform; askMicrophone?: () => Promise<boolean>; testPermissions?: boolean; crmTabs?: () => string; askCrmTabs?: () => Promise<void>; systemAudioAccess?: () => string; askSystemAudio?: () => Promise<void>; compactWindow?: boolean; diagnosticsLog?: () => Promise<{ platform: "win32" | "darwin"; version: string; log: string }> } = {}) {
   const emitted: { channel: string; payload: unknown }[] = [];
   const opened: string[] = [];
   const logs: string[] = [];
@@ -273,6 +273,7 @@ function bridgeSetup(options: { runningLoopback?: boolean; phoneApp?: string | n
     },
   };
   const deps: BridgeDeps = {
+    diagnosticsLog: options.diagnosticsLog,
     takeRunningLoopback: () => options.runningLoopback === true,
     phone,
     callOnPhone: { get: () => store.get("callOnPhone") === true, set: (on) => void store.set("callOnPhone", on) },
@@ -508,6 +509,12 @@ test("bridge: Vocify calling is on until the rep turns it off on this computer, 
   assert.deepEqual(await t.call("calling:set", { onPhone: true }), { onPhone: true, phoneApp: "Phone Link" });
   assert.deepEqual(await t.call("calling:get", {}), { onPhone: true, phoneApp: "Phone Link" });
   assert.deepEqual(await bridgeSetup({ phoneApp: null }).call("calling:get", {}), { onPhone: false, phoneApp: null });
+});
+
+test("bridge: the dashboard gets the end of the app's log to send to Vocify, so no rep copies anything", async () => {
+  const sent = { platform: "win32" as const, version: "0.4.344", log: "island: a pill on the right edge\n" };
+  assert.deepEqual(await bridgeSetup({ diagnosticsLog: async () => sent }).call("diagnostics:log", {}), sent);
+  assert.equal(await bridgeSetup().call("diagnostics:log", {}), null, "an app without a log file sends nothing");
 });
 
 test("bridge: the island sits under the notch until the rep puts it at the side; nothing else is taken", async () => {

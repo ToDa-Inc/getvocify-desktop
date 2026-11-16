@@ -207,7 +207,28 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   // the browser, but the record the rep came from is still the call's contact.
   const CRM_SEEN_FOR_MS = 10 * 60_000;
   let lastCrm: { urls: string[]; at: number } | null = null;
+  /** CRM pages for the log: site and path (record ids, no query string), the first three. */
+  const pagePaths = (urls: string[]) =>
+    urls
+      .slice(0, 3)
+      .map((url) => {
+        try {
+          const parsed = new URL(url);
+          return `${parsed.hostname.split(".")[0]}${parsed.pathname}`;
+        } catch {
+          return "?";
+        }
+      })
+      .join(", ");
   const freshCrm = () => (lastCrm && Date.now() - lastCrm.at < CRM_SEEN_FOR_MS ? lastCrm.urls : []);
+  /** Windows: the call's record is the CRM page last in front (a dialer such as Ringover may be in front now, and another
+   * window may show a list); only when none was seen lately, every browser window's CRM pages. */
+  const callPagesOf = (pages: BrowserPage[]) => {
+    const fresh = freshCrm();
+    const urls = fresh.length > 0 ? fresh : crmUrlsOf(pages);
+    log(`call record: ${fresh.length > 0 ? "last in front" : "browser windows"}: ${pagePaths(urls) || "no CRM page"}`);
+    return urls;
+  };
 
   // The OS's own services (call audio, call detection, the CRM tab, permissions), built for this OS in one place.
   const os = createPlatform(platform, {
@@ -325,7 +346,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
             // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
             if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
             dashboard.emit("call:source", (sourceOf(caller, pages) ?? null)?.json ?? null);
-            const urls = crmUrlsOf(pages);
+            const urls = callPagesOf(pages);
             if (urls.length > 0) dashboard.emit("call:pages", { urls });
           });
         } else if (platform === "darwin") {
@@ -352,7 +373,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
           void pageReader.read().then((pages) => {
             if (!["starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
             if (!native && caller) dashboard.emit("call:source", (CallSource.page(pages.map((p) => p.url)) ?? null)?.json ?? null);
-            const urls = crmUrlsOf(pages);
+            const urls = callPagesOf(pages);
             if (urls.length > 0) dashboard.emit("call:pages", { urls });
           });
         } else if (platform === "darwin") {
@@ -482,6 +503,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       return urls;
     },
     emit: (urls) => {
+      if (urls.length > 0) log(`crm page in front: ${pagePaths(urls)}`);
       // A browser window in front that is no CRM page (a dialer such as Ringover opened over Pipedrive) does not forget the
       // record: a call within CRM_SEEN_FOR_MS is still with it. A CRM page in front (a list too) replaces it.
       if (urls.length > 0) lastCrm = { urls: [...urls], at: Date.now() };

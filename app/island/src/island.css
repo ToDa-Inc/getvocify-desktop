@@ -299,6 +299,8 @@ button.type-tag:hover { color: var(--text); }
 .saved-chip[data-on="false"] { border-color: rgba(255, 255, 255, 0.12); background: transparent; color: var(--secondary); }
 .saved-chip[data-on="false"] svg { color: var(--secondary); }
 .saved-chip[data-on="false"] .saved-chip-name { text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.3); }
+/* "+ New deal" is an offer, not a record left out: never struck through. */
+.saved-chip[data-offer="true"] .saved-chip-name { text-decoration: none; }
 .saved-chip[aria-disabled="true"] { cursor: default; }
 .saved-chip-name { min-width: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .group-record { color: var(--secondary); font-weight: 400; text-transform: none; letter-spacing: 0; }

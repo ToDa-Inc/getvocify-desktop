@@ -248,6 +248,8 @@ export type PostCallData = {
   noAnswer: boolean;
   /** Where the call is saved (note, call, tasks), deal first, as the company's settings choose; empty when unknown. */
   savedOn: PostCallSavedOn[];
+  /** The call has no deal and the company lets Vocify create one: "+ New deal" is offered, off until the rep ticks it. */
+  dealCreatable: boolean;
 };
 export type PostCallSavedOn = { kind: "deal" | "company" | "contact"; name: string };
 

@@ -111,6 +111,7 @@ export function parsePostCall(raw: unknown): PostCallData | null {
       const name = nonBlank(r.name);
       return kind && name ? [{ kind, name }] : [];
     }),
+    dealCreatable: bool(raw.dealCreatable) ?? false,
   };
 }
 

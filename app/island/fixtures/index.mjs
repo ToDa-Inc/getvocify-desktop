@@ -138,7 +138,7 @@ const channelTypeMenu = {
 
 const postCall = (stage, extra = {}) => ({
   stage, memoId: "memo-1", contactName: "Marta Ruiz", changes: [], canApprove: false, applied: null, undoUntil: null, note: null,
-  email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, crmUrl: null, noAnswer: false, savedOn: [], ...extra,
+  email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, crmUrl: null, noAnswer: false, savedOn: [], dealCreatable: false, ...extra,
 });
 
 const SAVED_ON = [{ kind: "deal", name: "Acme renewal 2027" }, { kind: "company", name: "Acme Logistics" }, { kind: "contact", name: "Marta Ruiz" }];
@@ -316,6 +316,11 @@ export const fixtures = [
   { name: "postcall-open-saved-on-deal-off", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges, canApprove: true, savedOn: SAVED_ON }) }, expect: { width: 420 }, fit: true, steps: [".saved-chip"] },
   // a company that works by contact only: one chip, which can't be switched off
   { name: "postcall-open-saved-on-contact", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, savedOn: [SAVED_ON[2]] }) }, expect: { width: 420 }, fit: true },
+  // a call without a deal where the company creates them: "+ New deal" is offered, off until ticked
+  { name: "postcall-open-new-deal", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, savedOn: [SAVED_ON[2]], dealCreatable: true }) }, expect: { width: 420 }, fit: true },
+  { name: "postcall-open-new-deal-on", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, savedOn: [SAVED_ON[2]], dealCreatable: true }) }, expect: { width: 420 }, fit: true, steps: [".saved-chip[data-offer]"] },
+  // nothing to change on the record, but the call has its note: it can still be saved
+  { name: "postcall-open-note-only", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [], canApprove: true, savedOn: [SAVED_ON[0]], summary: "Revisamos el presupuesto con Marta.", notes: true }) }, expect: { width: 420 }, fit: true },
   { name: "postcall-open-ready-all-changes", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges, canApprove: true }) }, expect: { width: 420, height: 450 }, fit: true },
   { name: "postcall-open-applying", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("applying", { undoUntil: NOW + 3500 }) }, expect: { width: 420, height: 200 }, fit: true },
   { name: "postcall-open-done", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("done", { applied: 4 }) }, expect: { width: 420, height: 200 }, fit: true },
@@ -336,8 +341,10 @@ export const fixtures = [
   // a recording with no contact: nothing is saved from here, the card sends the rep to Vocify's contact picker
   { name: "postcall-open-needs-contact", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { contactName: null, changes: postCallChanges.slice(3) }) }, expect: { width: 420, ticked: 2, saveLabel: "Choose contact to save" }, fit: true },
   { name: "postcall-open-done-link", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("done", { applied: 4, crmUrl: "https://app.hubspot.com/contacts/1/record/0-1/42" }) }, expect: { width: 420, height: 200, crmLink: "Open in HubSpot" }, fit: true },
-  // a call with nothing to write: the lead status is still offered, and Save waits for a pick or a note
-  { name: "postcall-open-lead-status-only", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [leadStatusToPick], canApprove: true, summary: "Voicemail.", notes: true }) }, expect: { width: 420, ticked: 0, saveLabel: "Nothing to save" }, fit: true },
+  // a call with no field to write: the lead status is still offered, and its note can be saved on its own
+  { name: "postcall-open-lead-status-only", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [leadStatusToPick], canApprove: true, summary: "Voicemail.", notes: true }) }, expect: { width: 420, ticked: 0, saveLabel: "Save note to HubSpot" }, fit: true },
+  // nothing to write at all (no field, no note): Save says so
+  { name: "postcall-open-nothing-to-save", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [leadStatusToPick], canApprove: true }) }, expect: { width: 420, ticked: 0, saveLabel: "Nothing to save" }, fit: true },
   { name: "postcall-open-nothing-sure", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [], canApprove: false }) }, expect: { width: 420 }, fit: true },
   // calling the CRM contact on screen: same names and values as the Mac app's IslandFixtures.swift
   { name: "idle-callable", state: { onScreen: ana }, expect: { width: 257, height: 32 } },

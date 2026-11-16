@@ -91,8 +91,13 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const groups = groupedChanges(postCall);
   const recordName = (object: string) => (postCall.savedOn ?? []).find((r) => r.kind === object)?.name ?? null;
   const [offTargets, setOffTargets] = useState<Set<SavedKind>>(() => new Set());
+  /** "+ New deal" ticked: the call gets a deal on save. Never on by itself. */
+  const [newDeal, setNewDeal] = useState(false);
   // Another call's card starts from Settings again.
-  useEffect(() => setOffTargets(new Set()), [postCall.memoId]);
+  useEffect(() => {
+    setOffTargets(new Set());
+    setNewDeal(false);
+  }, [postCall.memoId]);
   const nothingSure = groups.length === 0;
   const noteEditable = postCall.stage === "ready" && postCall.canApprove;
   const noteText = noteDraft ?? postCall.summary ?? "";
@@ -111,7 +116,11 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   };
   const keptCount = postCall.changes.filter((c) => isKept(c.key)).length;
   const hasNote = noteDraft !== null && noteDraft.trim() !== "";
-  const canSave = keptCount > 0 || hasNote || tasks.length > 0;
+  // The call's note goes to the CRM even when no field changes: Vocify's own note counts, not only one the rep edited.
+  const noteToSave = hasNote || (!postCall.noAnswer && (noteDraft ?? postCall.summary ?? "").trim() !== "");
+  const offerNewDeal = postCall.dealCreatable && !(postCall.savedOn ?? []).some((r) => r.kind === "deal");
+  const willCreateDeal = offerNewDeal && newDeal;
+  const canSave = keptCount > 0 || noteToSave || tasks.length > 0 || willCreateDeal;
   const crm = postCallCrmName(postCall);
 
   // The island never takes the keyboard (a click must not take it from the call), except while this card can still save:
@@ -180,7 +189,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
     );
     const added = tasks.map((task) => ({ title: task.title, due: task.due, ...(task.time ? { time: task.time } : {}) }));
     const targets = offTargets.size ? (postCall.savedOn ?? []).map((r) => r.kind).filter((kind) => !offTargets.has(kind)) : [];
-    act({ name: "postCall", type: "approve", details: { omit, edits, ...(targets.length ? { targets } : {}), ...(noteDraft !== null ? { note: noteDraft } : {}), ...(added.length > 0 ? { tasks: added } : {}), ...(Object.keys(moved).length > 0 ? { taskEdits: moved } : {}) } });
+    act({ name: "postCall", type: "approve", details: { omit, edits, ...(targets.length ? { targets } : {}), ...(willCreateDeal ? { newDeal: true } : {}), ...(noteDraft !== null ? { note: noteDraft } : {}), ...(added.length > 0 ? { tasks: added } : {}), ...(Object.keys(moved).length > 0 ? { taskEdits: moved } : {}) } });
   };
 
   const send = (type: string, details?: Record<string, unknown>) => act({ name: "postCall", type, details });
@@ -189,7 +198,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const saveButton = (
     <button type="button" className="primary-action" disabled={!canSave} title={`Writes the ticked changes, the new tasks and the note to ${crm}`} onClick={approve}>
       <Check size={9} />
-      <span>{saveLabel(keptCount + tasks.length, hasNote, postCall.crm ?? "the CRM", postCall.noAnswer)}</span>
+      <span>{saveLabel(keptCount + tasks.length + (willCreateDeal ? 1 : 0), keptCount + tasks.length > 0 || willCreateDeal ? hasNote : noteToSave, postCall.crm ?? "the CRM", postCall.noAnswer)}</span>
     </button>
   );
 
@@ -199,9 +208,23 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const isOn = (kind: SavedKind) => savedOn.some((r) => r.kind === kind) && !offTargets.has(kind);
   const onCount = savedOn.filter((r) => isOn(r.kind)).length;
   const savedOnRow =
-    postCall.canApprove && savedOn.length > 0 ? (
+    postCall.canApprove && (savedOn.length > 0 || offerNewDeal) ? (
       <div className="saved-on" style={{ height: L.line }}>
         <span className="dim">Saved on</span>
+        {offerNewDeal ? (
+          <button
+            type="button"
+            className="saved-chip"
+            data-on={newDeal}
+            data-offer="true"
+            aria-pressed={newDeal}
+            title={newDeal ? "A new deal is created on save. Tap to save without one" : "Create a deal for this call on save"}
+            onClick={() => setNewDeal((on) => !on)}
+          >
+            {newDeal ? <Check size={10} /> : <Plus size={10} />}
+            <span className="saved-chip-name">New deal</span>
+          </button>
+        ) : null}
         {savedOn.map((record) => {
           const on = isOn(record.kind);
           // On: a check, as in Vocify's review and Settings; off: what the record is.
@@ -234,7 +257,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
       </div>
     ) : null;
 
-  const count = (t: Tab) => (t === "crm" ? (postCall.stage === "ready" ? keptCount : postCall.stage === "review" ? 1 : 0) : t === "email" && postCall.email?.state === "ready" ? 1 : 0);
+  const count = (t: Tab) => (t === "crm" ? (postCall.stage === "ready" ? keptCount + (willCreateDeal ? 1 : 0) : postCall.stage === "review" ? 1 : 0) : t === "email" && postCall.email?.state === "ready" ? 1 : 0);
 
   return (
     <>
@@ -282,7 +305,10 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
             {postCall.stage === "writing" && <Line busy><span className="dim">Writing the update…</span></Line>}
             {postCall.stage === "ready" && nothingSure && (
               <Line icon={<ExclamationCircle />} trailing={postCall.canApprove ? undefined : review}>
-                <span>Nothing clear enough to write from here</span>
+                {/* With a note to save, nothing is wrong: there are simply no fields to change. */}
+                <span className={postCall.canApprove && noteToSave ? "dim" : undefined}>
+                  {postCall.canApprove && noteToSave ? "No fields to change" : "Nothing clear enough to write from here"}
+                </span>
               </Line>
             )}
             {postCall.stage === "ready" && nothingSure && postCall.canApprove && (

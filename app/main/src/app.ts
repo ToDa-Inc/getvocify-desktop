@@ -342,14 +342,28 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
           });
         }
       },
-      // Recording without a detected call: name the app holding the mic, if any, without reading browsers needlessly.
+      // Recording without a detected call: name the app holding the mic, and still send the CRM pages on screen: a call made
+      // in an app the island did not catch (a softphone, a web dialer) is still on that record, and its contact and deal
+      // must not be lost (2026-11-16: Movertis' Ringover calls reached Vocify with neither).
       lookUpCallSource: (caller) => {
         if (platform === "win32") {
           const native = callSourceForExe(caller?.appId);
-          if (native) return dashboard.emit("call:source", native.json);
-          if (!caller) return;
-          void pageReader.read().then((pages) => dashboard.emit("call:source", (CallSource.page(pages.map((p) => p.url)) ?? null)?.json ?? null));
+          if (native) dashboard.emit("call:source", native.json);
+          void pageReader.read().then((pages) => {
+            if (!["starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
+            if (!native && caller) dashboard.emit("call:source", (CallSource.page(pages.map((p) => p.url)) ?? null)?.json ?? null);
+            const urls = crmUrlsOf(pages);
+            if (urls.length > 0) dashboard.emit("call:pages", { urls });
+          });
         } else if (platform === "darwin") {
+          // The CRM record in front, else the last one seen in a browser: the recording's contact and deal.
+          void os.crmScreenReader.front().then(async (app) => {
+            const read = app && os.crmScreenReader.isBrowser(app) ? await os.crmScreenReader.read(app) : null;
+            const urls = read && read.length > 0 ? read : freshCrm();
+            if (urls.length > 0 && ["starting", "recording", "stopped"].includes(controller.state.mode.kind)) {
+              dashboard.emit("call:pages", { urls });
+            }
+          });
           // On Mac, use CallSource.app for the app name
           const appId = caller?.appId ?? undefined;
           const source = CallSource.app(appId);

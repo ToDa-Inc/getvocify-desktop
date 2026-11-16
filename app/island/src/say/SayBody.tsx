@@ -139,7 +139,7 @@ export function SayBody({ state, act, transcript, compact = false, typeControl =
     <Say.Provider value={ctx}>
       <Feed />
       <div className="hairline" />
-      {hasSteps && <SayTabs />}
+      {(hasSteps || (compact && typeControl)) && <SayTabs hasSteps={hasSteps} />}
       <div className="live-views say-views" data-open={panelOpen} data-peek={ui.peek !== null} data-tab={tab}>
         {/* Both stay mounted, so the transcript keeps its place and the steps their scroll when the rep switches. */}
         <div className="say-pane" hidden={tab !== "transcript"}>
@@ -230,8 +230,8 @@ const PersonIcon = ({ size = 11 }) => (
  * the island sizes itself the tabs also open and close the panel, and Pasos says how many steps are done (it used to
  * carry no count, so a live "2/6" would not read as a score of the rep; Dani asked for it on 2026-11-16, in the place of
  * the progress bar). */
-function SayTabs() {
-  const { live, ui, update, act, words, compact } = useSay();
+function SayTabs({ hasSteps }: { hasSteps: boolean }) {
+  const { live, ui, update, act, words, compact, typeControl } = useSay();
   const progress = live.progress;
   const doneSteps = progress.steps.filter((s) => (`step:${s.id}` in ui.marks ? ui.marks[`step:${s.id}`] : s.done)).length;
   const pulse = useGrowPulse(doneSteps);
@@ -248,7 +248,7 @@ function SayTabs() {
   ];
   return (
     <div className="live-tabs-row say-tabs-row">
-      <div className="postcall-tabs live-tabs" role="tablist" aria-label={words.views}>
+      {hasSteps && <div className="postcall-tabs live-tabs" role="tablist" aria-label={words.views}>
         {tabs.map((t) => (
           <button key={t.id} type="button" role="tab" aria-selected={shown && ui.tab === t.id} className="postcall-tab live-tab" data-active={shown && ui.tab === t.id} title={t.id === "steps" ? words.say.steps.help : t.label} onClick={() => pick(t.id)}>
             {t.id === "steps" && ui.tab !== "steps" && pulse > 0 && <span key={pulse} className="type-note-pulse live-pulse" aria-hidden />}
@@ -257,7 +257,9 @@ function SayTabs() {
             {compact && t.id === "steps" && steps > 0 && <span className="live-tab-count">{doneSteps}/{steps}</span>}
           </button>
         ))}
-      </div>
+      </div>}
+      {/* The call type is always in reach, with or without steps: live help follows its playbook. */}
+      {compact && typeControl && <div className="say-type-row">{typeControl}</div>}
     </div>
   );
 }

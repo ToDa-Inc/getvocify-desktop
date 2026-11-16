@@ -15,7 +15,7 @@ import { useSay } from "./context.ts";
 import { StepQuestion } from "./Peeks.tsx";
 
 export function StepsTab() {
-  const { live, ui, update, act, words, typeControl } = useSay();
+  const { live, ui, update, act, words } = useSay();
   const say = words.say;
   const progress = live.progress;
   const [open, setOpen] = useState<string | null>(null);
@@ -61,7 +61,6 @@ export function StepsTab() {
 
   return (
     <div className="say-steps-tab" ref={listRef}>
-      {typeControl && <div className="say-type-row">{typeControl}</div>}
       {rows.map((todo) => {
         const now = current?.key === todo.key;
         const isOpen = open === todo.key;

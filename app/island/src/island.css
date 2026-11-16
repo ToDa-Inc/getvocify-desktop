@@ -270,6 +270,12 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .latest:active { transform: translateX(-50%) scale(0.93); }
 
 .countdown { position: absolute; left: 22px; right: 22px; bottom: 5px; height: 2px; }
+.countdown { transition: opacity 160ms; }
+/* A pointer resting on the card holds the countdown: the line goes while it is held and comes back when it runs again. */
+.countdown[data-held="true"] { opacity: 0; }
+.option-row > .option-icon { flex: none; display: inline-flex; overflow: visible; color: var(--secondary); }
+.option-row:hover > .option-icon, .option-row[data-selected="true"] > .option-icon { color: var(--text); }
+.type-tag-icon { display: inline-flex; flex: none; opacity: 0.85; }
 .countdown-bar { height: 2px; border-radius: 1px; background: rgba(255, 255, 255, 0.32); transform-origin: center; }
 
 /* post-call card: PostCallMenu and PostCallLayout in MeetingPill.swift */

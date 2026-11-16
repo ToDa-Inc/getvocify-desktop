@@ -338,7 +338,8 @@ html:has(.side-stage), body:has(.side-stage) { overflow: hidden; }
 .open-island[data-compact="true"] .say-contact { max-width: 110px; }
 
 /* ---------- Pasos as one list (2026-11-16) ---------- */
-.say-type-row { flex: none; display: flex; align-items: center; min-height: 22px; }
+.say-type-row { flex: none; display: flex; align-items: center; min-height: 22px; margin-left: auto; max-width: 62%; min-width: 0; }
+.say-tabs-row .live-tabs { flex: 1 1 auto; min-width: 0; }
 .say-steps-tab { gap: 1px; }
 .say-row { padding: 0 7px; }
 .say-step, .say-find-head { min-height: 24px; }

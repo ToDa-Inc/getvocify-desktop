@@ -282,8 +282,9 @@ const MORE = ".say-controls .more-button";
 export const sayFixtures = [
   // Under the notch (2026-11-16): the panel is closed until a tab is tapped, and the same tab closes it; what controls
   // the call sits at the right of the bar, the one that ends it last; the rest is in one menu; the type is in Pasos.
-  { name: "say-closed", state: recording(sayView([S_READ])), expect: { ...SAY, say: { panel: false, tab: null, tabCount: "2/7", controls: ["Pause recording", "Stop recording", "Más"], typeInPanel: false } } },
-  { name: "say-panel-opens", state: recording(sayView([S_READ])), steps: [PASOS], expect: { ...SAY, say: { panel: true, tab: "Pasos", typeInPanel: true, rows: 8 } } },
+  { name: "say-closed", state: recording(sayView([S_READ])), expect: { ...SAY, say: { panel: false, tab: null, tabCount: "2/7", controls: ["Pause recording", "Stop recording", "Más"], typeChip: true } } },
+  { name: "say-no-steps", state: recording(sayView([], { progress: { playbook: { key: "internal", name: "Reunión" }, hasPlaybook: false, steps: [], data: [], goal: null, missing: [], now: null } })), expect: { ...SAY, say: { panel: true, tab: null, tabCount: null, typeChip: true } } },
+  { name: "say-panel-opens", state: recording(sayView([S_READ])), steps: [PASOS], expect: { ...SAY, say: { panel: true, tab: "Pasos", typeChip: true, rows: 8 } } },
   { name: "say-panel-closes", state: recording(sayView([S_READ])), steps: [PASOS, PASOS], expect: { ...SAY, say: { panel: false, tab: null } } },
   { name: "say-find-row", state: recording(sayView([S_READ])), steps: [PASOS], expect: { ...SAY, say: { chips: 0, findCount: "2/4" } } },
   { name: "say-more-menu", state: recording(sayView([S_READ])), steps: [MORE], expect: { ...SAY, say: { menu: ["Copiar la transcripción", "Ayuda en vivo", "Abrir Vocify"] } } },

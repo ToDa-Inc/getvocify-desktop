@@ -167,7 +167,7 @@ function CountdownLine({ countdown }: { countdown: NonNullable<IslandState["coun
     el.style.transform = "scaleX(0)";
   }, [countdown]);
   return (
-    <div className="countdown" aria-hidden>
+    <div className="countdown" data-held={!running} aria-hidden>
       <div className="countdown-bar" ref={bar} />
     </div>
   );
@@ -969,6 +969,7 @@ export function OpenIsland({ state, act, compact = false, onPopupExtent }: { sta
               {menu.channel.rows.map((row) => (
                 <MenuRow
                   key={row.key}
+                  icon={row.key === "call" ? <Phone size={11} /> : <Video size={11} />}
                   label={row.label}
                   selected={row.checked}
                   onPick={() => {
@@ -997,12 +998,12 @@ export function OpenIsland({ state, act, compact = false, onPopupExtent }: { sta
         <KeypadPopover anchor={keypadAnchor} onDigit={(digit) => act({ name: "digit", digit })} onClose={closeKeypad} onExtent={onPopupExtent} align={compact ? "end" : "start"} />
       )}
       {compact && moreAnchor && (
-        <FloatMenu anchor={moreAnchor} width={200} align="end" role="group" onClose={closeMore} onExtent={onPopupExtent} label={es ? "Más" : "More"}>
+        <FloatMenu anchor={moreAnchor} width={212} align="end" role="group" onClose={closeMore} onExtent={onPopupExtent} label={es ? "Más" : "More"}>
           {state.turns.length > 0 && (
-            <MenuRow label={es ? "Copiar la transcripción" : "Copy the transcript"} selected={false} onPick={() => { void copyText(transcriptText(state.turns)); setMoreAnchor(null); }} />
+            <MenuRow icon={<Copy size={11} />} label={es ? "Copiar la transcripción" : "Copy the transcript"} selected={false} onPick={() => { void copyText(transcriptText(state.turns)); setMoreAnchor(null); }} />
           )}
-          {state.liveHelp !== null && <MenuRow label={es ? "Ayuda en vivo" : "Live help"} selected={state.liveHelp} onPick={() => act({ name: "toggleLiveHelp" })} />}
-          <MenuRow label={es ? "Abrir Vocify" : "Open Vocify"} selected={false} onPick={() => { act({ name: "openApp" }); setMoreAnchor(null); }} />
+          {state.liveHelp !== null && <MenuRow icon={<Sparkle size={11} />} label={es ? "Ayuda en vivo" : "Live help"} selected={state.liveHelp} onPick={() => act({ name: "toggleLiveHelp" })} />}
+          <MenuRow icon={<ArrowUpRight size={11} />} label={es ? "Abrir Vocify" : "Open Vocify"} selected={false} onPick={() => { act({ name: "openApp" }); setMoreAnchor(null); }} />
         </FloatMenu>
       )}
       {state.micSilent && !state.paused ? <MicSilentLine state={state} /> : state.callAudioLost && !state.paused ? <CallAudioLostLine /> : state.transcriptPaused && !state.paused ? <TranscriptPausedLine /> : <MicNoticeLine state={state} />}
@@ -1638,6 +1639,7 @@ function TypeTag({ menu }: { menu: TypeMenuView }) {
     <span className="type-tag" data-placeholder={menu.placeholder}>
       {menu.channel && (
         <>
+          <span className="type-tag-icon" aria-hidden>{menu.channel.rows.find((r) => r.checked)?.key === "call" ? <Phone size={10} /> : <Video size={10} />}</span>
           <span className="type-tag-channel">{menu.channel.title}</span>
           <span aria-hidden>·</span>
         </>

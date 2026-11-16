@@ -112,10 +112,10 @@ app.whenReady().then(async () => {
     const held = await pill();
     check(moved !== null && held !== null && close(held.x, moved.x, 4) && close(held.y, moved.y, 4), "the pill is still where it was let go, after a while");
     await click(physical(held).x, physical(held).y);
-    console.log(`      after the click on the pill: expanded ${controller.state.expanded}; page pointer events ${JSON.stringify(await page("window.__pointer"))}; ignore calls ${ignoreCalls.slice(-4).join(" ")}`);
     check(await until(() => controller.state.expanded, 2500), "a real click on the pill opens the island out of it");
     await sleep(700);
-    check((await page("!!document.querySelector('.side-panel')")) === true, "the open island is drawn beside the pill");
+    // An idle pill opens in place (the pill grows to hold Record); a call, a meeting or a card opens beside it.
+    check((await page("document.querySelector('.side-strip')?.dataset.inline === 'true' || !!document.querySelector('.side-panel')")) === true, "the pill opens: it grows to hold Record, or the island is drawn beside it");
     await click(physical(held).x, physical(held).y);
     check(await until(() => !controller.state.expanded, 2500), "a real click on the pill closes it again");
     await sleep(600);

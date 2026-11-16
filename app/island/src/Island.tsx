@@ -1446,7 +1446,7 @@ function CallerIcon({ caller }: { caller: { name: string | null; icon?: string |
 }
 
 function VocifyMark({ style }: { style?: CSSProperties }) {
-  return <img className="mark" src="./icon.png" width={16} height={16} alt="Vocify" style={style} />;
+  return <img className="mark" src="./icon.png" width={16} height={16} alt="Vocify" draggable={false} style={style} />;
 }
 
 function Spinner() {

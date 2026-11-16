@@ -129,6 +129,8 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
     } catch {
       // A pointer that cannot be captured (a synthetic one) still drags while it stays over the window.
     }
+    // A new press is a new click, whatever the last drag left (a drag the system cancels sends no click to clear it).
+    suppressClick.current = false;
     press.current = { x: event.clientX, y: event.clientY, grabX: event.clientX - rest.x, grabY: event.clientY - rest.y, moved: false };
     reportHits();
   }, [rest, reportHits]);

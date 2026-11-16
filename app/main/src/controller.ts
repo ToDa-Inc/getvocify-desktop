@@ -443,6 +443,8 @@ export class IslandController {
   /* ---------- the island's own actions ---------- */
 
   act(action: IslandAction): void {
+    // What the rep pressed and what the island was showing, so a press that seems lost can be told from one never made.
+    if (action.name !== "pointer") this.effects.log?.(`island: ${action.name} pressed (${this.mode})`);
     switch (action.name) {
       case "toggle":
         return this.toggle();

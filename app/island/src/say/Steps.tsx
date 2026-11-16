@@ -1,19 +1,21 @@
-// Pasos, the default tab under Qué decir (2026-11-10): a line of progress, then the playbook's steps in its order as equal
-// rows, ticking themselves as the call covers them (or by the rep's tap on the circle). No step is forced open: the one the
-// call is on carries «Ahora». A pending step shows a question mark, so the row reads as something to press: a tap opens
-// it (what it asks, its parts as they are heard) and asks for a question from this call; the step the call is on already
-// has the brain's own. Never the playbook's example sentence: that is another prospect's words, and read out word for
-// word it is a script. What to find out sits under the steps as chips that tick themselves, with what they said inside.
+// Pasos, the tab under Qué decir: ONE list (2026-11-16). The call type at the top (where the island sizes itself), then
+// the playbook's steps in its order as equal rows, ticking themselves as the call covers them (or by the rep's tap on the
+// circle): done, the one the call is on («Ahora», its row lit), pending. A tap on a pending step opens it under its own
+// row (what it asks, its parts as they are heard) and asks for a question from this call; the step the call is on already
+// has the brain's own. One row open at a time. Never the playbook's example sentence: that is another prospect's words,
+// and read out word for word it is a script. What to find out is one more row of the list, with how many are known; a
+// tap opens its chips under it, which tick themselves with what they said inside. The card above is the brain's alone:
+// nothing pressed here changes it.
 import { useEffect, useRef, useState } from "react";
 import { Check } from "../icons.tsx";
 import { nowMs } from "../useNow.ts";
-import { FlagIcon, QuestionIcon } from "../live/icons.tsx";
+import { ChevronRight, FlagIcon, QuestionIcon } from "../live/icons.tsx";
 import { todos, type Todo } from "../live/model.ts";
 import { useSay } from "./context.ts";
 import { StepQuestion } from "./Peeks.tsx";
 
 export function StepsTab() {
-  const { live, ui, update, act, words } = useSay();
+  const { live, ui, update, act, words, typeControl } = useSay();
   const say = words.say;
   const progress = live.progress;
   const [open, setOpen] = useState<string | null>(null);
@@ -52,15 +54,14 @@ export function StepsTab() {
     act({ name: "liveAskStep", kind: todo.kind, id: todo.id });
     update({ askStep: { kind: todo.kind as "step" | "data", id: todo.id, after: live.asks.step?.seq ?? 0, at: nowMs() } });
   };
+  const known = data.filter((t) => t.done).length;
+  // Open on its own while what the call is on is something to find out; else when the rep opens it.
+  const findOpen = ui.find || current?.kind === "data";
   const asking = (todo: Todo) => Boolean(ui.askStep && ui.askStep.kind === todo.kind && ui.askStep.id === todo.id && !todo.done);
 
   return (
     <div className="say-steps-tab" ref={listRef}>
-      <div className="say-progress" aria-hidden>
-        {rows.map((todo) => (
-          <i key={todo.key} data-s={todo.done ? "done" : current?.key === todo.key ? "now" : "pending"} />
-        ))}
-      </div>
+      {typeControl && <div className="say-type-row">{typeControl}</div>}
       {rows.map((todo) => {
         const now = current?.key === todo.key;
         const isOpen = open === todo.key;
@@ -111,8 +112,17 @@ export function StepsTab() {
       })}
 
       {data.length > 0 && (
-        <div className="say-find" data-current={current?.kind === "data"}>
-          <div className="say-section">{say.toFind}</div>
+        <div className="say-row say-find" data-current={current?.kind === "data"} data-open={findOpen}>
+          <div className="live-todo say-find-head" data-done={known === data.length}>
+            <span className="live-node" data-kind="data">{known === data.length ? <Check size={8} stroke={3.6} /> : null}</span>
+            <button type="button" className="say-row-main" aria-expanded={findOpen} onClick={() => update({ find: !findOpen, askStep: null })}>
+              <span className="say-step-text">{say.toFind}</span>
+              <span className="say-find-count">{known}/{data.length}</span>
+              <span className="grow" />
+              <span className="say-find-chevron"><ChevronRight size={8} /></span>
+            </button>
+          </div>
+          {findOpen && (<>
           <div className="say-chips">
             {data.map((todo) => {
               const value = progress.data.find((d) => d.id === todo.id)?.value ?? null;
@@ -126,6 +136,7 @@ export function StepsTab() {
             })}
           </div>
           {current?.kind === "data" && (fromBrain ?? current.ask) ? <div className="say-now-q" title={say.suggestionHelp}>{fromBrain ?? current.ask}</div> : null}
+          </>)}
         </div>
       )}
     </div>

@@ -271,13 +271,30 @@ const sayAsks = (extra) => ({ asks: { responder: null, recap: null, next: null, 
 const SAY = { width: 460, height: 400 };
 const NEXT = { kind: "data", id: "n_comerciales", label: "N.º de comerciales", question: "¿Cuántos comerciales sois, y cuántos están en la calle?" };
 
+/** Opens Pasos: under the notch the panel is closed until a tab is tapped. */
+const PASOS = ".say-tabs-row .live-tab:nth-child(1)";
+
+// Under the notch Qué decir sizes itself (`selfSized`): the island is as tall as its card, the tabs and the bar.
+/** A call dialled from the island, in progress: its own controls are mute, the keypad and hang up. */
+const S_DIAL = { phase: "active", name: "Marta Ruiz", phone: "+34600111222", answeredAt: NOW - 65_000, muted: false, message: null };
+const MORE = ".say-controls .more-button";
+
 export const sayFixtures = [
+  // Under the notch (2026-11-16): the panel is closed until a tab is tapped, and the same tab closes it; what controls
+  // the call sits at the right of the bar, the one that ends it last; the rest is in one menu; the type is in Pasos.
+  { name: "say-closed", state: recording(sayView([S_READ])), expect: { ...SAY, say: { panel: false, tab: null, tabCount: "2/7", controls: ["Pause recording", "Stop recording", "Más"], typeInPanel: false } } },
+  { name: "say-panel-opens", state: recording(sayView([S_READ])), steps: [PASOS], expect: { ...SAY, say: { panel: true, tab: "Pasos", typeInPanel: true, rows: 8 } } },
+  { name: "say-panel-closes", state: recording(sayView([S_READ])), steps: [PASOS, PASOS], expect: { ...SAY, say: { panel: false, tab: null } } },
+  { name: "say-find-row", state: recording(sayView([S_READ])), steps: [PASOS], expect: { ...SAY, say: { chips: 0, findCount: "2/4" } } },
+  { name: "say-more-menu", state: recording(sayView([S_READ])), steps: [MORE], expect: { ...SAY, say: { menu: ["Copiar la transcripción", "Ayuda en vivo", "Abrir Vocify"] } } },
+  { name: "say-dialled", state: recording(sayView([S_QUOTE]), { dial: S_DIAL }), expect: { ...SAY, say: { controls: ["Mute", "Keypad", "Hang up", "Más"], panel: false } } },
+  { name: "say-dialled-keypad", state: recording(sayView([S_QUOTE]), { dial: S_DIAL, keypadOpen: true }), expect: { ...SAY, keypad: true, say: { controls: ["Mute", "Hide keypad", "Hang up", "Más"] } } },
   { name: "say-read", state: recording(sayView([S_READ])), expect: { ...SAY, say: { cards: 1, why: S_READ.read, kinds: [""], text: S_READ.answer, pile: 0 } } },
   { name: "say-quote", state: recording(sayView([S_QUOTE])), expect: { ...SAY, say: { cards: 1, why: S_QUOTE.quote, kinds: [null], text: HUBSPOT.answer, grown: true } } },
   // The answers before the one on screen: a pile under it; a tap spreads them, as the list they are.
   { name: "say-pile", state: recording(sayView([S_TIMING, { ...S_QUOTE, outcome: "answered" }, S_READ])), expect: { ...SAY, say: { cards: 3, pile: 2, faded: 2, why: S_READ.read, grown: true } } },
   { name: "say-pile-spread", state: recording(sayView([S_TIMING, { ...S_QUOTE, outcome: "answered" }, S_READ])), steps: [".say-pile"], expect: { ...SAY, say: { cards: 3, pile: 2, pileOn: true, grown: true } } },
-  { name: "say-empty", state: recording(sayView()), expect: { ...SAY, say: { cards: 0, quiet: "Aquí sale qué decir cuando el cliente pregunta, objeta o cuenta algo importante.", bar: ["Responder", "Resumen"], tab: "Pasos", contact: "Marta Ruiz", peek: null } } },
+  { name: "say-empty", state: recording(sayView()), expect: { ...SAY, say: { cards: 0, quiet: "Aquí sale qué decir cuando el cliente pregunta, objeta o cuenta algo importante.", bar: ["Responder", "Resumen"], tab: null, contact: "Marta Ruiz", peek: null } } },
   { name: "say-long-answer", state: recording(sayView([S_HUBSPOT, S_LONG])), expect: { ...SAY, say: { cards: 2, text: S_LONG.answer, cut: 0, whole: true, grown: true } } },
   { name: "say-answer", state: recording(sayView([S_HUBSPOT])), expect: { ...SAY, say: { cards: 1, kinds: ["Respuesta"], text: HUBSPOT.answer, sources: ["t6"] } } },
   { name: "say-kinds", state: recording(sayView([S_TIMING, S_DEEPEN, S_SINCE, S_HUBSPOT])), expect: { ...SAY, say: { cards: 4, kinds: ["No está en tu conocimiento", "Respuesta", "Puedes preguntar", "Respuesta"], faded: 1, grown: true } } },
@@ -296,17 +313,17 @@ export const sayFixtures = [
   { name: "say-recap", state: recording(sayView()), steps: [".say-bar .live-action:nth-child(2)"], next: recording(sayView([], sayAsks({ recap: RECAP }))), expect: { ...SAY, say: { peek: "recap", facts: 2, recapLines: 4, title: "Resumen · hasta el 02:20" } } },
   // Pasos is the default tab: the steps in the playbook's order, the current one open with the brain's question.
   // No step is forced open (2026-11-10): the step the call is on shows the brain's question when the rep opens it.
-  { name: "say-steps", state: recording(sayView()), steps: [".say-row[data-now=\"true\"] .say-row-main"], expect: { ...SAY, say: { tab: "Pasos", peek: null, rows: 8, current: "Plantear el problema", suggestion: "Lo que vemos en los equipos comerciales es que el CRM se rellena tarde o nunca.", chips: 4, chipsDone: 2 } } },
+  { name: "say-steps", state: recording(sayView()), steps: [PASOS, ".say-find .say-row-main", ".say-row[data-now=\"true\"] .say-row-main"], expect: { ...SAY, say: { tab: "Pasos", peek: null, rows: 8, current: "Plantear el problema", suggestion: "Lo que vemos en los equipos comerciales es que el CRM se rellena tarde o nunca.", chips: 4, chipsDone: 2 } } },
   // A current step with parts and no question from the brain: its parts, and a way to ask for one (never the example).
   // Nothing is forced open: until the rep taps it, the step the call is on is one row like the others (its parts are inside).
-  { name: "say-steps-parts-closed", state: recording(sayView([], { progress: progress({ steps: S_STEPS, now: { kind: "step", id: "cualificar_el_encaje", say: null } }) })), expect: { ...SAY, say: { tab: "Pasos", current: "Cualificar el encaje", parts: 0, stepQ: null } } },
-  { name: "say-steps-parts", state: recording(sayView([], { progress: progress({ steps: S_STEPS, now: { kind: "step", id: "cualificar_el_encaje", say: null } }) })), steps: [".say-row[data-now=\"true\"] .say-row-main"], expect: { ...SAY, say: { tab: "Pasos", current: "Cualificar el encaje", parts: 5, partsDone: 2, suggestion: null, stepQ: "Preparando una pregunta con lo que ha dicho" } } },
+  { name: "say-steps-parts-closed", steps: [PASOS], state: recording(sayView([], { progress: progress({ steps: S_STEPS, now: { kind: "step", id: "cualificar_el_encaje", say: null } }) })), expect: { ...SAY, say: { tab: "Pasos", current: "Cualificar el encaje", parts: 0, stepQ: null } } },
+  { name: "say-steps-parts", state: recording(sayView([], { progress: progress({ steps: S_STEPS, now: { kind: "step", id: "cualificar_el_encaje", say: null } }) })), steps: [PASOS, ".say-row[data-now=\"true\"] .say-row-main"], expect: { ...SAY, say: { tab: "Pasos", current: "Cualificar el encaje", parts: 5, partsDone: 2, suggestion: null, stepQ: "Preparando una pregunta con lo que ha dicho" } } },
   // The brain's pick is a piece of data: its chip is current and its question shows under the chips.
-  { name: "say-steps-data-now", state: recording(sayView([], { progress: progress({ steps: S_STEPS, now: { kind: "data", id: "n_comerciales", say: null } }) })), expect: { ...SAY, say: { tab: "Pasos", current: null, chipNow: "N.º de comerciales", suggestion: "¿Cuántos comerciales sois, y cuántos están en la calle y cuántos en oficina?" } } },
-  { name: "say-steps-asking", state: recording(sayView()), steps: [".say-row[data-done=\"false\"][data-now=\"false\"] .say-row-main"], expect: { ...SAY, say: { tab: "Pasos", stepQ: "Preparando una pregunta con lo que ha dicho" } } },
-  { name: "say-steps-question", state: recording(sayView()), steps: [".say-row[data-done=\"false\"][data-now=\"false\"] .say-row-main"], next: recording(sayView([], sayAsks({ step: { seq: 1, kind: "step", id: "preguntar_tiempo_y_proceso", status: "ready", question: "Con tantos en la calle, ¿cuándo lo apuntan, al final del día?" } }))), expect: { ...SAY, say: { tab: "Pasos", stepQ: "Con tantos en la calle, ¿cuándo lo apuntan, al final del día?" } } },
+  { name: "say-steps-data-now", steps: [PASOS], state: recording(sayView([], { progress: progress({ steps: S_STEPS, now: { kind: "data", id: "n_comerciales", say: null } }) })), expect: { ...SAY, say: { tab: "Pasos", current: null, chipNow: "N.º de comerciales", suggestion: "¿Cuántos comerciales sois, y cuántos están en la calle y cuántos en oficina?" } } },
+  { name: "say-steps-asking", state: recording(sayView()), steps: [PASOS, ".say-row[data-done=\"false\"][data-now=\"false\"] .say-row-main"], expect: { ...SAY, say: { tab: "Pasos", stepQ: "Preparando una pregunta con lo que ha dicho" } } },
+  { name: "say-steps-question", state: recording(sayView()), steps: [PASOS, ".say-row[data-done=\"false\"][data-now=\"false\"] .say-row-main"], next: recording(sayView([], sayAsks({ step: { seq: 1, kind: "step", id: "preguntar_tiempo_y_proceso", status: "ready", question: "Con tantos en la calle, ¿cuándo lo apuntan, al final del día?" } }))), expect: { ...SAY, say: { tab: "Pasos", stepQ: "Con tantos en la calle, ¿cuándo lo apuntan, al final del día?" } } },
   // The dashboard has no question for a step: nothing shows. The playbook's example is another prospect's sentence.
-  { name: "say-steps-no-answer", state: recording(sayView()), steps: [".say-row[data-done=\"false\"][data-now=\"false\"] .say-row-main"], next: recording(sayView([], sayAsks({ step: { seq: 1, kind: "step", id: "preguntar_tiempo_y_proceso", status: "ready", question: null } }))), expect: { ...SAY, say: { tab: "Pasos", stepQ: null } } },
+  { name: "say-steps-no-answer", state: recording(sayView()), steps: [PASOS, ".say-row[data-done=\"false\"][data-now=\"false\"] .say-row-main"], next: recording(sayView([], sayAsks({ step: { seq: 1, kind: "step", id: "preguntar_tiempo_y_proceso", status: "ready", question: null } }))), expect: { ...SAY, say: { tab: "Pasos", stepQ: null } } },
   { name: "say-transcript-tab", state: recording(sayView()), steps: [".say-tabs-row .live-tab:nth-child(2)"], expect: { ...SAY, say: { tab: "Transcripción", rows: 0 } } },
   { name: "say-brief", state: recording(sayView()), steps: [".say-contact"], expect: { ...SAY, say: { peek: "brief", title: "Marta Ruiz · Acme Logistics", briefLines: 2 } } },
   { name: "say-brief-first", state: recording(sayView([], { contact: { ...CONTACT, first: true, lines: [] } })), steps: [".say-contact"], expect: { ...SAY, say: { peek: "brief", briefLines: 1 } } },
@@ -318,12 +335,12 @@ export const sayFixtures = [
   { name: "say-thinking", state: recording(sayView([S_HUBSPOT], { working: true })), expect: { ...SAY, say: { cards: 1, thinking: "Pensando", thinkingIn: true } } },
   { name: "say-not-thinking", state: recording(sayView([S_HUBSPOT])), expect: { ...SAY, say: { cards: 1, thinking: null } } },
   { name: "say-off", state: recording(sayView([S_HUBSPOT]), { liveHelp: false }), expect: { ...SAY, say: { quiet: "La ayuda en vivo está apagada en esta llamada.", disabled: ["Responder", "Resumen"], tab: null } } },
-  { name: "say-english", state: recording(sayView([S_DEEPEN, S_HUBSPOT]), { language: "en" }), expect: { ...SAY, say: { kinds: ["You could ask", "Answer"], bar: ["Respond", "Recap"], tab: "Steps", current: "Plantear el problema" } } },
+  { name: "say-english", steps: [PASOS], state: recording(sayView([S_DEEPEN, S_HUBSPOT]), { language: "en" }), expect: { ...SAY, say: { kinds: ["You could ask", "Answer"], bar: ["Respond", "Recap"], tab: "Steps", current: "Plantear el problema" } } },
   { name: "say-fresh", state: recording(sayView([S_FRESH])), expect: { ...SAY, say: { cards: 1, again: false } } },
   // A card said two seconds ago: the first press points at it (it may not have been read); the second writes it again.
   { name: "say-fresh-pointed", state: recording(sayView([S_FRESH])), steps: [".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { cards: 1, again: false } } },
   { name: "say-fresh-pressed-again", state: recording(sayView([S_FRESH])), steps: [".say-bar .live-action:nth-child(1)", ".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { cards: 1, otherWay: "Otra forma…" } } },
-];
+].map((f) => ({ ...f, selfSized: true }));
 
 // Closed: something new the rep has not seen marks the island (each fixture starts with nothing seen); nothing open, no mark.
 const CLOSED = { width: 349, height: 32 };
@@ -371,13 +388,13 @@ export const sayInteractions = [
   { name: "say-respond-asks", fixture: "say-empty", click: ".say-bar .live-action:nth-child(1)", expect: [{ name: "liveAsk", ask: "respond" }] },
   { name: "say-recap-asks", fixture: "say-empty", click: ".say-bar .live-action:nth-child(2)", expect: [{ name: "liveAsk", ask: "recap" }] },
   { name: "say-steps-opens", fixture: "say-transcript-tab", click: ".say-tabs-row .live-tab:nth-child(1)", expect: [{ name: "liveEvent", event: "open_steps" }] },
-  { name: "say-step-asks", fixture: "say-empty", click: ".say-row[data-done=\"false\"][data-now=\"false\"] .say-row-main", expect: [{ name: "liveAskStep", kind: "step", id: "preguntar_tiempo_y_proceso" }] },
+  { name: "say-step-asks", before: [PASOS], fixture: "say-empty", click: ".say-row[data-done=\"false\"][data-now=\"false\"] .say-row-main", expect: [{ name: "liveAskStep", kind: "step", id: "preguntar_tiempo_y_proceso" }] },
   { name: "say-step-asks-current", fixture: "say-steps-parts-closed", click: ".say-row[data-now=\"true\"] .say-row-main", expect: [{ name: "liveAskStep", kind: "step", id: "cualificar_el_encaje" }] },
-  { name: "say-step-tick", fixture: "say-empty", click: ".say-row[data-now=\"true\"] .live-node", expect: [{ name: "liveTick", kind: "step", id: "plantear_el_problema", on: true }] },
-  { name: "say-chip-tick", fixture: "say-empty", click: ".say-chip[data-done=\"false\"]", expect: [{ name: "liveTick", kind: "data", id: "n_comerciales", on: true }] },
+  { name: "say-step-tick", before: [PASOS], fixture: "say-empty", click: ".say-row[data-now=\"true\"] .live-node", expect: [{ name: "liveTick", kind: "step", id: "plantear_el_problema", on: true }] },
+  { name: "say-chip-tick", before: [PASOS, ".say-find .say-row-main"], fixture: "say-empty", click: ".say-chip[data-done=\"false\"]", expect: [{ name: "liveTick", kind: "data", id: "n_comerciales", on: true }] },
   { name: "say-brief-opens", fixture: "say-empty", click: ".say-contact", expect: [{ name: "liveEvent", event: "open_brief" }] },
   { name: "say-bubble-asks", fixture: "say-transcript-tab", click: ".bubble[data-tappable=\"true\"]", expect: [{ name: "liveRespondTurn", turnId: "t2" }] },
-  { name: "say-bubble-with-card-points", fixture: "say-answer", click: ".bubble[data-source=\"true\"]", expect: [] },
+  { name: "say-bubble-with-card-points", before: [".say-tabs-row .live-tab:nth-child(2)"], fixture: "say-answer", click: ".bubble[data-source=\"true\"]", expect: [] },
   { name: "say-done", fixture: "say-answer", click: ".say-done", expect: [{ name: "liveDismiss", id: "hubspot" }] },
   { name: "side-strip-opens", fixture: "side-closed", click: ".side-strip", expect: [{ name: "toggle" }] },
   { name: "side-strip-closes", fixture: "side-open", click: ".side-strip", expect: [{ name: "toggle" }] },

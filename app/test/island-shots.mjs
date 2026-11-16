@@ -211,7 +211,14 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
         title: text(peek?.querySelector('.say-panel-head')),
         facts: all('.say-fact', peek).length,
         recapLines: all('.live-recap li', peek).length,
-        tab: text(document.querySelector('.say-tabs-row .live-tab[data-active="true"]')),
+        tab: text(document.querySelector('.say-tabs-row .live-tab[data-active="true"] > span:not(.live-tab-icon):not(.live-tab-count):not(.type-note-pulse)')),
+        tabCount: text(document.querySelector('.say-tabs-row .live-tab-count')),
+        compact: document.querySelector('.open-island')?.dataset.compact === 'true',
+        panel: (() => { const v = document.querySelector('.say-views'); return v ? getComputedStyle(v).display !== 'none' && v.getBoundingClientRect().height > 0 : null; })(),
+        controls: all('.say-controls > *').map((b) => b.getAttribute('aria-label') ?? b.title),
+        typeInPanel: !!document.querySelector('.say-pane:not([hidden]) .say-type-row .type-tag-button') && document.querySelector('.say-views')?.getBoundingClientRect().height > 0,
+        findCount: text(document.querySelector('.say-find-count')),
+        menu: all('.float-menu .option-row').map((r) => text(r)),
         rows: all('.say-pane:not([hidden]) .say-steps-tab .say-step').length,
         current: text(document.querySelector('.say-now-label')),
         parts: all('.say-part').length,
@@ -311,20 +318,23 @@ for (const fixture of fixtures) {
   if (process.env.ISLAND_PROGRESS) console.log(`fixture ${fixture.name}`);
   const { win, errors } = await open(fixture);
   const problems = [];
+  if (fixture.selfSized) await new Promise((resolve) => setTimeout(resolve, 500));
   for (const selector of fixture.steps ?? []) {
     const clicked = await win.webContents.executeJavaScript(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`);
     if (!clicked) problems.push(`step target missing: ${selector}`);
-    await (fixture.fit || fixture.natural ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
+    await (fixture.fit || fixture.natural || fixture.selfSized ? new Promise((resolve) => setTimeout(resolve, 700)) : frame());
   }
   // A second state pushed after the scene is set (a point that ends while its card is up).
   if (fixture.next) {
     await win.webContents.executeJavaScript(`window.__setIslandState(${JSON.stringify(fixture.next)}); true`);
     await frame();
+    // The island that sizes itself glides to its new height: measured once it is there.
+    if (fixture.selfSized) await new Promise((resolve) => setTimeout(resolve, 700));
   }
   const m = await measure(win, fixture);
   if (m.missing) problems.push("island did not render");
   else {
-    if (m.width !== fixture.expect.width || (!fixture.fit && !fixture.natural && m.height !== fixture.expect.height)) {
+    if (m.width !== fixture.expect.width || (!fixture.fit && !fixture.natural && !fixture.selfSized && m.height !== fixture.expect.height)) {
       problems.push(`size ${m.width}x${m.height}, expected ${fixture.expect.width}x${fixture.expect.height}`);
     }
     if (!m.inViewport) problems.push("island outside its window");
@@ -383,7 +393,10 @@ for (const fixture of fixtures) {
       // The stack the spec fixes: Qué decir 100 high under the controls, the bar 40 at the foot, the transcript between.
       const st = m.say.stack;
       // Its own 102 px (a two-line answer and the line the brain's work shows on), except when an open answer needs more: then it grows to hold it (never cut, 2026-11-09).
-      if (fixture.expect.say?.grown ? !(st.feed?.height > 102) : st.feed?.height !== 102) problems.push(`Qué decir is ${st.feed?.height}px high in a ${st.island?.height}px island, expected ${fixture.expect.say?.grown ? "more than " : ""}102`);
+      // The island that sizes itself: the zone is as tall as its card (never under 60), and the island never over 400.
+      if (m.say.compact) {
+        if (!(st.feed?.height >= 60) || st.island?.height > 400) problems.push(`Qué decir is ${st.feed?.height}px high in a ${st.island?.height}px island, expected at least 60 in at most 400`);
+      } else if (fixture.expect.say?.grown ? !(st.feed?.height > 102) : st.feed?.height !== 102) problems.push(`Qué decir is ${st.feed?.height}px high in a ${st.island?.height}px island, expected ${fixture.expect.say?.grown ? "more than " : ""}102`);
       if (st.bar?.height !== 40 || st.bar?.top + st.bar?.height !== st.island?.top + st.island?.height) problems.push(`bar at ${st.bar?.top}/${st.bar?.height}, expected 40 high at the foot of the ${st.island?.height}px island`);
       if (m.say.cut) problems.push(`${m.say.cut} text(s) cut by their box`);
       // The transcript stays between Qué decir and the bar: no bubble is drawn over the bar.

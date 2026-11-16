@@ -7,7 +7,7 @@ import { readSpot } from "../../core/pill.ts";
 import { ProposalWording } from "../../core/typeProposal.ts";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { backgroundLine, islandSize, offerBriefLines, showsConversation, showsMeeting } from "../../island/src/geometry.ts";
+import { backgroundLine, islandSize, offerBriefLines, showsConversation, showsMeeting, sizesItself } from "../../island/src/geometry.ts";
 import type { Geometry, IslandAction, IslandState } from "../../island/src/types.ts";
 import { createBridge } from "./bridge.ts";
 import { CallSoundWatch } from "./call-sound.ts";
@@ -613,7 +613,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     const open = state.expanded && state.mode.kind !== "starting";
     // Sized by the page: the after-call card, and an offer or call carrying the brief. Only a size reported for this
     // same kind of island counts, so the card's height never leaks onto the next offer.
-    const natural = state.mode.kind === "postCall" || offerBriefLines(state) > 0;
+    // Also Qué decir under the notch: as tall as its card, never taller than the open recording used to be.
+    const natural = state.mode.kind === "postCall" || offerBriefLines(state) > 0 || sizesItself(state);
     if (open && natural && reportedSize && reportedKind === state.mode.kind) return reportedSize;
     const size = islandSize(state.geometry, state.mode.kind, open, undefined, offerBriefLines(state), showsMeeting(state), showsConversation(state));
     return open ? { ...size, height: size.height + backgroundLine(state) } : size;

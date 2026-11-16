@@ -306,3 +306,57 @@ html:has(.side-stage), body:has(.side-stage) { overflow: hidden; }
 .side-stage[data-reduce-motion="true"] .side-panel[data-placed="true"] { animation-duration: 1ms; }
 .side-stage[data-reduce-motion="true"] .side-strip > .rim-light::before, .side-stage[data-reduce-motion="true"] .side-strip > .rim-light::after { animation: none; offset-distance: 12%; }
 .side-stage[data-reduce-motion="true"] .side-strip > .rim-light::after { offset-distance: 62%; }
+
+/* ---------- the island that sizes itself (Qué decir under the notch, 2026-11-16) ----------
+ * As tall as what it shows: the card, the tabs, the bar; plus the panel the rep opens. Never taller than the open
+ * recording used to be (--cap): past that, what is open scrolls inside. */
+.island[data-self-sized="true"] .column { max-height: var(--cap); }
+.open-island[data-compact="true"] { flex: 0 1 auto; }
+.open-island[data-compact="true"] .hairline { display: none; }
+.open-island[data-compact="true"] .say-feed { padding-bottom: 0; }
+.open-island[data-compact="true"] .say-tabs-row { padding: 4px 12px 6px; }
+/* Nothing open: neither tab reads as chosen. Pasos says how many steps are done. */
+.live-tab-count { margin-left: 2px; font-size: 10.5px; font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, 0.45); }
+/* The panel: closed, it is not there; open, as tall as its content up to what the cap leaves. A peek opened with the
+   panel closed (Resumen, the contact) gets room of its own. */
+.open-island[data-compact="true"] .say-views { flex: 0 1 auto; min-height: 0; container-type: normal; }
+.open-island[data-compact="true"] .say-views[data-open="false"] { display: none; }
+.open-island[data-compact="true"] .say-views[data-open="false"][data-peek="true"] { display: flex; flex: none; height: 190px; }
+.open-island[data-compact="true"] .say-views[data-open="false"][data-peek="true"] .say-pane { display: none; }
+.open-island[data-compact="true"] .say-peek .live-peek-card { max-height: 176px; }
+.open-island[data-compact="true"] .say-pane { flex: 0 1 auto; }
+.open-island[data-compact="true"] .say-steps-tab { flex: 0 1 auto; }
+.open-island[data-compact="true"] .say-views[data-tab="transcript"][data-open="true"] { flex: 0 1 200px; }
+.open-island[data-compact="true"] .say-views[data-tab="transcript"] .say-pane:not([hidden]) { flex: 1; }
+
+/* What controls the call, at the right of the bar: always the same place, the one that ends it last, in red. */
+.say-controls { flex: none; display: inline-flex; align-items: center; gap: 6px; margin-left: 2px; }
+.say-controls .circle-button { width: 24px; height: 24px; }
+.say-controls .stop-button { width: 24px; height: 24px; padding: 0; justify-content: center; border-radius: 12px; gap: 0; }
+.say-controls .stop-button > span:not(.stop-square) { display: none; }
+.say-controls .more-button { width: 24px; height: 24px; }
+.open-island[data-compact="true"] .say-contact { max-width: 110px; }
+
+/* ---------- Pasos as one list (2026-11-16) ---------- */
+.say-type-row { flex: none; display: flex; align-items: center; min-height: 22px; }
+.say-steps-tab { gap: 1px; }
+.say-row { padding: 0 7px; }
+.say-step, .say-find-head { min-height: 24px; }
+/* Done: a filled check and quieter words; nothing is struck through. */
+.say-step-text::after { display: none; }
+.say-row[data-done="true"] .say-step-text { color: rgba(255, 255, 255, 0.46); }
+/* Now: the row itself is lit. */
+.say-row[data-now="true"] { background: rgba(219, 192, 154, 0.1); }
+.say-now-mark { background: transparent; padding: 0; }
+/* A pending step's question mark shows on the row the pointer is on, the one the call is on and the one open. */
+.say-row .say-row-q { opacity: 0; }
+.say-row:is(:hover, [data-now="true"], [data-open="true"]) .say-row-q { opacity: 1; }
+/* «Por averiguar»: one more row, with how many are known; its chips open under it. */
+.say-find { margin-top: 0; display: block; }
+.say-find-head { display: flex; align-items: center; gap: 8px; }
+.say-find-head .live-node { cursor: default; }
+.say-find-count { flex: none; margin-left: 6px; font-size: 10.5px; font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, 0.45); }
+.say-find-chevron { flex: none; display: inline-flex; color: rgba(255, 255, 255, 0.4); transition: transform 160ms; }
+.say-find[data-open="true"] .say-find-chevron { transform: rotate(90deg); }
+.say-find .say-chips { padding: 4px 0 6px 21px; }
+.say-find .say-now-q { margin: 0 0 6px 21px; }

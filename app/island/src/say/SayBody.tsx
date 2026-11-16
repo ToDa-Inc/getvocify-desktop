@@ -3,6 +3,8 @@
 // (open by default: the playbook's steps ticking themselves) and Transcripción; at the foot, Responder · Resumen and who
 // the call is with. What is asked for rises over the tabs, one at a time, and never covers Qué decir. Nothing changes tab
 // on its own.
+// Under the notch since 2026-11-16 (`compact`): the island is as tall as its card; the panel under the tabs is closed
+// until the rep taps a tab (the same tab closes it); the call's own controls sit at the right of the bar.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LiveWording } from "../../../core/liveWording.ts";
 import type { IslandAction, IslandState, LivePoint } from "../types.ts";
@@ -25,7 +27,17 @@ const REWRITE_GIVE_UP_MS = 8000;
 /** The transcript's marks: the bubbles the open cards come from, and a tap on one of theirs asks about that line. */
 export type TranscriptMarks = { sources: ReadonlySet<string>; onTap: ((turnId: string) => void) | null; tapHelp: string };
 
-export function SayBody({ state, act, transcript }: { state: IslandState; act: Act; transcript: (marks: TranscriptMarks) => ReactNode }) {
+export function SayBody({ state, act, transcript, compact = false, typeControl = null, controls = null }: {
+  state: IslandState;
+  act: Act;
+  transcript: (marks: TranscriptMarks) => ReactNode;
+  /** The island sizes itself: see the note at the top. */
+  compact?: boolean;
+  /** The call-type selector, for the top of Pasos. */
+  typeControl?: ReactNode;
+  /** What controls the call (pause and stop, or mute, keypad and hang up) and the menu, for the right of the bar. */
+  controls?: ReactNode;
+}) {
   const live = state.live!;
   const words = LiveWording.strings(state.language);
   const liveHelp = state.liveHelp !== false && live.on;
@@ -99,7 +111,7 @@ export function SayBody({ state, act, transcript }: { state: IslandState; act: A
     }
   }, [ui.rewrite, live.points, rewriteAsk, now, state, update]);
 
-  const ctx: SayContext = { state, live, words, ui, update, act, points, liveHelp, still, now };
+  const ctx: SayContext = { state, live, words, ui, update, act, points, liveHelp, still, now, compact, typeControl };
   const respond = useRespond(ctx);
 
   // The transcript: the bubbles the open cards come from are outlined; a tap on one of theirs asks about that line.
@@ -121,12 +133,14 @@ export function SayBody({ state, act, transcript }: { state: IslandState; act: A
   // Pasos is there when the playbook has something to follow; with nothing, the transcript alone, as before.
   const hasSteps = liveHelp && live.progress.hasPlaybook && (live.progress.steps.length > 0 || live.progress.data.length > 0);
   const tab = hasSteps ? ui.tab : "transcript";
+  // Without tabs there is nothing to open it with: the transcript is simply there, as before.
+  const panelOpen = !compact || !hasSteps || ui.open;
   return (
     <Say.Provider value={ctx}>
       <Feed />
       <div className="hairline" />
       {hasSteps && <SayTabs />}
-      <div className="live-views say-views">
+      <div className="live-views say-views" data-open={panelOpen} data-peek={ui.peek !== null} data-tab={tab}>
         {/* Both stay mounted, so the transcript keeps its place and the steps their scroll when the rep switches. */}
         <div className="say-pane" hidden={tab !== "transcript"}>
           {transcript({ sources, onTap: liveHelp ? onTap : null, tapHelp: words.say.tapBubble })}
@@ -138,7 +152,7 @@ export function SayBody({ state, act, transcript }: { state: IslandState; act: A
         )}
         <SayPeeks />
       </div>
-      <SayBar onRespond={respond} />
+      <SayBar onRespond={respond} controls={controls} />
     </Say.Provider>
   );
 }
@@ -212,18 +226,22 @@ const PersonIcon = ({ size = 11 }) => (
   </svg>
 );
 
-/** Pasos | Transcripción, under Qué decir. A step that ticks while the rep is on the transcript pulses Pasos once (no
- * count: a live "2/6" reads as a score of the rep). */
+/** Pasos | Transcripción, under Qué decir. A step that ticks while the rep is on the transcript pulses Pasos once. Where
+ * the island sizes itself the tabs also open and close the panel, and Pasos says how many steps are done (it used to
+ * carry no count, so a live "2/6" would not read as a score of the rep; Dani asked for it on 2026-11-16, in the place of
+ * the progress bar). */
 function SayTabs() {
-  const { live, ui, update, act, words } = useSay();
+  const { live, ui, update, act, words, compact } = useSay();
   const progress = live.progress;
   const doneSteps = progress.steps.filter((s) => (`step:${s.id}` in ui.marks ? ui.marks[`step:${s.id}`] : s.done)).length;
   const pulse = useGrowPulse(doneSteps);
+  const shown = !compact || ui.open;
   const pick = (tab: SayUi["tab"]) => {
-    if (tab === ui.tab) return;
+    if (tab === ui.tab && shown) return compact ? update({ open: false, askStep: null }) : undefined;
     if (tab === "steps") act({ name: "liveEvent", event: "open_steps" });
-    update({ tab, peek: null });
+    update({ tab, open: true, peek: null });
   };
+  const steps = progress.steps.length;
   const tabs: { id: SayUi["tab"]; label: string; icon: ReactNode }[] = [
     { id: "steps", label: words.say.steps.label, icon: <ConversationIcon size={11} /> },
     { id: "transcript", label: words.tabs.transcript, icon: <TranscriptIcon size={11} /> },
@@ -232,10 +250,11 @@ function SayTabs() {
     <div className="live-tabs-row say-tabs-row">
       <div className="postcall-tabs live-tabs" role="tablist" aria-label={words.views}>
         {tabs.map((t) => (
-          <button key={t.id} type="button" role="tab" aria-selected={ui.tab === t.id} className="postcall-tab live-tab" data-active={ui.tab === t.id} title={t.id === "steps" ? words.say.steps.help : t.label} onClick={() => pick(t.id)}>
+          <button key={t.id} type="button" role="tab" aria-selected={shown && ui.tab === t.id} className="postcall-tab live-tab" data-active={shown && ui.tab === t.id} title={t.id === "steps" ? words.say.steps.help : t.label} onClick={() => pick(t.id)}>
             {t.id === "steps" && ui.tab !== "steps" && pulse > 0 && <span key={pulse} className="type-note-pulse live-pulse" aria-hidden />}
             <span className="live-tab-icon">{t.icon}</span>
             <span>{t.label}</span>
+            {compact && t.id === "steps" && steps > 0 && <span className="live-tab-count">{doneSteps}/{steps}</span>}
           </button>
         ))}
       </div>
@@ -245,7 +264,7 @@ function SayTabs() {
 
 /** Asking, at the foot: Responder, Resumen, and who the call is with. Resumen and the contact open over the tabs; a second
  * tap closes them. */
-function SayBar({ onRespond }: { onRespond: () => void }) {
+function SayBar({ onRespond, controls }: { onRespond: () => void; controls: ReactNode }) {
   const { live, ui, update, act, words, liveHelp } = useSay();
   const progress = live.progress;
   const learned = progress.data.filter((d) => d.done && d.value).length;
@@ -279,6 +298,7 @@ function SayBar({ onRespond }: { onRespond: () => void }) {
           <ChevronRight size={8} />
         </button>
       )}
+      {controls && <div className="say-controls">{controls}</div>}
     </div>
   );
 }

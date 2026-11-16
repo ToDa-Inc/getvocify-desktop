@@ -129,9 +129,14 @@ const PILE = 12;
 // Its padding (6 + 6) and the 2 px the list keeps above and below a card it brings into view.
 const FEED_PADDING = 16;
 const FEED_MAX_SHARE = 0.55;
+/** Where the island sizes itself: the zone's least and most (a longer card, or the earlier ones spread, scroll inside),
+ * and the height of the greyed place shown while there is no card. */
+const COMPACT_MIN = 60;
+const COMPACT_MAX = 200;
+const COMPACT_QUIET = 50;
 
 export function Feed() {
-  const { live, ui, update, act, points, words, liveHelp, still } = useSay();
+  const { live, ui, update, act, points, words, liveHelp, still, compact } = useSay();
   const say = words.say;
   const ref = useRef<HTMLDivElement>(null);
   const now = nowMs();
@@ -192,6 +197,13 @@ export function Feed() {
     const card = list ? Math.ceil(list.getBoundingClientRect().height) : open ? Math.ceil(open.getBoundingClientRect().height) : 0;
     // Grows only for a card its own height cannot hold whole; then exactly as much as that card needs.
     const need = card + FEED_PADDING + WORK_ROW + (past > 0 ? PILE : 0);
+    // The island that sizes itself: the zone is as tall as what it shows, so nothing is left empty above the tabs.
+    if (compact) {
+      const quiet = feed.querySelector<HTMLElement>(".say-quiet");
+      const content = card || (quiet ? COMPACT_QUIET : 0);
+      feed.style.height = `${Math.max(COMPACT_MIN, Math.min(content + FEED_PADDING + WORK_ROW + (past > 0 ? PILE : 0), COMPACT_MAX))}px`;
+      return;
+    }
     feed.style.height = need > FEED_HEIGHT && room > FEED_HEIGHT ? `${Math.min(need, room)}px` : "";
   };
   // The brain working: only once the reading has been in flight a moment, and not over a card that already says so.

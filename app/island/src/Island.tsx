@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
-import { backgroundLine, cornerRadius, earWidth, islandSize, offerBriefLines, showsConversation, showsMeeting } from "./geometry.ts";
+import { backgroundLine, cornerRadius, earWidth, islandSize, offerBriefLines, showsConversation, showsMeeting, RECORDING_HEIGHT, sizesItself } from "./geometry.ts";
 import { JobsBadge, JobsLine, jobsIndicator } from "./Background.tsx";
 import { levelsStore } from "./levels.ts";
 import { elapsedSeconds, fadedLevel, finishLine, formatElapsed, helpText, transcriptText, turnParts, turnPlainText } from "./helpers.ts";
@@ -36,7 +36,9 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
   const [popupBottom, setPopupBottom] = useState<number | null>(null);
   const column = useRef<HTMLDivElement>(null);
   // As tall as its content: the after-call card, and a call offer or call carrying the contact's brief (it wraps).
-  const natural = open && (kind === "postCall" || offerBriefLines(state) > 0);
+  // Qué decir under the notch too: as tall as its card, the tabs and the bar, plus what the rep opens (2026-11-16).
+  const selfSized = open && sizesItself(state);
+  const natural = open && (kind === "postCall" || offerBriefLines(state) > 0 || selfSized);
   const shape = islandSize(state.geometry, kind, open, undefined, offerBriefLines(state), showsMeeting(state), showsConversation(state), state.placement === "side");
   const jobsLine = open ? backgroundLine(state) : 0;
   const size = natural && cardHeight !== null ? { width: shape.width, height: cardHeight } : { ...shape, height: shape.height + jobsLine };
@@ -71,6 +73,8 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
     height: size.height,
     "--bar": `${bar}px`,
     "--radius": `${radius}px`,
+    // The most the island that sizes itself may take: what the open recording used to measure.
+    "--cap": `${Math.min(RECORDING_HEIGHT, Math.round(state.geometry.screenHeight * 0.5))}px`,
   } as CSSProperties;
 
   return (
@@ -82,6 +86,7 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
       data-material={state.material}
       data-reduce-motion={state.reduceMotion}
       data-natural={natural}
+      data-self-sized={selfSized}
       onMouseEnter={() => {
         setHovered(true);
         act({ name: "pointer", inside: true });
@@ -116,7 +121,7 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
             </>
           )}
         </div>
-        {open && <Body state={state} act={act} onPopupExtent={setPopupBottom} />}
+        {open && <Body state={state} act={act} onPopupExtent={setPopupBottom} compact={selfSized} />}
         {jobsLine > 0 && <JobsLine state={state} act={act} />}
       </div>
       {open && state.countdown && <CountdownLine countdown={state.countdown} />}
@@ -295,11 +300,11 @@ function RightEar({ state, open, lifted, act }: { state: IslandState; open: bool
   }
 }
 
-function Body({ state, act, onPopupExtent }: { state: IslandState; act: Act; onPopupExtent: (bottom: number | null) => void }) {
+function Body({ state, act, onPopupExtent, compact = false }: { state: IslandState; act: Act; onPopupExtent: (bottom: number | null) => void; compact?: boolean }) {
   const mode = state.mode;
   switch (mode.kind) {
     case "recording":
-      return <OpenIsland state={state} act={act} />;
+      return <OpenIsland state={state} act={act} compact={compact} onPopupExtent={compact ? onPopupExtent : undefined} />;
     case "call":
       return <CallMenu state={state} caller={mode.caller} act={act} />;
     case "stopped":
@@ -854,10 +859,10 @@ const KEYPAD_SHOWN = 12;
 
 /** Digits for phone menus (press 1 for sales…), sent as the call's tones. It floats over the call under its button,
  * so the conversation keeps its place; the display shows what was tapped, since the tones themselves are silent here. */
-function KeypadPopover({ anchor, onDigit, onClose }: { anchor: Anchor; onDigit: (digit: string) => void; onClose: () => void }) {
+function KeypadPopover({ anchor, onDigit, onClose, onExtent, align = "start" }: { anchor: Anchor; onDigit: (digit: string) => void; onClose: () => void; onExtent?: (bottom: number | null) => void; /** "end": opened from the right of the bar at the foot. */ align?: "start" | "end" }) {
   const [tapped, setTapped] = useState("");
   return (
-    <FloatMenu anchor={anchor} width={160} maxHeight={240} role="group" onClose={onClose} label="Keypad">
+    <FloatMenu anchor={anchor} width={160} maxHeight={240} role="group" align={align} onClose={onClose} onExtent={onExtent} label="Keypad">
       <div className="dial-display" aria-live="polite">{tapped}</div>
       <div className="dial-pad">
         {KEYPAD_ROWS.flat().map((digit) => (
@@ -881,8 +886,17 @@ function KeypadPopover({ anchor, onDigit, onClose }: { anchor: Anchor; onDigit: 
 
 /* ---------- open recording ---------- */
 
-export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
+/**
+ * `compact`: the island sizes itself (Qué decir under the notch, 2026-11-16). There is no controls row: what controls the
+ * call sits at the right of the bar at the foot, always in the same place (pause and stop on a recording; mute, keypad
+ * and hang up on a call dialled from the island), with one menu for the rest (copy the transcript, live help, open
+ * Vocify); the call type is at the top of Pasos. A dropdown opened from the foot reaches past the island, so the window
+ * grows to include it (`onPopupExtent`).
+ */
+export function OpenIsland({ state, act, compact = false, onPopupExtent }: { state: IslandState; act: Act; compact?: boolean; onPopupExtent?: (bottom: number | null) => void }) {
   const [typeAnchor, setTypeAnchor] = useState<Anchor | null>(null);
+  const [moreAnchor, setMoreAnchor] = useState<Anchor | null>(null);
+  const closeMore = useCallback(() => setMoreAnchor(null), []);
   const closeType = useCallback(() => setTypeAnchor(null), []);
   const keypadButton = useRef<HTMLButtonElement>(null);
   const [keypadAnchor, setKeypadAnchor] = useState<Anchor | null>(null);
@@ -895,41 +909,61 @@ export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
   const hasBrief = Boolean(state.dial?.brief?.length || state.dial?.companyBrief);
   // The other side's voices, when the dashboard tells them apart: a name above a line then opens the list to fix it.
   const voiceMenu: VoiceMenu | undefined = state.voices?.length ? { voices: state.voices, people: state.people ?? [], act, language: state.language } : undefined;
+  const callControls = state.dial ? (
+    <CallBar dial={state.dial} keypadOpen={state.keypadOpen} keypadButton={keypadButton} act={act} />
+  ) : (
+    <>
+      <CircleButton help={state.paused ? "Resume recording" : "Pause recording"} onClick={() => act({ name: "togglePause" })}>
+        {state.paused ? <Play size={10} /> : <Pause size={10} />}
+      </CircleButton>
+      <StopButton onClick={() => act({ name: "stop" })} />
+    </>
+  );
+  const typeControl = menu ? (
+    <TypeControl
+      menu={menu}
+      language={state.language}
+      reduceMotion={state.reduceMotion}
+      listOpen={typeAnchor !== null}
+      onOpenList={(target) => setTypeAnchor((open) => (open ? null : anchorOf(target)))}
+      onUndo={() => act({ name: "undoCallType" })}
+    />
+  ) : null;
+  const es = state.language === "es";
+  const more = (
+    <button
+      type="button"
+      className="icon-button more-button"
+      title={es ? "Más" : "More"}
+      aria-label={es ? "Más" : "More"}
+      aria-expanded={moreAnchor !== null}
+      onClick={(event) => {
+        event.stopPropagation();
+        const target = event.currentTarget;
+        setMoreAnchor((open) => (open ? null : anchorOf(target)));
+      }}
+    >
+      <svg width={12} height={12} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+        <circle cx="5" cy="12" r="1.9" />
+        <circle cx="12" cy="12" r="1.9" />
+        <circle cx="19" cy="12" r="1.9" />
+      </svg>
+    </button>
+  );
   return (
-    <div className={state.live ? "open-island live" : "open-island"}>
-      <div className="controls">
-        {state.dial ? (
-          <CallBar dial={state.dial} keypadOpen={state.keypadOpen} keypadButton={keypadButton} act={act} />
-        ) : (
-          <>
-            <CircleButton
-              help={state.paused ? "Resume recording" : "Pause recording"}
-              onClick={() => act({ name: "togglePause" })}
-            >
-              {state.paused ? <Play size={10} /> : <Pause size={10} />}
-            </CircleButton>
-            <StopButton onClick={() => act({ name: "stop" })} />
-          </>
-        )}
-        {menu && (
-          <TypeControl
-            menu={menu}
-            language={state.language}
-            reduceMotion={state.reduceMotion}
-            listOpen={typeAnchor !== null}
-            onOpenList={(target) => setTypeAnchor((open) => (open ? null : anchorOf(target)))}
-            onUndo={() => act({ name: "undoCallType" })}
-          />
-        )}
+    <div className={state.live ? "open-island live" : "open-island"} data-compact={compact}>
+      {!compact && <div className="controls">
+        {callControls}
+        {typeControl}
         <div className="grow" />
         {state.turns.length > 0 && <CopyButton text={transcriptText(state.turns)} help="Copy the transcript" />}
         {state.liveHelp !== null && <LiveHelpToggle on={state.liveHelp} onClick={() => act({ name: "toggleLiveHelp" })} />}
         <IconButton help="Open Vocify" onClick={() => act({ name: "openApp" })}>
           <ArrowUpRight size={12} />
         </IconButton>
-      </div>
+      </div>}
       {typeAnchor && menu && (
-        <FloatMenu anchor={typeAnchor} width={190} onClose={closeType} label="Call type">
+        <FloatMenu anchor={typeAnchor} width={190} onClose={closeType} onExtent={onPopupExtent} label="Call type">
           {menu.channel && (
             <>
               {menu.channel.rows.map((row) => (
@@ -960,7 +994,16 @@ export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
         </FloatMenu>
       )}
       {state.keypadOpen && state.dial?.phase === "active" && keypadAnchor && (
-        <KeypadPopover anchor={keypadAnchor} onDigit={(digit) => act({ name: "digit", digit })} onClose={closeKeypad} />
+        <KeypadPopover anchor={keypadAnchor} onDigit={(digit) => act({ name: "digit", digit })} onClose={closeKeypad} onExtent={onPopupExtent} align={compact ? "end" : "start"} />
+      )}
+      {compact && moreAnchor && (
+        <FloatMenu anchor={moreAnchor} width={200} align="end" role="group" onClose={closeMore} onExtent={onPopupExtent} label={es ? "Más" : "More"}>
+          {state.turns.length > 0 && (
+            <MenuRow label={es ? "Copiar la transcripción" : "Copy the transcript"} selected={false} onPick={() => { void copyText(transcriptText(state.turns)); setMoreAnchor(null); }} />
+          )}
+          {state.liveHelp !== null && <MenuRow label={es ? "Ayuda en vivo" : "Live help"} selected={state.liveHelp} onPick={() => act({ name: "toggleLiveHelp" })} />}
+          <MenuRow label={es ? "Abrir Vocify" : "Open Vocify"} selected={false} onPick={() => { act({ name: "openApp" }); setMoreAnchor(null); }} />
+        </FloatMenu>
       )}
       {state.micSilent && !state.paused ? <MicSilentLine state={state} /> : state.callAudioLost && !state.paused ? <CallAudioLostLine /> : state.transcriptPaused && !state.paused ? <TranscriptPausedLine /> : <MicNoticeLine state={state} />}
       {state.live?.view === "say" ? (
@@ -968,6 +1011,9 @@ export function OpenIsland({ state, act }: { state: IslandState; act: Act }) {
         <SayBody
           state={state}
           act={act}
+          compact={compact}
+          typeControl={compact ? typeControl : null}
+          controls={compact ? <>{callControls}{more}</> : null}
           transcript={(marks) => (
             <>
               {hasBrief && state.dial && <BeforeThisCall lines={state.dial.brief ?? []} company={state.dial.companyBrief ?? null} talking={state.turns.length > 0} />}

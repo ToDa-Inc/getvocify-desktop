@@ -1,6 +1,6 @@
 // What the Qué decir view's pieces share: the pushed view, the rep's own choices (UI-only: they never leave the island),
 // and the words in the rep's language.
-import { createContext, useContext } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import type { LiveStrings } from "../../../core/liveWording.ts";
 import type { IslandAction, IslandState, LivePoint, LiveView } from "../types.ts";
 import type { Marks } from "../live/model.ts";
@@ -30,12 +30,16 @@ export type SayUi = {
   askStep: { kind: "step" | "data"; id: string; after: number; at: number } | null;
   /** "Otra forma" being written for a card: `had` versions when it was asked. */
   rewrite: { id: string; had: number; after: number; at: number } | null;
-  /** The answers before the one on screen are shown (the icon on the answer's first line). */
+  /** The answers before the one on screen are shown (the pile under the answer). */
   older: boolean;
+  /** The panel under the tabs is open (the island that sizes itself: closed until the rep taps a tab; the same tab closes it). */
+  open: boolean;
+  /** «Por averiguar» is open under its row. */
+  find: boolean;
 };
 
 export const initialSayUi = (): SayUi => ({
-  peek: null, tab: "steps", respond: null, recap: null, flashId: null, flashAt: null, reopened: [], dismissed: [], marks: {}, askStep: null, rewrite: null, older: false,
+  peek: null, tab: "steps", respond: null, recap: null, flashId: null, flashAt: null, reopened: [], dismissed: [], marks: {}, askStep: null, rewrite: null, older: false, open: false, find: false,
 });
 
 /** A card as the rep sees it: the rep's ✓ and Responder's bringing back applied. */
@@ -53,6 +57,10 @@ export type SayContext = {
   /** Reduced motion, or a pinned clock: nothing glides. */
   still: boolean;
   now: number;
+  /** The island that sizes itself (under the notch): the panel opens and closes, and the call's controls sit in the bar. */
+  compact: boolean;
+  /** The call-type selector, drawn at the top of Pasos (compact only; else it is in the controls row). */
+  typeControl: ReactNode;
 };
 
 export const Say = createContext<SayContext | null>(null);

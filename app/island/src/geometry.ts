@@ -60,6 +60,12 @@ export function showsConversation(state: { mode: { kind: Kind }; live?: unknown;
   return state.mode.kind === "recording" && Boolean(state.live) && state.liveTab === "conversation";
 }
 
+/** Qué decir under the notch is as tall as what it shows (its card, the tabs, the bar; plus what the rep opens), never
+ * taller than the open recording was (RECORDING_HEIGHT, or half the screen). At the side the panel keeps its own height. */
+export function sizesItself(state: { mode: { kind: Kind }; live?: { view?: string } | null; placement?: string }): boolean {
+  return state.mode.kind === "recording" && state.live?.view === "say" && state.placement !== "side";
+}
+
 export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody = 44, briefLines = 0, meeting = false, conversation = false, side = false): Size {
   const closed = { width: gap(g) + earWidth(kind, false) * 2, height: g.barHeight };
   // At the side of the screen the open island is a narrow card, not the notch's wide bar.

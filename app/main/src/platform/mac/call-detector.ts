@@ -104,6 +104,9 @@ const CALL_APPS = [
   "com.brave.Browser",
 ];
 
+/** Apps that keep the microphone open without being a call (noise filters, dictation, recorders, other note-takers). */
+const NOT_A_CALL = /vocify|krisp|voicemod|loopback|audio ?hijack|\bobs|streamlabs|granola|otter|fathom|fireflies|tldv|wispr|superwhisper|dictat|speech|siri|voice ?memos|sonar|wave ?link/i;
+
 /** Safari's pages are web content processes of WebKit: they belong to Safari. */
 const OWNER_OF_WEBKIT = "com.apple.Safari";
 
@@ -111,10 +114,13 @@ const OWNER_OF_WEBKIT = "com.apple.Safari";
  * The call app a microphone-holding process belongs to. Chrome, Edge and the others hold the microphone from a helper
  * process ("com.google.Chrome.helper.Renderer", named "Google Chrome Helper"), never from the app itself.
  */
-function owningCallApp(bundleId: string): string | null {
+function owningCallApp(bundleId: string, name = ""): string | null {
   const known = CALL_APPS.find((app) => bundleId === app || bundleId.startsWith(app + "."));
-  if (!known) return null;
-  return known === "com.apple.WebKit" ? OWNER_OF_WEBKIT : known;
+  if (known) return known === "com.apple.WebKit" ? OWNER_OF_WEBKIT : known;
+  // Any other app that takes the microphone is a call (a softphone Vocify has never heard of), except macOS's own
+  // services and apps that keep the mic open for something else. An Electron app's helper belongs to its app.
+  if (!bundleId || bundleId.startsWith("com.apple.") || NOT_A_CALL.test(bundleId) || NOT_A_CALL.test(name)) return null;
+  return bundleId.replace(/\.helper(\..*)?$/i, "");
 }
 
 /** Select a call app from the list of apps using the mic. */
@@ -125,7 +131,7 @@ function selectCallApp(
   const callApps = apps
     .filter((app) => !(app.bundleId === ownBundleId || app.bundleId.startsWith(ownBundleId + ".")))
     .flatMap((app) => {
-      const owner = owningCallApp(app.bundleId);
+      const owner = owningCallApp(app.bundleId, app.name);
       return owner ? [{ ...app, owner }] : [];
     });
 

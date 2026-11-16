@@ -106,12 +106,29 @@ export function callAppFor(exeOrId: string): CallApp | null {
   return prefix ? CALL_APPS[prefix] : null;
 }
 
+/**
+ * Apps that keep the microphone open without being a call: noise filters and virtual mics, dictation, recorders, other
+ * note-takers. Matched by name, so a new version or install path is still known. Anything else holding the mic is a call.
+ */
+export const NOT_A_CALL = /vocify|krisp|nvidia broadcast|rtx voice|voicemeeter|voicemod|sonar|wave ?link|\bobs|streamlabs|loopback|audio ?hijack|granola|otter|fathom|fireflies|tldv|wispr|superwhisper|dragon|dictat|speech|cortana|voiceaccess|search(app|host)|audiodg|soundrecorder|voice ?recorder/i;
+
+/** A mic user Vocify does not know by name: a call, unless it is part of Windows or keeps the mic open for another reason. */
+export function genericCallApp(use: Pick<MicUse, "exe" | "path">): CallApp | null {
+  const where = (use.path ?? "").replace(/\//g, "\\").toLowerCase();
+  if (where.includes("\\windows\\")) return null;
+  const base = (use.exe.split(/[\\/]/).pop() ?? use.exe).replace(/\.exe$/i, "").replace(/_[a-z0-9]{13}$/i, "");
+  if (!base || NOT_A_CALL.test(base) || NOT_A_CALL.test(where)) return null;
+  const name = base.replace(/[._-]+/g, " ").trim();
+  return { name: name.charAt(0).toUpperCase() + name.slice(1), browser: false };
+}
+
 export type DetectedCaller = { name: string; appId: string; path: string | null; browser: boolean };
 
 const normalizePath = (value: string) => value.replace(/\//g, "\\").toLowerCase();
 
 /**
- * The call app to offer, or null. Only call apps count (dictation tools and note-takers use the microphone too), the
+ * The call app to offer, or null. Any app that takes the microphone counts (a softphone Vocify has never heard of is a
+ * call too), except Windows itself and apps that keep the mic open for something else (NOT_A_CALL). The
  * app must have held it for `settleMs` so a blip is skipped, Vocify's own capture is ignored, and a named app wins
  * over a browser, as on the Mac.
  */
@@ -121,7 +138,7 @@ export function pickCaller(uses: MicUse[], options: { now: number; settleMs: num
   for (const use of uses) {
     if (!use.active || options.now - use.started < options.settleMs) continue;
     if (own && use.path && normalizePath(use.path) === own) continue;
-    const app = callAppFor(use.exe);
+    const app = callAppFor(use.exe) ?? genericCallApp(use);
     if (!app) continue;
     candidates.push({ name: app.name, appId: use.exe, path: use.path, browser: app.browser });
   }

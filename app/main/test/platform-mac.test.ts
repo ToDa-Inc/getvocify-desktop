@@ -297,6 +297,41 @@ const macPhone = (hasFaceTime: boolean, fails = false) => {
 
 phoneDialerContract("Mac", () => macPhone(true), () => macPhone(false));
 
+test("Mac call detector: any app that takes the microphone is a call; macOS's own services and mic tools are not", async () => {
+  let helper: ReturnType<typeof fakeHelper> | null = null;
+  let apps: { bundleId: string; name: string; pid: number; path: string }[] = [];
+  const report = () => helper && !helper.killed && line(helper.stdout, { event: "mic", apps });
+  const detector = createMacCallDetector({
+    spawn: () => {
+      helper = fakeHelper();
+      setImmediate(report);
+      return helper as unknown as HelperChild;
+    },
+    ownBundleId: "com.vocify.app",
+  });
+  const seen: (import("../src/platform/types.ts").DetectedCaller | null)[] = [];
+  detector.start((caller) => seen.push(caller));
+  await tick();
+
+  const ringover = "/Applications/Ringover.app";
+  apps = [{ bundleId: "com.ringover.desktop.helper.Renderer", name: "Ringover Helper (Renderer)", pid: 800, path: `${ringover}/Contents/Frameworks/Ringover Helper.app/Contents/MacOS/Ringover Helper` }];
+  report();
+  await tick();
+  assert.deepEqual(seen.at(-1), { name: "Ringover", appId: "com.ringover.desktop", path: ringover, browser: false, holding: ["com.ringover.desktop"] });
+
+  for (const other of [
+    { bundleId: "com.apple.SiriNCService", name: "Siri" },
+    { bundleId: "ai.krisp.krispMac", name: "Krisp" },
+    { bundleId: "com.vocify.app.helper", name: "Vocify Helper" },
+  ]) {
+    apps = [{ ...other, pid: 900, path: "/Applications/X.app/Contents/MacOS/X" }];
+    report();
+    await tick();
+    assert.equal(seen.at(-1), null, other.name);
+  }
+  detector.stop();
+});
+
 test("Mac phone: the call opens in FaceTime by its bundle id, whatever app is the default for tel:", async () => {
   const h = macPhone(true);
   await h.dialer.dial("+34600111222");

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { crmUrlsOf, createPageReader, encodePowerShell, hostnamesOf, normalizeAddress, parsePageOutput, READ_PAGES_SCRIPT } from "../src/windows/browser-pages.ts";
 import { dialedDigits, parsePhoneLinkCall, phoneLinkCallScript } from "../src/windows/phone-link-call.ts";
-import { callAppFor, filetimeToMs, MicWatcher, parseMicConsent, pickCaller, type DetectedCaller, type MicUse } from "../src/windows/mic-use.ts";
+import { callAppFor, filetimeToMs, genericCallApp, MicWatcher, parseMicConsent, pickCaller, type DetectedCaller, type MicUse } from "../src/windows/mic-use.ts";
 
 /* ---------- microphone use ---------- */
 
@@ -74,6 +74,23 @@ test("the caller is the call app that has held the mic long enough, a named app 
   assert.equal(pickCaller([use("zoom.exe", NOW - 5000, { active: false })], options), null);
   assert.equal(pickCaller([use("granola.exe", NOW - 5000), use("wispr.exe", NOW - 5000)], options), null);
   assert.equal(pickCaller([], options), null);
+});
+
+test("any app that takes the microphone is a call, a softphone Vocify has never heard of included", () => {
+  const options = { now: NOW, settleMs: 300 };
+  const ringover = pickCaller([use("Ringover.exe", NOW - 5000)], options);
+  assert.equal(ringover?.name, "Ringover");
+  assert.equal(ringover?.appId, "Ringover.exe", "the app it watches for the hang-up");
+  assert.equal(pickCaller([use("chrome.exe", NOW - 5000), use("Ringover.exe", NOW - 5000)], options)?.name, "Ringover", "an app before a browser");
+});
+
+test("apps that keep the mic open for something else, and Windows itself, are not calls", () => {
+  const options = { now: NOW, settleMs: 300 };
+  for (const exe of ["krisp.exe", "NVIDIA Broadcast.exe", "obs64.exe", "Granola.exe", "Wispr Flow.exe", "voicemeeter.exe", "Vocify.exe"]) {
+    assert.equal(pickCaller([use(exe, NOW - 5000)], options), null, exe);
+  }
+  assert.equal(pickCaller([use("svchost.exe", NOW - 5000, { path: "C:\\Windows\\System32\\svchost.exe" })], options), null);
+  assert.equal(genericCallApp({ exe: "jobsite.exe", path: "C:\\Apps\\jobsite.exe" })?.name, "Jobsite", "only OBS itself, not every name with obs in it");
 });
 
 test("Vocify's own microphone use is never a call", () => {

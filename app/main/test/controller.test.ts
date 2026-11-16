@@ -388,6 +388,28 @@ test("the pointer cannot hold the stop grace open", () => {
   assert.equal(t.mode(), "finishing");
 });
 
+test("coming back over the stopped card restarts its countdown, which still runs out", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.advance(4);
+  t.controller.act({ name: "pointer", inside: false });
+  t.controller.act({ name: "pointer", inside: true });
+  t.advance(4.9);
+  assert.equal(t.mode(), "stopped", "the full 5 s again from the hover");
+  t.advance(0.2);
+  assert.equal(t.mode(), "finishing");
+});
+
+test("staying over the stopped card after Stop does not restart it", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "pointer", inside: true });
+  t.advance(3);
+  t.controller.act({ name: "pointer", inside: true });
+  t.advance(2.1);
+  assert.equal(t.mode(), "finishing");
+});
+
 test("the record shortcut records, stops, resumes, and starts a new call from an old card", () => {
   const t = setup();
   t.controller.shortcutPressed();

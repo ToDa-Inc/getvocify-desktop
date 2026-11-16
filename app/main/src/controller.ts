@@ -117,6 +117,8 @@ export class IslandController {
   private callHandled = false;
   /** The rep's preference: Stop or a hang-up finishes the recording at once, without the countdown (Discard / Resume). */
   private finishOnStop = false;
+  /** The pointer has left the stopped card since Stop: coming back over it restarts the countdown. */
+  private leftStoppedCard = false;
   private lastPostCallStage: PostCallData["stage"] | null = null;
   /** The card on show when the recording ended: `finishing` waits for a newer one. */
   private finishingAfter: string | null = null;
@@ -726,8 +728,17 @@ export class IslandController {
    * capped (HOVER_HOLD_CAP): the leave can be lost (see app.ts's click-through window), and then the card still runs out. */
   pointer(inside: boolean): void {
     const countdown = this.current.countdown;
-    // The stop grace always runs out: a pointer resting where Stop was clicked must not hold the memo back.
-    if (!countdown || !this.current.expanded || this.mode === "stopped") return;
+    if (!countdown || !this.current.expanded) return;
+    if (this.mode === "stopped") {
+      // Coming back over the stopped card gives the rep the full countdown again to choose (Discard, Resume, Finish).
+      // It always keeps running: the pointer resting where Stop was clicked, or staying over it, never holds the memo back.
+      if (!inside) this.leftStoppedCard = true;
+      else if (this.leftStoppedCard) {
+        this.leftStoppedCard = false;
+        this.startCountdown(StopGrace.seconds);
+      }
+      return;
+    }
     const now = this.effects.now();
     if (inside && countdown.runningSince !== null) {
       this.stopTimer("autoClose");
@@ -803,6 +814,7 @@ export class IslandController {
     this.stopTimer("callSilence");
     const grace = new StopGrace(byHangUp, this.current.paused);
     this.grace = grace;
+    this.leftStoppedCard = false;
     this.run(grace.onStop);
     this.transition({ kind: "stopped", title: grace.title }, true);
     // No step in between: the call is processed now, as if Finish had been pressed (it can still be deleted in Vocify).

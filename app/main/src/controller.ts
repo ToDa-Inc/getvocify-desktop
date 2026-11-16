@@ -115,6 +115,8 @@ export class IslandController {
   private cancels = new Map<Timers, () => void>();
   /** Set by a recording or a dismiss; cleared once the mic goes quiet, i.e. the call ended. */
   private callHandled = false;
+  /** The rep's preference: Stop or a hang-up finishes the recording at once, without the countdown (Discard / Resume). */
+  private finishOnStop = false;
   private lastPostCallStage: PostCallData["stage"] | null = null;
   /** The card on show when the recording ended: `finishing` waits for a newer one. */
   private finishingAfter: string | null = null;
@@ -148,8 +150,9 @@ export class IslandController {
   /** True when a native recorder draws the transcript itself; the dashboard's overlay then must not overwrite it. */
   nativeTranscript = false;
 
-  constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean; language?: Language; placement?: "notch" | "side"; pill?: PillSpot }) {
+  constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean; language?: Language; placement?: "notch" | "side"; pill?: PillSpot; finishOnStop?: boolean }) {
     this.effects = effects;
+    this.finishOnStop = options.finishOnStop ?? false;
     this.current = {
       mode: { kind: "idle" },
       expanded: false,
@@ -802,6 +805,8 @@ export class IslandController {
     this.grace = grace;
     this.run(grace.onStop);
     this.transition({ kind: "stopped", title: grace.title }, true);
+    // No step in between: the call is processed now, as if Finish had been pressed (it can still be deleted in Vocify).
+    if (this.finishOnStop) return this.finishRecording();
     this.startCountdown(StopGrace.seconds);
   }
 
@@ -1177,6 +1182,11 @@ export class IslandController {
   }
 
   /** Where the island sits (the desktop setting): the window follows it. */
+  /** Stop and hang-up finish at once (true) or after the countdown (false). */
+  setFinishOnStop(on: boolean): void {
+    this.finishOnStop = on;
+  }
+
   setPlacement(placement: "notch" | "side"): void {
     if (placement !== this.current.placement) this.set({ placement });
   }

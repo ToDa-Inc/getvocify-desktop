@@ -33,6 +33,8 @@ export type BridgeDeps = {
   islandPlacement: { get(): "notch" | "side"; set(placement: "notch" | "side"): void };
   /** The island left out of screen shares and screenshots (the rep's choice, kept across launches). */
   islandHiddenFromCapture?: { get(): boolean; set(on: boolean): void };
+  /** Stop and hang-up finish the recording at once, without the countdown (the rep's choice, kept across launches). */
+  islandFinishOnStop?: { get(): boolean; set(on: boolean): void };
   /** To the dashboard page (`__vocifyEmit`). */
   emit(channel: string, payload: unknown): void;
   /** The app's version and self-update, for the dashboard's Settings ("updates:changed" carries each change). */
@@ -159,7 +161,11 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
         }
         return calling();
       case "island:get":
-        return { placement: deps.islandPlacement.get(), hiddenFromCapture: deps.islandHiddenFromCapture?.get() };
+        return {
+          placement: deps.islandPlacement.get(),
+          hiddenFromCapture: deps.islandHiddenFromCapture?.get(),
+          finishOnStop: deps.islandFinishOnStop?.get(),
+        };
       case "window:get":
         return { compact: deps.dashboardWindow?.compact() ?? false };
       case "window:setCompact":
@@ -171,6 +177,9 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
       case "island:setHiddenFromCapture":
         if (typeof args.on === "boolean") deps.islandHiddenFromCapture?.set(args.on);
         return { hiddenFromCapture: deps.islandHiddenFromCapture?.get() };
+      case "island:setFinishOnStop":
+        if (typeof args.on === "boolean") deps.islandFinishOnStop?.set(args.on);
+        return { finishOnStop: deps.islandFinishOnStop?.get() };
       case "calling:setup":
         await deps.phone.setup();
         return { ok: true };

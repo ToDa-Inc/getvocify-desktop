@@ -171,6 +171,30 @@ test("Finish ends the stopped recording at once, without waiting for the line to
   assert.deepEqual(t.commands().slice(-2), ["pause", "stop"], "a second press does nothing");
 });
 
+test("finish on stop: Stop processes the call at once, with no countdown in between", () => {
+  const t = recording();
+  t.controller.setFinishOnStop(true);
+  t.controller.act({ name: "stop" });
+  assert.equal(t.mode(), "finishing");
+  assert.deepEqual(t.commands().slice(-2), ["pause", "stop"]);
+});
+
+test("finish on stop: a hang-up ends the call at once too", () => {
+  const t = recording();
+  t.controller.setFinishOnStop(true);
+  t.controller.stop(true);
+  assert.equal(t.mode(), "finishing");
+  assert.deepEqual(t.commands().slice(-2), ["pause", "stop"]);
+});
+
+test("finish on stop switched off again: Stop waits for the countdown as before", () => {
+  const t = recording();
+  t.controller.setFinishOnStop(true);
+  t.controller.setFinishOnStop(false);
+  t.controller.act({ name: "stop" });
+  assert.equal(t.mode(), "stopped");
+});
+
 test("Discard throws the stopped recording away: the dashboard is told to drop it and the island goes to rest", () => {
   const t = recording();
   t.controller.act({ name: "stop" });

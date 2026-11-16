@@ -375,6 +375,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       recorderReady: settings.get("recorderReady") === true, material: "opaque", reduceMotion: systemPreferences.getAnimationSettings().prefersReducedMotion, language: ProposalWording.language(app.getLocale()),
       placement: settings.get("islandPlacement") === "side" ? "side" : "notch",
       pill: readSpot(settings.get("islandPill")),
+      finishOnStop: settings.get("islandFinishOnStop") === true,
     },
   );
   /** Where the island sits (the rep's choice, kept across launches): the island follows it at once. */
@@ -861,6 +862,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
         settings.set("islandHiddenFromCapture", on);
         island.setContentProtection(on);
         log(`island: ${on ? "left out of" : "shown in"} screen shares and screenshots`);
+      },
+    },
+    islandFinishOnStop: {
+      get: () => settings.get("islandFinishOnStop") === true,
+      set: (on) => {
+        settings.set("islandFinishOnStop", on);
+        controller.setFinishOnStop(on);
+        log(`island: Stop and hang-up ${on ? "finish at once" : "wait for the countdown"}`);
       },
     },
     emit: (channel, payload) => dashboard.emit(channel, payload),

@@ -409,6 +409,21 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     !controller.isListening && !recordingOrFinishing() && !["writing", "applying"].includes(controller.state.postCall?.stage ?? "");
   // A call offer on show (or a call) needs the page that resolved it and that dials.
   const calling = () => controller.state.onScreen !== null || controller.state.dial !== null || ["dialConfirm", "dialing"].includes(controller.state.mode.kind);
+  // On its own an update waits for a real pause: a rep who calls back to back must never lose the island, or a call's
+  // card, to a restart (2026-11-16: every Stop restarted the app after two releases in one morning).
+  const QUIET_BEFORE_UPDATE_MS = 10 * 60_000;
+  let lastCallAt = 0;
+  const inACall = () =>
+    controller.isListening ||
+    recordingOrFinishing() ||
+    controller.state.dial !== null ||
+    ["dialConfirm", "dialing"].includes(controller.state.mode.kind) ||
+    controller.state.postCall !== null ||
+    drafts.count() > 0;
+  const quietForUpdate = () => {
+    if (inACall()) lastCallAt = Date.now();
+    return !inACall() && Date.now() - lastCallAt >= QUIET_BEFORE_UPDATE_MS;
+  };
   // The meeting heads-up reads the rep's calendar in the dashboard page, so the page stays (hidden) while the dashboard
   // says it watches the calendar. It is remembered: after a restart the page starts again without the rep opening Vocify.
   let calendarWatch = settings.get("calendarWatch") === true;
@@ -749,6 +764,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   function pushState(state: IslandState): void {
     trace?.(state);
+    // Every state the island shows during a call counts as activity for the quiet period before an update.
+    quietForUpdate();
     followSpeakers(state);
     if (island.isDestroyed()) return;
     // The window first, so it is already big enough when the page starts drawing the bigger island.
@@ -1250,7 +1267,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     permissions: () => bridge("permissions:status", {}),
     canRestartForUpdate,
     // On its own the app never restarts under the rep's eyes: an open window waits until it is closed (or Restart now).
-    canInstallUpdate: () => !dashboard.visible && canRestartForUpdate(),
+    canInstallUpdate: () => !dashboard.visible && canRestartForUpdate() && quietForUpdate(),
     startedAfterUpdate,
     markUpdateRestart: () => settings.set("restartedForUpdate", true),
     attachUpdater: (attached) => {

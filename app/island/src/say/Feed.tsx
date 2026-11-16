@@ -33,7 +33,7 @@ const kindOf = (point: SayPoint): Kind => (point.kind === "deepen" ? "explore" :
 const quoted = (title: string) => (/^[«"]/.test(title) ? title : `«${title}»`);
 
 const icon = (size: number) => ({ width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2.2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true });
-const HistoryIcon = () => <svg {...icon(11)}><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l3 2" /></svg>;
+const BulbIcon = () => <svg {...icon(10)}><path d="M9 18h6" /><path d="M10 21h4" /><path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3Z" /></svg>;
 const ReplyIcon = () => <svg {...icon(10)}><path d="m9 17-5-5 5-5" /><path d="M20 18v-2a4 4 0 0 0-4-4H4" /></svg>;
 const KIND_ICON: Record<Kind, () => ReactNode> = { answer: ReplyIcon, unknown: () => <InfoIcon size={10} />, explore: () => <QuestionIcon size={10} /> };
 
@@ -62,15 +62,22 @@ function Card({ point, ack, flash, onDone }: { point: SayPoint; ack: boolean; fl
   // Spotted but not answered yet: what it is, from the turn check or the brain's first words («Precio», «Pregunta»).
   const spotted = point.draft ? point.tag ?? (point.tagKey === "question" ? say.question : (words.kinds as Record<string, string>)[point.tagKey] ?? null) : null;
   const tooltip = point.answer !== null ? point.source ?? "" : [point.gap, words.sayMeanwhile].filter(Boolean).join(". ");
+  const why = point.draft || point.repeated ? "kind" : point.read ? "read" : point.quote ? "quote" : "kind";
   return (
     <div className="say-card" data-id={point.id} data-kind={kind} data-live={point.live} data-ended={!point.live && ended && ack ? ended : "none"} title={tooltip}>
       {flash !== null && <span key={flash} className="type-note-pulse say-card-pulse" aria-hidden />}
       {/* Dealt with: a light sweeps across once and a check pops in where the kind was, then the card fades where it is. */}
       {!point.live && ended && ack && <span className="say-sweep" aria-hidden />}
-      <div className="say-said">
+      {/* The first line says why the card is here, in one shape for every card (2026-11-16). A suggestion: the brain's
+          reading of the moment, whole. An answer: their own words as a small bubble on their side, so the card reads as
+          the reply to it. A card without either (an older dashboard, a card still being written, an unknown) keeps its
+          kind and their last words. */}
+      <div className="say-said" data-why={why}>
         {!point.live && ended && ack ? (
           <span className="say-ended"><Check size={8} stroke={3.6} />{endedLabel}</span>
-        ) : (
+        ) : why === "read" ? (
+          <span className="say-kind say-why-icon" data-kind={kind}><BulbIcon /></span>
+        ) : why === "quote" ? null : (
           <span className="say-kind" data-kind={kind}>
             <KindIcon />
             {say.kinds[kind]}
@@ -78,7 +85,8 @@ function Card({ point, ack, flash, onDone }: { point: SayPoint; ack: boolean; fl
             {spotted && <span className="say-again"> · {spotted}</span>}
           </span>
         )}
-        <span className="say-words">{title}</span>
+        {why === "read" ? <span className="say-read">{point.read}</span> : why === "quote" ? <span className="say-quote">{point.quote}</span> : <span className="say-words">{title}</span>}
+        {why === "quote" && <span className="grow" />}
         {point.live && !point.draft && !thinking && kind !== "explore" && (
           <button type="button" className="live-close say-done" title={say.done} aria-label={say.done} onClick={onDone}>
             <Check size={8} stroke={3.4} />
@@ -116,6 +124,8 @@ const THINKING_AFTER_MS = 400;
  * that line, and how much of the panel an open answer may take. */
 const FEED_HEIGHT = 102;
 const WORK_ROW = 18;
+/** The pile's edges under the card, when there are answers before it. */
+const PILE = 12;
 // Its padding (6 + 6) and the 2 px the list keeps above and below a card it brings into view.
 const FEED_PADDING = 16;
 const FEED_MAX_SHARE = 0.55;
@@ -167,6 +177,9 @@ export function Feed() {
     autoUntil.current = nowMs() + 700;
     box.scrollTo({ top: Math.max(0, top), behavior: smooth && !still ? "smooth" : "auto" });
   };
+  // The answers before the one on screen: how many, and whether the rep brought them back.
+  const past = points.filter((p) => !p.live && !p.draft).length;
+  const older = ui.older && past > 0;
   // An answer is never cut (2026-11-09): the zone grows to hold the open card whole, up to about half the panel (then it
   // scrolls inside), and goes back to its own height when nothing is open. History never makes it grow.
   const fit = () => {
@@ -178,12 +191,9 @@ export function Feed() {
     const list = older ? feed.querySelector<HTMLElement>(".say-list") : null;
     const card = list ? Math.ceil(list.getBoundingClientRect().height) : open ? Math.ceil(open.getBoundingClientRect().height) : 0;
     // Grows only for a card its own height cannot hold whole; then exactly as much as that card needs.
-    const need = card + FEED_PADDING + WORK_ROW;
+    const need = card + FEED_PADDING + WORK_ROW + (past > 0 ? PILE : 0);
     feed.style.height = need > FEED_HEIGHT && room > FEED_HEIGHT ? `${Math.min(need, room)}px` : "";
   };
-  // The answers before the one on screen: how many, and whether the rep brought them back.
-  const past = points.filter((p) => !p.live && !p.draft).length;
-  const older = ui.older && past > 0;
   // The brain working: only once the reading has been in flight a moment, and not over a card that already says so.
   const working = Boolean(live.working) && !points.some((p) => p.draft);
   const [held, setHeld] = useState(false);
@@ -333,15 +343,9 @@ export function Feed() {
       {fresh && (
         <button type="button" className="say-fresh" onClick={catchUp} title={say.freshHelp}>{say.fresh}</button>
       )}
-      {past > 0 && (
-        <button type="button" className="say-older" data-on={older} title={say.older} aria-label={say.older} aria-pressed={older} onClick={() => update({ older: !ui.older })}>
-          <HistoryIcon />
-          <span>{past}</span>
-        </button>
-      )}
       {points.length === 0 && !tail ? (
-        // Nothing yet: an empty space with the view's name, small, at the top left.
-        <div className="say-quiet" title={say.quiet} aria-label={say.quiet}><span className="say-label">{say.label}</span></div>
+        // Nothing yet: the place where what to say will come, greyed, saying so.
+        <div className="say-quiet"><BulbIcon /><span>{say.quiet}</span></div>
       ) : (
         <FollowScroll follow={false} still={still}>
           <div className="say-list">
@@ -360,6 +364,14 @@ export function Feed() {
             {tail}
           </div>
         </FollowScroll>
+      )}
+      {/* The answers before the one on screen: a pile, the edges of the cards under it. A tap spreads them above it as the
+          list they are; another gathers them. */}
+      {past > 0 && (
+        <button type="button" className="say-pile" data-on={older} title={say.older} aria-label={say.older} aria-pressed={older} onClick={() => update({ older: !ui.older })}>
+          <i />
+          {past > 1 && <i />}
+        </button>
       )}
       {work}
     </div>

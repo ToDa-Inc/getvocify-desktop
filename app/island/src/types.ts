@@ -80,6 +80,10 @@ export type LivePoint = {
   tagKey: string;
   /** Their words, short. */
   title: string;
+  /** A suggestion's interpretation: what just happened and where to go (the card's first line). Null for an answer. */
+  read: string | null;
+  /** What an answer answers: their own words, as the brain copied them (the card's first line). Null for a suggestion. */
+  quote: string | null;
   /** Seconds into the call when it was said. */
   saidAt: number;
   decision: LiveDecision | null;

@@ -240,6 +240,9 @@ const S_LONG = sayPoint(point("long", "objection", "Somos pocos vehículos", "so
   answer: "Precisamente en flotas pequeñas un solo vehículo que no vuelve o un kilometraje que no se factura se nota mucho. En la reunión lo calculamos con vuestro número de vehículos y vemos si os compensa o no. ¿Cuántos vehículos tenéis ahora mismo en alquiler?",
   source: "Playbook · Somos pocos vehículos",
 }), ["t6"]);
+// The card's first line since 2026-11-16: a suggestion carries the brain's reading, an answer their own words.
+const S_READ = sayPoint({ ...point("read", "deepen", null, "son llamadas que se trabajan con mucho tiempo antes", 150, { answer: "Justo en llamadas largas con clientes de alto valor es donde más se juega; ¿cómo las preparáis hoy?" }), read: "Su objeción es el tipo de venta, no el precio. Ve a esas llamadas largas." }, ["t6"]);
+const S_QUOTE = sayPoint({ ...HUBSPOT, id: "quote", quote: "¿se integra con HubSpot?" }, ["t6"]);
 const S_FRESH = sayPoint({ ...HUBSPOT, id: "fresh", saidAt: 148 }, ["t6"]);
 const S_DRAFT = { ...draft("¿y cuánto cuesta?", "Depende del número de comerciales. ¿Cuántos so"), turnIds: [], versions: [] };
 
@@ -269,10 +272,15 @@ const SAY = { width: 460, height: 400 };
 const NEXT = { kind: "data", id: "n_comerciales", label: "N.º de comerciales", question: "¿Cuántos comerciales sois, y cuántos están en la calle?" };
 
 export const sayFixtures = [
-  { name: "say-empty", state: recording(sayView()), expect: { ...SAY, say: { cards: 0, quiet: "Qué decir", bar: ["Responder", "Resumen"], tab: "Pasos", contact: "Marta Ruiz", peek: null } } },
+  { name: "say-read", state: recording(sayView([S_READ])), expect: { ...SAY, say: { cards: 1, why: S_READ.read, kinds: [""], text: S_READ.answer, pile: 0 } } },
+  { name: "say-quote", state: recording(sayView([S_QUOTE])), expect: { ...SAY, say: { cards: 1, why: S_QUOTE.quote, kinds: [null], text: HUBSPOT.answer, grown: true } } },
+  // The answers before the one on screen: a pile under it; a tap spreads them, as the list they are.
+  { name: "say-pile", state: recording(sayView([S_TIMING, { ...S_QUOTE, outcome: "answered" }, S_READ])), expect: { ...SAY, say: { cards: 3, pile: 2, faded: 2, why: S_READ.read, grown: true } } },
+  { name: "say-pile-spread", state: recording(sayView([S_TIMING, { ...S_QUOTE, outcome: "answered" }, S_READ])), steps: [".say-pile"], expect: { ...SAY, say: { cards: 3, pile: 2, pileOn: true, grown: true } } },
+  { name: "say-empty", state: recording(sayView()), expect: { ...SAY, say: { cards: 0, quiet: "Aquí sale qué decir cuando el cliente pregunta, objeta o cuenta algo importante.", bar: ["Responder", "Resumen"], tab: "Pasos", contact: "Marta Ruiz", peek: null } } },
   { name: "say-long-answer", state: recording(sayView([S_HUBSPOT, S_LONG])), expect: { ...SAY, say: { cards: 2, text: S_LONG.answer, cut: 0, whole: true, grown: true } } },
   { name: "say-answer", state: recording(sayView([S_HUBSPOT])), expect: { ...SAY, say: { cards: 1, kinds: ["Respuesta"], text: HUBSPOT.answer, sources: ["t6"] } } },
-  { name: "say-kinds", state: recording(sayView([S_TIMING, S_DEEPEN, S_SINCE, S_HUBSPOT])), expect: { ...SAY, say: { cards: 4, kinds: ["No está en tu conocimiento", "Respuesta", "Puedes preguntar", "Respuesta"], faded: 1 } } },
+  { name: "say-kinds", state: recording(sayView([S_TIMING, S_DEEPEN, S_SINCE, S_HUBSPOT])), expect: { ...SAY, say: { cards: 4, kinds: ["No está en tu conocimiento", "Respuesta", "Puedes preguntar", "Respuesta"], faded: 1, grown: true } } },
   { name: "say-writing", state: recording(sayView([S_HUBSPOT, S_DRAFT])), expect: { ...SAY, say: { cards: 2, caret: true } } },
   { name: "say-rewrite-next-version", state: recording(sayView([S_HUBSPOT_TWO])), steps: [".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { cards: 1, again: true, text: S_HUBSPOT_TWO.versions[1] } } },
   { name: "say-rewrite-asked", state: recording(sayView([S_HUBSPOT])), steps: [".say-bar .live-action:nth-child(1)"], expect: { ...SAY, say: { cards: 1, otherWay: "Otra forma…" } } },

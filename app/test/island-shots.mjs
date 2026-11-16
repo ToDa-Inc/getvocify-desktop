@@ -223,7 +223,9 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
         thinking: text(document.querySelector('.say-thinking')),
         // «Pensando» is drawn inside Qué decir, under the answer: not pushed out of the zone or under the tabs.
         thinkingIn: (() => { const t = document.querySelector('.say-thinking')?.getBoundingClientRect(); const f = document.querySelector('.say-feed')?.getBoundingClientRect(); const c = [...cards].reverse().find((x) => x.dataset.live === 'true')?.getBoundingClientRect(); return t && f ? t.height > 0 && t.top >= f.top && t.bottom <= f.bottom + 1 && (!c || t.top >= c.bottom - 1) : null; })(),
-        older: text(document.querySelector('.say-older')),
+        why: text([...cards].reverse().find((c) => c.dataset.live === 'true')?.querySelector('.say-read, .say-quote')),
+        pile: all('.say-pile i').length,
+        pileOn: document.querySelector('.say-pile')?.dataset.on === 'true',
         stepQ: text(document.querySelector('.say-step-q')),
         briefLines: all('.say-line', peek).length,
         offline: text(document.querySelector('.say-offline .lost-title')),

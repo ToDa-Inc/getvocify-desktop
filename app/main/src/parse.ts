@@ -253,6 +253,8 @@ function parsePoint(raw: Raw): LivePoint | null {
   const source = isRaw(raw.source) ? nonBlank(raw.source.label) : null;
   return {
     id, kind, title, outcome, answer, fallback, source,
+    read: nonBlank(raw.read),
+    quote: nonBlank(raw.quote),
     tag: nonBlank(raw.tag),
     tagKey: nonBlank(raw.tag_key) ?? kind,
     saidAt: num(raw.said_at) ?? 0,
@@ -282,7 +284,7 @@ function parseDraft(raw: Raw, index: number): LivePoint {
   const tagKey = nonBlank(raw.kind) ?? "question";
   return {
     id: `draft:${index}`, kind: tagKey === "question" ? "question" : tagKey === "deepen" ? "deepen" : "objection", tag: nonBlank(raw.tag), tagKey,
-    title: nonBlank(raw.title) ?? "", saidAt: Number.MAX_SAFE_INTEGER,
+    title: nonBlank(raw.title) ?? "", read: null, quote: null, saidAt: Number.MAX_SAFE_INTEGER,
     decision: null, decisionNote: null, answer: say, fallback: null, gap: null, source: null,
     phase: say === null ? "thinking" : "writing", outcome: "open", repeated: false, draft: true,
     turnIds: [], versions: say ? [say] : [],

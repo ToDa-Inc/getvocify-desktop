@@ -14,15 +14,18 @@
 .say-feed[data-older="false"] .say-card[data-live="false"] .say-text { display: none; }
 .say-feed[data-older="false"] .say-card[data-live="false"]:has(~ .say-card[data-live="false"]) { display: none; }
 @keyframes say-leave { 0%, 62% { max-height: 30px; opacity: 0.5; } 100% { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; margin-bottom: -6px; } }
-.say-older { position: absolute; z-index: 2; top: 11px; right: 21px; display: inline-flex; align-items: center; gap: 3px; height: 16px; padding: 0 5px; border-radius: 8px;
-  font-size: 10px; font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, 0.38); cursor: pointer; transition: color 120ms, background 120ms; }
-.say-older:hover { color: var(--secondary); background: rgba(255, 255, 255, 0.08); }
-.say-older[data-on="true"] { color: var(--beige); background: rgba(219, 192, 154, 0.16); }
-.say-feed[data-past="true"] .say-said { padding-right: 34px; }
+/* The pile: the edges of the answers before this one, under it. */
+.say-pile { flex: none; display: flex; flex-direction: column; height: 12px; margin: -2px 14px 0; cursor: pointer; }
+.say-pile i { display: block; height: 5px; border-radius: 0 0 9px 9px; margin: 0 9px; background: rgba(255, 255, 255, 0.045); box-shadow: inset 0 -0.5px 0 rgba(255, 255, 255, 0.1); transition: background 120ms; }
+.say-pile i + i { margin: 0 20px; background: rgba(255, 255, 255, 0.028); }
+.say-pile:hover i { background: rgba(255, 255, 255, 0.09); }
+.say-pile[data-on="true"] i { background: rgba(219, 192, 154, 0.2); }
 .say-feed .live-scroll { flex: 1; min-height: 0; padding: 0 14px; overflow-anchor: none; }
 .say-list { display: flex; flex-direction: column; gap: 6px; }
-.say-quiet { flex: 1; min-height: 0; position: relative; margin: 0 14px; }
-.say-label { position: absolute; top: 0; left: 0; font-size: 10.5px; font-weight: 500; letter-spacing: 0.01em; color: rgba(255, 255, 255, 0.38); }
+/* Nothing yet: the place where what to say will come, greyed, saying so. */
+.say-quiet { flex: 1; min-height: 0; display: flex; align-items: flex-start; gap: 7px; margin: 0 14px; padding: 9px 11px; border-radius: 10px; font-size: 11.5px; line-height: 1.4;
+  color: rgba(255, 255, 255, 0.34); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+.say-quiet svg { flex: none; margin-top: 2px; }
 .say-offline { margin: 0 14px 6px; }
 .say-note { padding: 4px 2px 2px; font-size: 11.5px; color: rgba(255, 255, 255, 0.45); }
 .say-note .help-drafting { display: inline-flex; align-items: center; gap: 6px; }
@@ -36,6 +39,13 @@
 .say-card[data-live="false"][data-ended="none"] { transition-delay: 0s; }
 .say-card[data-live="false"] .say-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .say-said { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11.5px; color: var(--secondary); }
+/* Why the card is here. A suggestion: the brain's reading, whole, on up to two lines. An answer: their words, a bubble. */
+.say-said[data-why="read"] { align-items: flex-start; }
+.say-why-icon { margin-top: 2px; }
+.say-read { flex: 1; min-width: 0; line-height: 1.35; color: rgba(255, 255, 255, 0.58); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.say-quote { min-width: 0; max-width: calc(100% - 26px); padding: 3px 9px 4px; border-radius: 10px 10px 10px 3px; line-height: 1.3; color: rgba(255, 255, 255, 0.8); background: rgba(255, 255, 255, 0.09);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.say-said .grow { flex: 1; }
 .say-words { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: rgba(255, 255, 255, 0.5); }
 .say-text { font-size: 12px; font-weight: 500; line-height: 1.36; color: var(--text); }
 .say-card .help-drafting { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
@@ -50,9 +60,11 @@
 .say-again { font-weight: 400; color: rgba(255, 255, 255, 0.45); }
 /* Answer and unknown: a full card (unknown with an amber edge). An opportunity: an outlined card, lighter, never a task. */
 .say-card[data-kind="unknown"] { box-shadow: inset 2px 0 0 rgba(242, 187, 92, 0.6); }
-.say-card[data-kind="explore"] { background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.13); }
-.say-card[data-kind="explore"] .say-text { font-weight: 400; color: rgba(255, 255, 255, 0.86); }
-.say-card[data-kind="explore"][data-live="false"] { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
+/* One shape: a suggestion is drawn as an answer is. The outlined, lighter card is only the one that has no reading of
+   its own (the next thing to find out after Responder, a card from before the reading existed). */
+.say-card[data-kind="explore"]:not(:has(.say-read)) { background: transparent; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.13); }
+.say-card[data-kind="explore"]:not(:has(.say-read)) .say-text { font-weight: 400; color: rgba(255, 255, 255, 0.86); }
+.say-card[data-kind="explore"]:not(:has(.say-read))[data-live="false"] { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07); }
 /* The rep's ✓ ("ya está"), on hover. */
 .say-done { flex: none; margin-left: auto; opacity: 0; transition: opacity 120ms, background 120ms; color: var(--beige); }
 .say-card:hover .say-done, .say-done:focus-visible { opacity: 1; }

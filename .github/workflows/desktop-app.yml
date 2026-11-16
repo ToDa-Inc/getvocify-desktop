@@ -65,6 +65,14 @@ jobs:
       # Real windows on the Windows runner: the island's layout, the call-audio pipeline, a whole call through the shell.
       - name: Island checks in real windows
         run: npm run test:island
+      # Windows' own mouse on the pill: a press and a drag move it to another edge, it stays there, a click opens it.
+      - name: Pill placement with real mouse input
+        if: always()
+        run: npm run test:side
+      # Several calls in a row, each with real clicks: the island answers at once and the main process does not stall.
+      - name: Several calls in a row stay responsive
+        if: always()
+        run: npm run test:calls
       # What a rep notices first: a real mouse click on the island must act at once and must not take focus from the call.
       - name: Real click on the island does not take focus
         run: npm run test:focus

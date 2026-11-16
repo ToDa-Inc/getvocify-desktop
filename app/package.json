@@ -22,6 +22,8 @@
     "test:focus": "node test/build-shell-test.mjs && electron test/focus-windows.mjs",
     "test:select": "node test/build-shell-test.mjs && node island/build.mjs && electron test/select-windows.mjs",
     "test:real": "node test/build-shell-test.mjs && node island/build.mjs && electron test/real-input.mjs",
+    "test:side": "node test/build-shell-test.mjs && node island/build.mjs && electron test/side-windows.mjs",
+    "test:calls": "node test/build-shell-test.mjs && node island/build.mjs && electron test/calls-windows.mjs",
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "release:win": "npm run build && electron-builder --win nsis --x64 --publish always",
     "build:mac-native": "bash native/mac-helper/build.sh && bash native/mac-panel/build.sh",

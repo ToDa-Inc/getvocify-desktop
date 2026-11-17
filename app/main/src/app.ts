@@ -1258,7 +1258,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
         if (host) pages.set(frame.osProcessId, `${name} frame ${host}`);
       }
     }
-    const own = app.getAppMetrics().map((m) => ({ name: processName(m.type, m.serviceName, pages.get(m.pid)), kb: m.memory.workingSetSize, cpu: m.cpu.percentCPUUsage }));
+    const own = app.getAppMetrics().map((m) => ({ name: processName(m.type, m.serviceName, pages.get(m.pid)), kb: m.memory.workingSetSize, cpu: m.cpu.percentCPUUsage, privateKb: m.memory.privateBytes }));
     const children = trackedChildren();
     let kbByPid = new Map<number, number>();
     let powershells: number | null = null;

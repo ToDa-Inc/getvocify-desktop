@@ -28,7 +28,8 @@ export const trackedChildren = (): { pid: number; name: string }[] => [...runnin
 export const launchCounts = (): [string, number][] => [...launched].sort((a, b) => b[1] - a[1]);
 
 /** One of the app's own processes as Electron reports it (`app.getAppMetrics()`), named for the log. */
-export type OwnProcess = { name: string; kb: number; cpu: number };
+/** kb: working set, which counts memory shared between processes once in each; privateKb: the process's own (Windows). */
+export type OwnProcess = { name: string; kb: number; cpu: number; privateKb?: number };
 
 /** Electron's process types, named as the log shows them; a page is named by the window it belongs to. */
 export function processName(type: string, serviceName: string | undefined, pageName: string | undefined): string {
@@ -95,7 +96,7 @@ export function resourceLine(sample: ResourceSample): string {
   const cpu = own.reduce((sum, p) => sum + p.cpu, 0);
   const parts = [
     sample.freeBytes === null ? `${gb(sample.totalBytes)} GB memory` : `free ${gb(sample.freeBytes)} of ${gb(sample.totalBytes)} GB`,
-    `Vocify ${mb(total)} MB [${own.map((p) => `${p.name} ${mb(p.kb)}`).join(", ")}] cpu ${cpu.toFixed(1)}%`,
+    `Vocify ${mb(total)} MB${own.every((p) => p.privateKb !== undefined) ? ` (its own ${mb(own.reduce((sum, p) => sum + (p.privateKb ?? 0), 0))} MB)` : ""} [${own.map((p) => `${p.name} ${mb(p.kb)}`).join(", ")}] cpu ${cpu.toFixed(1)}%`,
   ];
   if (sample.children.length) parts.push(`running: ${sample.children.map((c) => `${c.name} ${c.kb === null ? "?" : `${mb(c.kb)} MB`}`).join(", ")}`);
   if (sample.powershells !== null) parts.push(`powershell.exe on the computer: ${sample.powershells}`);

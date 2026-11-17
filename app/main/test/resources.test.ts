@@ -64,3 +64,11 @@ test("where the system does not say how much memory is free, only the total is w
   const line = resourceLine({ mode: "recording", uptimeMs: 5 * 60_000, freeBytes: null, totalBytes: 16 * 1024 ** 3, own: [{ name: "main", kb: 1024, cpu: 0 }], children: [], powershells: null, launches: [] });
   assert.equal(line, "resources (recording, up 5m): 16.0 GB memory · Vocify 1 MB [main 1] cpu 0.0%");
 });
+
+test("the line adds what is Vocify's own when Windows reports it, apart from memory shared between its processes", () => {
+  const line = resourceLine({
+    mode: "idle", uptimeMs: 60_000, freeBytes: null, totalBytes: 8 * 1024 ** 3, children: [], powershells: null, launches: [],
+    own: [{ name: "dashboard", kb: 200 * 1024, cpu: 0, privateKb: 120 * 1024 }, { name: "gpu", kb: 180 * 1024, cpu: 0, privateKb: 60 * 1024 }],
+  });
+  assert.match(line, /Vocify 380 MB \(its own 180 MB\) \[dashboard 200, gpu 180\]/);
+});

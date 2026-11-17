@@ -57,7 +57,8 @@ export class DashboardHost {
   }
 
   get visible(): boolean {
-    return this.window !== null && !this.window.isDestroyed() && this.window.isVisible();
+    // Minimized (Windows, after a call) is out of sight too: an update may restart the app then.
+    return this.window !== null && !this.window.isDestroyed() && this.window.isVisible() && !this.window.isMinimized();
   }
 
   isFrom(contents: WebContents): boolean {
@@ -236,11 +237,15 @@ export class DashboardHost {
       const from = this.compactFrom!;
       this.compactFrom = null;
       win.setAlwaysOnTop(false);
-      if (options?.callEnded) win.hide();
+      // Out of sight: Windows minimizes it, so Vocify keeps its button on the taskbar (a hidden window has none, and the
+      // app seemed gone after each call); the Mac hides it and keeps it in the Dock.
+      const away = options?.callEnded ? (process.platform === "win32" ? "minimize" : "hide") : null;
+      if (away === "hide") win.hide();
       win.setMinimumSize(FULL_MIN_SIZE.width, FULL_MIN_SIZE.height);
       win.setBounds(from);
+      if (away === "minimize") win.minimize();
     }
-    this.options.log(`dashboard window ${on ? "compact" : win.isVisible() ? "back to its size" : "back to its size, out of sight"}`);
+    this.options.log(`dashboard window ${on ? "compact" : win.isVisible() && !win.isMinimized() ? "back to its size" : "back to its size, out of sight"}`);
     this.emit("window:compact", { compact: this.compact });
     return this.compact;
   }

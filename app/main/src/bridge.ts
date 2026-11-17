@@ -301,6 +301,8 @@ export function createBridge(deps: BridgeDeps): (op: string, args: Args) => Prom
         deps.onDraftsChanged?.();
         return { ok };
       }
+      case "drafts:append":
+        return { ok: deps.drafts.append(args.record) };
       case "drafts:list":
         return deps.drafts.list();
       case "drafts:remove":

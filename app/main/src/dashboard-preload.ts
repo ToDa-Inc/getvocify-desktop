@@ -122,6 +122,7 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
   },
   drafts: {
     save: (draft: object) => call("drafts:save", { draft }),
+    append: (record: object) => call("drafts:append", { record }),
     list: () => call("drafts:list"),
     remove: (id: string) => call("drafts:remove", { id }),
   },

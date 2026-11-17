@@ -50,6 +50,46 @@ test("drafts are saved, listed and removed, one file each", () => {
   drafts.remove("never-existed");
 });
 
+test("appended lines add to the saved draft once, in order; a whole save drops them", () => {
+  const drafts = new Drafts(join(tmp(), "meetings"));
+  const seg = (text: string) => ({ speaker: "rep", text, start: 0, end: 1 });
+  const head = (interims: Record<string, string>) => ({ id: "m-1", userId: "u", startedAt: 1, updatedAt: 2, transcript: { interims } });
+  assert.equal(drafts.append({ id: "m-1", from: 0, segments: [seg("x")], draft: head({}) }), false, "no append before a whole save");
+  assert.equal(drafts.save({ ...head({}), transcript: { segments: [seg("a"), seg("b")], interims: {} } }), true);
+  assert.equal(drafts.append({ id: "m-1", from: 2, segments: [seg("c")], draft: { ...head({ rep: "d" }), notes: "n1" } }), true);
+  assert.equal(drafts.append({ id: "m-1", from: 3, segments: [seg("e"), seg("f")], draft: { ...head({}), notes: "n2" } }), true);
+  const [shown] = drafts.list() as Array<{ notes: string; transcript: { segments: Array<{ text: string }>; interims: object } }>;
+  assert.deepEqual(shown.transcript.segments.map((line) => line.text), ["a", "b", "c", "e", "f"]);
+  assert.equal(shown.notes, "n2");
+  assert.deepEqual(shown.transcript.interims, {});
+  // A log line that starts before the draft's segments (left by a crash after the whole save) is not applied twice.
+  assert.equal(drafts.append({ id: "m-1", from: 2, segments: [seg("c")], draft: head({}) }), true);
+  // A torn last line ends the log: what came before it stays.
+  writeFileSync(join(drafts["dir"], "m-1.log"), readFileSync(join(drafts["dir"], "m-1.log"), "utf8") + '{"from":5,"segm');
+  assert.deepEqual((drafts.list() as Array<{ transcript: { segments: unknown[] } }>)[0].transcript.segments.length, 5);
+  // A whole save is the draft as it stands and drops the log.
+  assert.equal(drafts.save({ ...head({}), transcript: { segments: [seg("a")], interims: {} } }), true);
+  assert.deepEqual(readdirSync(drafts["dir"]).sort(), ["m-1.json"]);
+  assert.deepEqual((drafts.list() as Array<{ transcript: { segments: unknown[] } }>)[0].transcript.segments.length, 1);
+  drafts.remove("m-1");
+  assert.deepEqual(readdirSync(drafts["dir"]), []);
+});
+
+test("an append is refused for a bad id, a bad position or segments that are not a list", () => {
+  const drafts = new Drafts(join(tmp(), "meetings"));
+  assert.equal(drafts.save({ id: "m-2", transcript: { segments: [], interims: {} } }), true);
+  for (const record of [
+    { id: "../m-2", from: 0, segments: [], draft: {} },
+    { id: "m-2", from: -1, segments: [], draft: {} },
+    { id: "m-2", from: 0.5, segments: [], draft: {} },
+    { id: "m-2", from: 0, segments: "nope", draft: {} },
+    { id: "m-2", from: 0, segments: [], draft: null },
+    null,
+  ]) {
+    assert.equal(drafts.append(record), false, JSON.stringify(record));
+  }
+});
+
 test("a draft can never name a file outside its folder", () => {
   const dir = tmp();
   const drafts = new Drafts(join(dir, "meetings"));

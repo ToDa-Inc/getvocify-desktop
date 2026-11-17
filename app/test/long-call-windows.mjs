@@ -134,7 +134,11 @@ app.whenReady().then(async () => {
     // The page signs in with a stored refresh token, then reloads into the signed-in dashboard.
     await dash.executeJavaScript(`localStorage.setItem("vocify_refresh", "soak-refresh"); localStorage.setItem("vocify_token", ${JSON.stringify(fakeJwt(userId))})`);
     dash.reload();
-    await sleep(4000);
+    // Recording starts only once the dashboard has loaded its screens: the stand-in sees its last start-up call.
+    const loadedAt = Date.now();
+    while (!seen.has("GET/api/v1/calls/config") && Date.now() - loadedAt < 90000) await sleep(100);
+    check(seen.has("GET/api/v1/calls/config"), "the dashboard loaded its screens before the call");
+    await sleep(2000);
 
     if (process.env.SOAK_DEBUG) console.log("      page state", await dash.executeJavaScript(`JSON.stringify({ url: location.href, refresh: localStorage.getItem("vocify_refresh"), body: document.body.innerText.slice(0, 300) })`));
     handle.detectCall({ name: "Zoom", appId: "zoom.exe" });

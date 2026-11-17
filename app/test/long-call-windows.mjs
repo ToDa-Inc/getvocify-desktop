@@ -130,7 +130,7 @@ app.whenReady().then(async () => {
     const { startApp } = await import(pathToFileURL(join(here, "../main/dist-shell-test/app.mjs")).href);
     handle = await startApp({ dashboardUrl: `http://127.0.0.1:${STAND_PORT}/dashboard`, trustFiles: false, userDataDir, releaseGraceMs: 600000 });
     const dash = handle.dashboard.contents;
-    dash.on("console-message", (_e, level, message) => { if (level >= 2) console.log("      page", message.slice(0, 300)); });
+    dash.on("console-message", (_e, level, message) => { if (level >= 1 && !message.includes("Electron Security")) console.log("      page", message.slice(0, 300)); });
     // The page signs in with a stored refresh token, then reloads into the signed-in dashboard.
     await dash.executeJavaScript(`localStorage.setItem("vocify_refresh", "soak-refresh"); localStorage.setItem("vocify_token", ${JSON.stringify(fakeJwt(userId))})`);
     // Recording starts only once the dashboard has loaded its screens: the stand-in sees its last start-up call. A page
@@ -145,6 +145,7 @@ app.whenReady().then(async () => {
       while (!seen.has("GET/api/v1/calls/config") && Date.now() - loadedAt < 40000) await sleep(100);
       screens = seen.has("GET/api/v1/calls/config");
     }
+    if (!screens) console.log("      the dashboard's screen:", await dash.executeJavaScript(`document.body.innerText.slice(0, 400).replace(/\\n+/g, " | ") + " | url " + location.pathname`));
     check(screens, "the dashboard loaded its screens before the call");
     await sleep(2000);
 
@@ -192,14 +193,13 @@ app.whenReady().then(async () => {
       }
     }, 100);
 
-    // The call runs its length, then hangs up and the sampler is stopped.
+    // The call runs its length; the last messages are due at its very end and are given a moment to go.
     while (lastMinute < MINUTES) await sleep(200);
+    const flushed = Date.now();
+    while (pointer < calls.length && Date.now() - flushed < 15000) await sleep(50);
     clearInterval(sampler);
     clearInterval(pump);
     console.log(`      sent ${pointer} of ${calls.length} transcript messages`);
-    // The last messages are due at the call's very end: they are given a moment to go before the count is checked.
-    const flushed = Date.now();
-    while (pointer < calls.length && Date.now() - flushed < 15000) await sleep(50);
     check(pointer === calls.length, "the transcript source sent every message of the call");
 
     // Analysis: post warm-up samples only.

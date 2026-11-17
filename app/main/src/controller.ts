@@ -30,6 +30,9 @@ const DONE_LINGER = 3;
  * late reading into a hang-up. */
 const HANG_UP_GRACE = 2;
 const START_TIMEOUT = 8;
+/** A heard call that no recording took within START_TIMEOUT is still listened to this long (a late start takes it over), then
+ * let go: its capture (a window, the audio and video services) must not stay open while the computer is idle. */
+const SOUND_RELEASE = 60;
 const LEVEL_FADE_SECONDS = 0.5;
 /** Waiting for the dashboard to report the call the rep just placed from the island. */
 const DIAL_TIMEOUT = 8;
@@ -102,7 +105,7 @@ export type Effects = {
 /** How long "Recording with … · Change" stays once the island is open (the call type's line has 4 s; this one is read and acted on). */
 const MIC_NOTE_SECONDS = 8;
 
-type Timers = "autoClose" | "hoverHold" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout" | "dialFailedHold" | "phoneConnect" | "callSilence" | "typeNote" | "micNote";
+type Timers = "autoClose" | "hoverHold" | "startTimeout" | "hangUp" | "finishTimeout" | "dialTimeout" | "dialFailedHold" | "phoneConnect" | "callSilence" | "typeNote" | "micNote" | "soundRelease";
 
 export class IslandController {
   private effects: Effects;
@@ -641,6 +644,14 @@ export class IslandController {
       if (this.mode !== "starting") return;
       this.rest();
       this.effects.showMainWindow();
+      // No recording came: the heard call's sound is let go after a while, not kept open for as long as the app runs.
+      if (this.soundCall) {
+        this.start("soundRelease", SOUND_RELEASE, () => {
+          if (!this.soundCall || this.mode === "recording") return;
+          this.soundCall = false;
+          this.effects.stopCallSound?.();
+        });
+      }
     });
   }
 
@@ -925,6 +936,8 @@ export class IslandController {
     this.callHandled = this.currentCaller !== null;
     if (this.mode !== "recording") this.farSideHeard = false;
     this.stopTimer("startTimeout");
+    // The recording took the heard call's sound: it is not let go any more.
+    this.stopTimer("soundRelease");
     // The dashboard ends a Vocify call; another app letting go of the mic says nothing about it.
     if (this.vocifyCallUp) this.recordingCaller = null;
     else if (this.current.mode.kind === "call") this.recordingCaller = this.shownCaller;

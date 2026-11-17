@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld("vocifyDesktop", {
   shell: {
     // Levels arrive about ten times a second: fire and forget, no promise to resolve.
     setState: (state: Record<string, unknown>) => ipcRenderer.send("vocify:state", state),
+    // The overlay can come as changes (`overlay.from` and the turns from there); this build takes them.
+    overlayDelta: true,
     resize: (size: string) => call("shell:resize", { size }),
     showOverlay: () => call("overlay:show"),
     hideOverlay: () => call("overlay:hide"),

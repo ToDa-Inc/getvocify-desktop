@@ -198,20 +198,33 @@ export function parseAssist(raw: unknown): Assist | null {
 
 export function parseTurns(overlay: unknown): Turn[] | null {
   if (!isRaw(overlay)) return null;
-  return list(overlay.turns).map((raw, index) => {
-    const voice = num(raw.voice);
-    const starts = Array.isArray(raw.starts) ? raw.starts.filter((s): s is number => typeof s === "number" && Number.isFinite(s)) : [];
-    return {
-      id: str(raw.key) ?? `row-${index}`,
-      you: bool(raw.you) ?? false,
-      label: str(raw.label) ?? null,
-      text: str(raw.text) ?? "",
-      pending: str(raw.pending) ?? "",
-      // Only when the dashboard tells voices apart: a turn without them is as it always was.
-      ...(voice !== undefined && Number.isInteger(voice) && voice >= 1 ? { voice } : {}),
-      ...(starts.length ? { starts } : {}),
-    };
-  });
+  return list(overlay.turns).map((raw, index) => parseTurn(raw, index));
+}
+
+/**
+ * The turns from index `from` on, when the dashboard sends only what changed (`overlay.from`): `overlay.turns` are
+ * the turns from there. Null when `from` is missing or not a whole number, i.e. the overlay is a whole list.
+ */
+export function parseTurnChanges(overlay: unknown): { from: number; turns: Turn[] } | null {
+  if (!isRaw(overlay)) return null;
+  const from = num(overlay.from);
+  if (from === undefined || !Number.isInteger(from) || from < 0) return null;
+  return { from, turns: list(overlay.turns).map((raw, index) => parseTurn(raw, from + index)) };
+}
+
+function parseTurn(raw: Raw, index: number): Turn {
+  const voice = num(raw.voice);
+  const starts = Array.isArray(raw.starts) ? raw.starts.filter((s): s is number => typeof s === "number" && Number.isFinite(s)) : [];
+  return {
+    id: str(raw.key) ?? `row-${index}`,
+    you: bool(raw.you) ?? false,
+    label: str(raw.label) ?? null,
+    text: str(raw.text) ?? "",
+    pending: str(raw.pending) ?? "",
+    // Only when the dashboard tells voices apart: a turn without them is as it always was.
+    ...(voice !== undefined && Number.isInteger(voice) && voice >= 1 ? { voice } : {}),
+    ...(starts.length ? { starts } : {}),
+  };
 }
 
 /** The voices of the other side the dashboard has heard, each with the name it shows now. */

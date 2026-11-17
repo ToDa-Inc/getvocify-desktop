@@ -883,6 +883,24 @@ test("the dashboard's overlay becomes the transcript, unless a native recorder d
   assert.equal(t.controller.state.turns.length, 2);
 });
 
+test("an overlay that takes changes keeps the turns before `from`, replaces the rest, and an impossible `from` is ignored", () => {
+  const t = recording();
+  t.controller.applyShellState({ overlay: { turns: [{ key: "a", you: true, text: "Hello" }, { key: "b", you: false, label: "Marta", text: "Hi" }] } });
+  // The last turn grew, and a new one came after it.
+  t.controller.applyShellState({ overlay: { from: 1, turns: [{ key: "b", you: false, label: "Marta", text: "Hi there" }, { key: "c", you: true, text: "Sure" }] } });
+  assert.deepEqual(t.controller.state.turns, [
+    { id: "a", you: true, label: null, text: "Hello", pending: "" },
+    { id: "b", you: false, label: "Marta", text: "Hi there", pending: "" },
+    { id: "c", you: true, label: null, text: "Sure", pending: "" },
+  ]);
+  // The list shrinks back (a new call starts) with nothing new.
+  t.controller.applyShellState({ overlay: { from: 0, turns: [] } });
+  assert.equal(t.controller.state.turns.length, 0);
+  // A `from` past the end of what the island has is not applied.
+  t.controller.applyShellState({ overlay: { from: 5, turns: [{ key: "z", you: true, text: "Late" }] } });
+  assert.equal(t.controller.state.turns.length, 0);
+});
+
 test("an overlay's voices reach the island, turns without them stay as they were, and bad ones are dropped", () => {
   const t = recording();
   t.controller.applyShellState({

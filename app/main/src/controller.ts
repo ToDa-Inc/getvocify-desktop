@@ -8,7 +8,7 @@ import { WaveSide } from "../../core/waveSide.ts";
 import { DEFAULT_SPOT, type PillSpot } from "../../core/pill.ts";
 import type { Assist, Geometry, IslandAction, IslandState, Levels, LiveAction, Mode, PostCallData, VoiceAction } from "../../island/src/types.ts";
 import { postCallPending } from "../../island/src/types.ts";
-import { parseAssist, parseBackground, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parseMic, parsePostCall, parsePeople, parseTurns, parseVoices, type LiveChannelKind, type LiveType } from "./parse.ts";
+import { parseAssist, parseBackground, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parseMic, parsePostCall, parsePeople, parseTurnChanges, parseTurns, parseVoices, type LiveChannelKind, type LiveType } from "./parse.ts";
 
 /**
  * The island's brain: what it shows and what each click does. A port of `MeetingPillController` and
@@ -367,8 +367,18 @@ export class IslandController {
       }
     }
     if (!this.nativeTranscript && has("overlay")) {
-      const turns = parseTurns(update.overlay);
-      if (turns && JSON.stringify(turns) !== JSON.stringify(this.current.turns)) patch.turns = turns;
+      // A dashboard that takes changes sends `from` and the turns from there: the list keeps the turns before it.
+      // Otherwise the overlay is the whole list.
+      const changes = parseTurnChanges(update.overlay);
+      if (changes) {
+        const kept = this.current.turns.slice(0, changes.from);
+        if (changes.from <= this.current.turns.length && (changes.turns.length > 0 || changes.from < this.current.turns.length)) {
+          patch.turns = [...kept, ...changes.turns];
+        }
+      } else {
+        const turns = parseTurns(update.overlay);
+        if (turns && JSON.stringify(turns) !== JSON.stringify(this.current.turns)) patch.turns = turns;
+      }
       const voices = parseVoices(update.overlay);
       if (JSON.stringify(voices) !== JSON.stringify(this.current.voices ?? [])) patch.voices = voices;
       const people = parsePeople(update.overlay);

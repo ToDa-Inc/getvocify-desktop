@@ -59,6 +59,10 @@ jobs:
       - name: Logic tests
         run: npm run test:logic
 
+      # What the app costs an idle Windows PC: per process, and the programs it launches each minute. Measured, not gating.
+      - name: Idle cost (per process, programs launched per minute)
+        run: npm run test:idle
+
       # What only Windows can answer: the real microphone-use record and a real browser's address bar.
       - name: Windows mechanisms (registry, address bar)
         run: npm run test:windows

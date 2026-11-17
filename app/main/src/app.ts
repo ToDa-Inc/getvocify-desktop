@@ -23,7 +23,7 @@ import { ShortcutManager } from "./shortcut.ts";
 import type { UpdateState, UpdateStatus } from "./updater.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { micChoices, trayItems } from "./tray-menu.ts";
-import { launchCounts, parsePs, parseTasklist, processName, resourceLine, trackedChildren } from "./resources.ts";
+import { launchCounts, parsePs, parseTasklist, processName, resourceLine, trackedChildren, type ResourceSample } from "./resources.ts";
 import { startsPageAtLaunch } from "./calendar-watch.ts";
 import { createBrowserCallWatch } from "./windows/browser-call.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
@@ -72,6 +72,8 @@ export type AppHandle = {
   iconFor(path: string): Promise<string | null>;
   /** Test hook: what the dashboard would be told about permissions. */
   permissions(): Promise<unknown>;
+  /** What the app costs the computer now, per process and per program launched (resources.ts), for the idle measurement. */
+  measureResources(): Promise<ResourceSample>;
   /** True when a restart would interrupt nothing: no recording and no call update on screen. */
   canInstallUpdate(): boolean;
   /** Restart now: the same, except an open window does not hold it back (the rep asked). */
@@ -1283,7 +1285,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   periodicRedraw.unref();
 
   // What the app costs the computer, in the log a rep sends: a minute after launch, then every 10 minutes (resources.ts).
-  const sampleResources = async () => {
+  const measureResources = async (): Promise<ResourceSample> => {
     const pages = new Map<number, string>();
     for (const contents of webContents.getAllWebContents()) {
       const url = contents.getURL();
@@ -1310,20 +1312,19 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     } else if (children.length) {
       kbByPid = parsePs(await runQuiet("ps", ["-o", "pid=,rss=", "-p", children.map((c) => c.pid).join(",")], 10_000).catch(() => ""));
     }
-    log(
-      resourceLine({
-        mode: controller.state.mode.kind,
-        uptimeMs: process.uptime() * 1000,
-        // Windows reports the memory programs can still get; macOS counts only pages nobody uses, which says little.
-        freeBytes: platform === "win32" ? freemem() : null,
-        totalBytes: totalmem(),
-        own,
-        children: children.map((c) => ({ name: c.name, kb: kbByPid.get(c.pid) ?? null })),
-        powershells,
-        launches: launchCounts(),
-      }),
-    );
+    return {
+      mode: controller.state.mode.kind,
+      uptimeMs: process.uptime() * 1000,
+      // Windows reports the memory programs can still get; macOS counts only pages nobody uses, which says little.
+      freeBytes: platform === "win32" ? freemem() : null,
+      totalBytes: totalmem(),
+      own,
+      children: children.map((c) => ({ name: c.name, kb: kbByPid.get(c.pid) ?? null })),
+      powershells,
+      launches: launchCounts(),
+    };
   };
+  const sampleResources = async () => log(resourceLine(await measureResources()));
   setTimeout(() => void sampleResources().catch((error) => log(`resources: not measured (${String(error)})`)), 60_000).unref();
   // Every ten minutes, and every minute while recording: a call that grows the app's memory shows minute by minute
   // which process grows (a 40-minute meeting froze a rep's computer, 2026-11-17).
@@ -1403,6 +1404,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     island,
     islandBounds: () => island.getBounds(),
     detectCall: (caller) => controller.callChanged(caller),
+    /** What the app costs now (the same numbers the log's resource line shows), for the idle measurement. */
+    measureResources,
     shellState: (state) => void bridge("shell:state", { state }),
     choosePlacement: (next: "notch" | "side") => setPlacement(next),
     iconFor,

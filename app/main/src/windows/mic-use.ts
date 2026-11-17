@@ -26,13 +26,29 @@ export function filetimeToMs(ticks: bigint): number {
   return Number(ticks / 10000n - FILETIME_EPOCH_MS);
 }
 
-function parseTicks(raw: string | undefined): bigint {
+/** A FILETIME text from the registry (hex, as `reg query` prints it, or decimal) as ticks; 0 when absent or not one. */
+export function parseTicks(raw: string | undefined): bigint {
   if (!raw) return 0n;
   try {
     return BigInt(raw.trim());
   } catch {
     return 0n;
   }
+}
+
+/**
+ * One app's use of the microphone, from its key below the microphone key: `NonPackaged\<path with # for \>` for a desktop
+ * app, a package name for a Store app. Null for the bare "NonPackaged" key and for nested keys, which are containers.
+ */
+export function useOf(rest: string, startedTicks: bigint, stoppedTicks: bigint): MicUse | null {
+  const nonPackaged = /^NonPackaged\\(.+)$/i.exec(rest);
+  const id = nonPackaged ? nonPackaged[1] : rest;
+  if (id.length === 0 || id.includes("\\") || rest.toLowerCase() === "nonpackaged") return null;
+  const path = nonPackaged ? id.replace(/#/g, "\\") : null;
+  const started = filetimeToMs(startedTicks);
+  const stopped = filetimeToMs(stoppedTicks);
+  const exe = (path ? path.slice(path.lastIndexOf("\\") + 1) : id).toLowerCase();
+  return { id: path ?? id, path, exe, started, stopped, active: started > 0 && started > stopped };
 }
 
 /** The output of `reg query <MIC_CONSENT_KEY> /s` as the apps that have used the microphone. */
@@ -46,17 +62,8 @@ export function parseMicConsent(output: string): MicUse[] {
     const marker = "\\microphone\\";
     const at = key.toLowerCase().indexOf(marker);
     if (at >= 0) {
-      const rest = key.slice(at + marker.length);
-      const nonPackaged = /^NonPackaged\\(.+)$/i.exec(rest);
-      const id = nonPackaged ? nonPackaged[1] : rest;
-      // The bare "NonPackaged" key and nested keys are containers, not apps.
-      if (id.length > 0 && !id.includes("\\") && rest.toLowerCase() !== "nonpackaged") {
-        const path = nonPackaged ? id.replace(/#/g, "\\") : null;
-        const started = filetimeToMs(parseTicks(values.LastUsedTimeStart));
-        const stopped = filetimeToMs(parseTicks(values.LastUsedTimeStop));
-        const exe = (path ? path.slice(path.lastIndexOf("\\") + 1) : id).toLowerCase();
-        uses.push({ id: path ?? id, path, exe, started, stopped, active: started > 0 && started > stopped });
-      }
+      const use = useOf(key.slice(at + marker.length), parseTicks(values.LastUsedTimeStart), parseTicks(values.LastUsedTimeStop));
+      if (use) uses.push(use);
     }
     key = null;
     values = {};
@@ -165,6 +172,9 @@ export type MicWatcherDeps = {
   /** The microphone uses the capture audio sessions show now (apps holding the mic whatever the record says). Read at
    * every look, so a call is seen even when the record has stopped being written. */
   captures?(): MicUse[];
+  /** The record as the capture reader reads it in process, when that is fresh; null (or no such source) sends the look to
+   * `read`, the registry query: the same record, but a program launched per look. */
+  record?(): MicUse[] | null;
 };
 
 const POLL_MS = 2000;
@@ -188,6 +198,11 @@ export class MicWatcher {
     this.stop = this.deps.every(POLL_MS, () => void this.tick());
   }
 
+  /** A look now, not at the next poll: the reader saw the record change. */
+  refresh(): void {
+    void this.tick();
+  }
+
   halt(): void {
     this.stop?.();
     this.stop = null;
@@ -197,8 +212,7 @@ export class MicWatcher {
     if (this.busy) return;
     this.busy = true;
     try {
-      const output = await this.deps.read();
-      const record = parseMicConsent(output);
+      const record = this.deps.record?.() ?? parseMicConsent(await this.deps.read());
       const active = record.filter((u) => u.active).map((u) => u.id).sort();
       if (active.join("\n") !== this.lastActive) {
         this.lastActive = active.join("\n");

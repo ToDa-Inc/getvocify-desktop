@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { crmUrlsOf, createPageReader, encodePowerShell, hostnamesOf, normalizeAddress, parsePageOutput, READ_PAGES_SCRIPT } from "../src/windows/browser-pages.ts";
 import { dialedDigits, parsePhoneLinkCall, phoneLinkCallScript } from "../src/windows/phone-link-call.ts";
 import { callAppFor, filetimeToMs, genericCallApp, MicWatcher, parseMicConsent, pickCaller, type DetectedCaller, type MicUse } from "../src/windows/mic-use.ts";
-import { CaptureSessions, parseCaptureLine } from "../src/windows/capture-sessions.ts";
+import { CaptureSessions, parseCaptureLine, parseConsentLine } from "../src/windows/capture-sessions.ts";
 
 /* ---------- microphone use ---------- */
 
@@ -363,4 +363,78 @@ test("the pages a browser shows, as hostnames only for the log: no path, no quer
   ];
   assert.deepEqual(hostnamesOf(pages), ["app.hubspot.com", "meet.google.com"]);
   assert.deepEqual(hostnamesOf([]), []);
+});
+
+/* ---------- the record read by the capture reader (in process, no registry query per look) ---------- */
+
+/** The same apps as `reg query` lists them, as the reader prints them: `CONSENT [{"k":..,"s":..,"e":..}]`. */
+const consentLine = (entries: [string, number, number][]) =>
+  `CONSENT ${JSON.stringify(entries.map(([path, started, stopped]) => ({
+    k: `NonPackaged\\${path.replace(/\\/g, "#")}`,
+    s: started === 0 ? "0" : String((BigInt(started) + 11644473600000n) * 10000n),
+    e: stopped === 0 ? "0" : String((BigInt(stopped) + 11644473600000n) * 10000n),
+  })))}`;
+
+test("the reader's record is the registry's record: the same apps, times and activity", () => {
+  const entries: [string, number, number][] = [
+    ["C:\\Program Files\\Zoom\\bin\\Zoom.exe", NOW - 60_000, 0],
+    ["C:\\Program Files\\Foo\\bar.exe", NOW - 90_000, NOW - 80_000],
+  ];
+  const fromReader = parseConsentLine(consentLine(entries));
+  assert.deepEqual(fromReader, parseMicConsent(entries.map(([path, started, stopped]) => app(path, started, stopped)).join("")));
+  assert.equal(fromReader?.find((u) => u.exe === "zoom.exe")?.active, true);
+  assert.equal(fromReader?.find((u) => u.exe === "bar.exe")?.active, false);
+});
+
+test("a line that is not a record is not read as one", () => {
+  assert.equal(parseConsentLine("CONSENT_ERROR access denied"), null);
+  assert.equal(parseConsentLine("CAPTURE []"), null);
+  assert.equal(parseConsentLine("CONSENT not json"), null);
+  assert.deepEqual(parseConsentLine("CONSENT []"), []);
+  assert.deepEqual(parseConsentLine(`CONSENT [{"k":"NonPackaged","s":"0","e":"0"},{"s":"0"}]`), [], "containers and items without a key are not apps");
+});
+
+test("the watcher takes the reader's record and launches nothing while it is fresh", async () => {
+  let now = NOW;
+  let tick: (() => void) | null = null;
+  let reads = 0;
+  const callers: (DetectedCaller | null)[] = [];
+  let record: MicUse[] | null = null;
+  const watcher = new MicWatcher({
+    read: async () => {
+      reads += 1;
+      return "";
+    },
+    now: () => now,
+    every: (_ms, fn) => {
+      tick = fn;
+      return () => {};
+    },
+    ownExePath: null,
+    onCaller: (caller) => callers.push(caller),
+    record: () => record,
+  });
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  watcher.start();
+  await settle();
+  assert.equal(reads, 1, "until the reader reports, the registry is asked");
+  record = parseConsentLine(consentLine([["C:\\Program Files\\Zoom\\bin\\Zoom.exe", NOW - 10_000, 0]])) ?? [];
+  now += 2000;
+  tick?.();
+  await settle();
+  assert.equal(callers.at(-1)?.name, "Zoom");
+  assert.equal(callers.at(-1)?.source, "registry");
+  const before = reads;
+  for (let i = 0; i < 3; i++) {
+    now += 2000;
+    tick?.();
+    await settle();
+  }
+  assert.equal(reads, before, "no registry query while the reader's record is fresh");
+  record = null;
+  now += 2000;
+  tick?.();
+  await settle();
+  assert.equal(reads, before + 1, "and the registry is asked again once the reader's record is gone");
+  assert.equal(callers.at(-1), null);
 });

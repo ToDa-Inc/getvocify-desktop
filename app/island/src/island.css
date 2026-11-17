@@ -270,6 +270,8 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 
 .latest { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px; border-radius: 12px; background: #333; color: var(--text); font-size: 11px; font-weight: 500; }
 .latest:active { transform: translateX(-50%) scale(0.93); }
+.earlier { display: block; margin: 0 auto 8px; height: 22px; padding: 0 10px; border-radius: 11px; background: transparent; color: var(--secondary); font-size: 11px; font-weight: 500; }
+.earlier:hover { background: #2a2a2a; }
 
 .countdown { position: absolute; left: 22px; right: 22px; bottom: 5px; height: 2px; }
 .countdown { transition: opacity 160ms; }

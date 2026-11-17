@@ -1155,6 +1155,11 @@ function HelpSection({ current, earlier }: { current: Assist | null; earlier: As
 }
 
 const FOLLOW_SLACK = 120;
+/**
+ * Lines the island draws during a call: the latest ones. A call that drew every line grew the island with every minute
+ * (a rep's Windows PC, 2026-11-17). Earlier lines stay in the transcript (copy takes them all) and show on demand.
+ */
+const ISLAND_WINDOW = 40;
 /** The glide covers what is left to the latest line on this time constant (ms): it lands in about a fifth of a second. */
 const GLIDE_MS = 60;
 /** A glide that got no frames (a window the system stopped painting) still ends at the latest line by then. */
@@ -1176,6 +1181,10 @@ function TranscriptScroll({ turns, reduceMotion, marks, voices }: { turns: Turn[
   const glide = useRef<{ frame: number; limit: ReturnType<typeof setTimeout> } | null>(null);
   // Turns already there when the transcript opens just show; the ones that arrive after it come in.
   const opened = useRef(false);
+  const [showEarlier, setShowEarlier] = useState(false);
+  // A new call (an empty transcript) draws its latest lines again.
+  if (showEarlier && turns.length === 0) setShowEarlier(false);
+  const hidden = showEarlier ? 0 : Math.max(0, turns.length - ISLAND_WINDOW);
   useEffect(() => {
     opened.current = true;
   }, []);
@@ -1277,7 +1286,12 @@ function TranscriptScroll({ turns, reduceMotion, marks, voices }: { turns: Turn[
         <div>
           {turns.length === 0 && <div className="listening">Listening…</div>}
           <div className="bubbles">
-            {turns.map((turn) => (
+            {hidden > 0 && (
+              <button type="button" className="earlier" onClick={() => setShowEarlier(true)}>
+                {hidden} earlier
+              </button>
+            )}
+            {(hidden ? turns.slice(hidden) : turns).map((turn) => (
               <MemoTurnBubble
                 key={turn.id}
                 turn={turn}

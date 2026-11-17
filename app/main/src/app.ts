@@ -815,10 +815,18 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   const trace = traceOn ? createTranscriptTrace(options.userDataDir) : null;
 
-  /** The state for the island without its turns: those go as changes (`island:turns`). */
-  const withoutTurns = (state: IslandState): Omit<IslandState, "turns"> => {
-    const { turns: _turns, ...rest } = state;
-    return rest;
+  /** The live call assistant's view the island was last sent: it keeps it, and is sent it again only when it changes. */
+  let liveSent: IslandState["live"] | undefined;
+  /**
+   * The state for the island without its turns (those go as changes, `island:turns`), and with the live assistant's view
+   * only when it changed (the island keeps the last one). Every transcript update is a state: sending the assistant's whole
+   * view with each copied it into the island and redrew what shows it several times a second, unchanged.
+   */
+  const forIsland = (state: IslandState): Omit<IslandState, "turns" | "live"> & { live?: IslandState["live"] } => {
+    const { turns: _turns, live, ...rest } = state;
+    if (live === liveSent) return rest;
+    liveSent = live;
+    return { ...rest, live };
   };
 
   function pushState(state: IslandState): void {
@@ -831,7 +839,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (!followPlacement(state)) fit(targetSize(state), false);
     const change = controller.takeTurnsChange();
     if (change) island.webContents.send("island:turns", change);
-    island.webContents.send("island:state", withoutTurns(state));
+    island.webContents.send("island:state", forIsland(state));
     refreshTray(state);
     dashboard.releaseIfIdle();
   }
@@ -840,7 +848,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const sendIslandFull = () => {
     controller.takeTurnsChange();
     island.webContents.send("island:turns", { turnsFrom: 0, turns: controller.state.turns });
-    island.webContents.send("island:state", withoutTurns(controller.state));
+    // A page that loaded again holds nothing: the assistant's view goes too.
+    liveSent = undefined;
+    island.webContents.send("island:state", forIsland(controller.state));
   };
 
   await island.loadFile(join(here, "../../island/dist/index.html"));

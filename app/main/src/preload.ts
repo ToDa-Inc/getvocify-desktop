@@ -14,6 +14,9 @@ ipcRenderer.on("island:turns", (_event, change: { turnsFrom: number; turns: Turn
   turns = [...turns.slice(0, change.turnsFrom), ...change.turns];
 });
 
+/** The live call assistant's view the island keeps: the shell sends it only when it changed. */
+let live: IslandState["live"] = null;
+
 /** The small lists the island is sent whole with each state: an unchanged one keeps its object (the rows that use it). */
 const kept = new Map<string, { json: string; value: unknown }>();
 function stable<T>(name: string, value: T): T {
@@ -27,8 +30,10 @@ function stable<T>(name: string, value: T): T {
 contextBridge.exposeInMainWorld("vocifyIsland", {
   platform: process.platform,
   onState(callback: (state: IslandState) => void) {
-    const handler = (_event: unknown, state: Omit<IslandState, "turns">) =>
-      callback({ ...state, turns, voices: stable("voices", state.voices), people: stable("people", state.people) } as IslandState);
+    const handler = (_event: unknown, state: Omit<IslandState, "turns" | "live"> & { live?: IslandState["live"] }) => {
+      if ("live" in state) live = state.live ?? null;
+      callback({ ...state, turns, live, voices: stable("voices", state.voices), people: stable("people", state.people) } as IslandState);
+    };
     ipcRenderer.on("island:state", handler);
     ipcRenderer.send("island:ready");
     return () => ipcRenderer.removeListener("island:state", handler);

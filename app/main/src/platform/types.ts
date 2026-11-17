@@ -30,6 +30,8 @@ export type DetectedCaller = {
   browser: boolean;
   /** Every call app on the mic, when more than one holds it (the others do not hide a call that is only in one of them). */
   holding?: string[];
+  /** Windows: where the app was seen holding the mic, the privacy record or a capture audio session. */
+  source?: "registry" | "capture";
 };
 
 /** Which app started or stopped a call: reports a caller when one starts, null when it ends, and nothing in between. */

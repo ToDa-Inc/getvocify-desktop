@@ -11,8 +11,12 @@
 
 export const MIC_CONSENT_KEY = "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\CapabilityAccessManager\\ConsentStore\\microphone";
 
-/** One app that has used the microphone, and when (ms since the epoch; 0 when never). */
-export type MicUse = { id: string; path: string | null; exe: string; started: number; stopped: number; active: boolean };
+/**
+ * One app that has used the microphone, and when (ms since the epoch; 0 when never). `source` says where it was seen:
+ * the privacy record (registry, the default) or a capture audio session (capture-sessions.ts).
+ */
+export type MicUse = { id: string; path: string | null; exe: string; started: number; stopped: number; active: boolean; source?: MicSource };
+export type MicSource = "registry" | "capture";
 
 const FILETIME_EPOCH_MS = 11644473600000n;
 
@@ -122,7 +126,7 @@ export function genericCallApp(use: Pick<MicUse, "exe" | "path">): CallApp | nul
   return { name: name.charAt(0).toUpperCase() + name.slice(1), browser: false };
 }
 
-export type DetectedCaller = { name: string; appId: string; path: string | null; browser: boolean };
+export type DetectedCaller = { name: string; appId: string; path: string | null; browser: boolean; source: MicSource };
 
 const normalizePath = (value: string) => value.replace(/\//g, "\\").toLowerCase();
 
@@ -140,7 +144,7 @@ export function pickCaller(uses: MicUse[], options: { now: number; settleMs: num
     if (own && use.path && normalizePath(use.path) === own) continue;
     const app = callAppFor(use.exe) ?? genericCallApp(use);
     if (!app) continue;
-    candidates.push({ name: app.name, appId: use.exe, path: use.path, browser: app.browser });
+    candidates.push({ name: app.name, appId: use.exe, path: use.path, browser: app.browser, source: use.source ?? "registry" });
   }
   candidates.sort((a, b) => Number(a.browser) - Number(b.browser));
   return candidates[0] ?? null;
@@ -158,6 +162,9 @@ export type MicWatcherDeps = {
   /** Every app holding the mic (path or package), call app or not, when that set changes: for the log, to see what a
    * call no detection knows (a Phone Link call) holds. */
   onActive?(apps: string[]): void;
+  /** The microphone uses the capture audio sessions show now (apps holding the mic whatever the record says). Read at
+   * every look, so a call is seen even when the record has stopped being written. */
+  captures?(): MicUse[];
 };
 
 const POLL_MS = 2000;
@@ -168,7 +175,6 @@ export class MicWatcher {
   private readonly deps: MicWatcherDeps;
   private stop: (() => void) | null = null;
   private busy = false;
-  private lastOutput: string | null = null;
   private reported: string | null | undefined = undefined;
   private lastActive: string | null = null;
 
@@ -192,18 +198,15 @@ export class MicWatcher {
     this.busy = true;
     try {
       const output = await this.deps.read();
-      // Nothing changed in the record and the answer is settled: there is nothing new to work out.
-      if (output === this.lastOutput && this.reported !== undefined && !this.hasUnsettled) return;
-      this.lastOutput = output;
-      const uses = parseMicConsent(output);
-      const active = uses.filter((u) => u.active).map((u) => u.id).sort();
+      const record = parseMicConsent(output);
+      const active = record.filter((u) => u.active).map((u) => u.id).sort();
       if (active.join("\n") !== this.lastActive) {
         this.lastActive = active.join("\n");
         this.deps.onActive?.(active);
       }
+      const uses = [...record, ...(this.deps.captures?.() ?? [])];
       const now = this.deps.now();
       const caller = pickCaller(uses, { now, settleMs: SETTLE_MS, ownExePath: this.deps.ownExePath });
-      this.hasUnsettled = uses.some((u) => u.active && now - u.started < SETTLE_MS);
       const id = caller ? `${caller.appId}` : null;
       if (id !== this.reported) {
         this.reported = id;
@@ -215,6 +218,4 @@ export class MicWatcher {
       this.busy = false;
     }
   }
-
-  private hasUnsettled = false;
 }

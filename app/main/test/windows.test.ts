@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { crmUrlsOf, createPageReader, encodePowerShell, hostnamesOf, normalizeAddress, parsePageOutput, READ_PAGES_SCRIPT } from "../src/windows/browser-pages.ts";
 import { dialedDigits, parsePhoneLinkCall, phoneLinkCallScript } from "../src/windows/phone-link-call.ts";
 import { callAppFor, filetimeToMs, genericCallApp, MicWatcher, parseMicConsent, pickCaller, type DetectedCaller, type MicUse } from "../src/windows/mic-use.ts";
+import { CaptureSessions, parseCaptureLine } from "../src/windows/capture-sessions.ts";
 
 /* ---------- microphone use ---------- */
 
@@ -98,6 +99,97 @@ test("Vocify's own microphone use is never a call", () => {
   const uses = [use("vocify.exe", NOW - 5000, { path: own, id: own })];
   assert.equal(pickCaller(uses, { now: NOW, settleMs: 300, ownExePath: own }), null);
   assert.equal(pickCaller(uses, { now: NOW, settleMs: 300, ownExePath: own.toLowerCase().replace(/\\/g, "/") }), null, "case and slashes do not matter");
+});
+
+/* ---------- capture sessions: the apps holding the microphone, through Core Audio ---------- */
+
+const CHROME = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+const capture = (items: unknown[]) => `CAPTURE ${JSON.stringify(items)}`;
+
+test("the capture reader's report is parsed into the sessions holding the mic; system and unnamed processes are not", () => {
+  const chrome = { pid: 4242, app: "chrome", path: CHROME, id: "s1" };
+  const parsed = parseCaptureLine(capture([chrome, { pid: 0, app: "system-sounds", path: "", id: "s0" }, { pid: 7, app: "?", path: "", id: "s7" }, { pid: 9, app: "zoom", path: "", id: "" }]));
+  assert.deepEqual(parsed, [
+    { pid: 4242, app: "chrome", path: CHROME, id: "s1" },
+    { pid: 9, app: "zoom", path: null, id: "" },
+  ]);
+  assert.deepEqual(parseCaptureLine("CAPTURE []"), []);
+  assert.equal(parseCaptureLine("SESSIONS []"), null, "the render reader's line is not a capture report");
+  assert.equal(parseCaptureLine("ERROR access denied"), null);
+  assert.equal(parseCaptureLine("CAPTURE not json"), null);
+});
+
+test("a capture session starts when the reader first saw it, and is gone once it is no longer reported", () => {
+  const sessions = new CaptureSessions();
+  const zoom = { pid: 88, app: "Zoom", path: "C:\\Program Files\\Zoom\\bin\\Zoom.exe", id: "z1" };
+  sessions.update([zoom], NOW);
+  sessions.update([zoom], NOW + 2000);
+  assert.deepEqual(sessions.uses(), [{ id: zoom.path, path: zoom.path, exe: "zoom.exe", started: NOW, stopped: 0, active: true, source: "capture" }]);
+  assert.deepEqual(sessions.apps(), ["zoom.exe"]);
+  sessions.update([], NOW + 4000);
+  assert.deepEqual(sessions.uses(), []);
+  assert.deepEqual(sessions.apps(), []);
+});
+
+test("two sessions of one app are two uses, and a session with no path is named by its app", () => {
+  const sessions = new CaptureSessions();
+  sessions.update([{ pid: 5, app: "Ringover", path: null, id: "r1" }, { pid: 5, app: "Ringover", path: null, id: "r2" }], NOW);
+  assert.equal(sessions.uses().length, 2);
+  assert.deepEqual(sessions.apps(), ["ringover.exe"]);
+});
+
+test("capture sessions and the record together: a call the record misses is still a call", () => {
+  const options = { now: NOW, settleMs: 300, ownExePath: null };
+  const stale = parseMicConsent(app("C:\\Program Files\\Zoom\\bin\\Zoom.exe", NOW - 60_000, NOW - 50_000));
+  const sessions = new CaptureSessions();
+  sessions.update([{ pid: 4242, app: "chrome", path: CHROME, id: "c1" }], NOW - 5000);
+  const caller = pickCaller([...stale, ...sessions.uses()], options);
+  assert.equal(caller?.name, "Google Chrome");
+  assert.equal(caller?.source, "capture");
+  assert.equal(pickCaller(stale, options), null, "the stale record alone sees nothing");
+  const both = pickCaller([...parseMicConsent(app("C:\\x\\Zoom.exe", NOW - 5000, 0)), ...sessions.uses()], options);
+  assert.equal(both?.name, "Zoom", "a named app still wins over a browser");
+  assert.equal(both?.source, "registry");
+});
+
+test("Vocify's own capture session is never a call, by its path or by its name", () => {
+  const own = "C:\\Users\\a\\AppData\\Local\\Programs\\Vocify\\Vocify.exe";
+  const sessions = new CaptureSessions();
+  sessions.update([{ pid: 1, app: "Vocify", path: own, id: "v1" }, { pid: 2, app: "Vocify", path: null, id: "v2" }], NOW - 5000);
+  assert.equal(pickCaller(sessions.uses(), { now: NOW, settleMs: 300, ownExePath: own }), null);
+});
+
+test("the watcher reports a call seen only through capture sessions, with the source it was seen by", async () => {
+  let now = NOW;
+  let tick: (() => void) | null = null;
+  const callers: (DetectedCaller | null)[] = [];
+  const sessions = new CaptureSessions();
+  const watcher = new MicWatcher({
+    read: async () => app("C:\\Program Files\\Zoom\\bin\\Zoom.exe", NOW - 900_000, NOW - 800_000),
+    now: () => now,
+    every: (_ms, fn) => {
+      tick = fn;
+      return () => {};
+    },
+    ownExePath: null,
+    onCaller: (caller) => callers.push(caller),
+    captures: () => sessions.uses(),
+  });
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  watcher.start();
+  await settle();
+  assert.deepEqual(callers, [null]);
+  sessions.update([{ pid: 4242, app: "chrome", path: CHROME, id: "c1" }], now);
+  now += 2000;
+  tick?.();
+  await settle();
+  assert.equal(callers.at(-1)?.name, "Google Chrome");
+  assert.equal(callers.at(-1)?.source, "capture");
+  sessions.update([], now);
+  now += 2000;
+  tick?.();
+  await settle();
+  assert.equal(callers.at(-1), null, "the end of the call is seen the same way");
 });
 
 function watcherSetup(outputs: (() => string | Error)[]) {

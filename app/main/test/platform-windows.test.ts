@@ -51,6 +51,57 @@ callDetectorContract("Windows", () => {
   };
 });
 
+/** Windows with its privacy record silent (the registry is not written): only the capture sessions show the call. */
+callDetectorContract("Windows (capture sessions only)", () => {
+  let now = START;
+  const holding = new Map<string, number>();
+  let report: ((line: string) => void) | null = null;
+  const send = () =>
+    report?.(`CAPTURE ${JSON.stringify([...holding].map(([path, pid]) => ({ pid, app: path.slice(path.lastIndexOf("\\") + 1).replace(/\.exe$/i, ""), path, id: `${pid}-1` })))}`);
+  let tick: (() => void) | null = null;
+  const detector = createWindowsCallDetector({
+    read: async () => "",
+    now: () => now,
+    every: (_ms, fn) => {
+      tick = fn;
+      return () => void (tick = null);
+    },
+    ownExePath: VOCIFY,
+    captureReader: {
+      start(onLine) {
+        report = onLine;
+        send();
+      },
+      stop() {
+        report = null;
+      },
+    },
+  });
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  return {
+    detector,
+    zoomStarts: () => {
+      holding.set(ZOOM, 4242);
+      send();
+    },
+    zoomStops: () => {
+      holding.delete(ZOOM);
+      send();
+    },
+    vocifyStarts: () => {
+      holding.set(VOCIFY, 5150);
+      send();
+    },
+    advance: async (ms) => {
+      await settle();
+      now += ms;
+      tick?.();
+      await settle();
+      await settle();
+    },
+  };
+});
+
 /** A PowerShell reader that answers `front` and `page` from what the test says is on screen. */
 function fakeReader(screen: { front: string | null; url: string | null; dead: boolean }) {
   const stdout = new EventEmitter();

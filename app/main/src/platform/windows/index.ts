@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { encodePowerShell, READER_LOOP_SCRIPT } from "../../windows/browser-pages.ts";
 import { MIC_CONSENT_KEY } from "../../windows/mic-use.ts";
 import { parsePhoneLinkCall, phoneLinkCallScript } from "../../windows/phone-link-call.ts";
-import { AUDIO_SESSIONS_SCRIPT } from "../../windows/audio-sessions.ts";
+import { AUDIO_SESSIONS_SCRIPT, CAPTURE_SESSIONS_SCRIPT } from "../../windows/audio-sessions.ts";
 import type { ReaderChild } from "../../windows/page-reader-process.ts";
 import type { PlatformEnv } from "../env.ts";
 import { every, runQuiet } from "../exec.ts";
@@ -47,19 +47,20 @@ async function telAppIsPhoneLink(name: string): Promise<boolean> {
   return /phone link|enlace m[oó]vil|yourphone/i.test(name);
 }
 
-/** One PowerShell reading Core Audio's sessions while a call on the phone is followed; its output split into lines. */
-function createAudioSessionReader(log: (line: string) => void): AudioSessionReader {
+/** One PowerShell reading Core Audio's sessions (audio-sessions.ts); its output split into lines. `label` names it in the log. */
+function createSessionsReader(script: string, label: string, log: (line: string) => void): AudioSessionReader {
   let child: ReturnType<typeof spawn> | null = null;
+  const tracked = `${label.replace(/ /g, "-")} reader`;
   return {
     start(onLine) {
       if (child) return;
-      const started = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(AUDIO_SESSIONS_SCRIPT)], {
+      const started = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(script)], {
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
       child = started;
       countLaunch("powershell.exe");
-      trackChild("audio-sessions reader", started);
+      trackChild(tracked, started);
       let pending = "";
       started.stdout?.on("data", (chunk: Buffer) => {
         pending += chunk.toString("utf8");
@@ -70,11 +71,11 @@ function createAudioSessionReader(log: (line: string) => void): AudioSessionRead
       started.stderr?.on("data", (chunk: Buffer) => {
         // PowerShell's own "#< CLIXML" header on its error stream is not an error.
         const text = chunk.toString("utf8").replace(/#< CLIXML/g, "").trim();
-        if (text) log(`audio sessions: ${text.slice(0, 300)}`);
+        if (text) log(`${label}: ${text.slice(0, 300)}`);
       });
       started.on("exit", (code) => {
         if (child === started) child = null;
-        if (code) log(`audio sessions: reader exited ${code}`);
+        if (code) log(`${label}: reader exited ${code}`);
       });
     },
     stop() {
@@ -126,6 +127,10 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
       ownExePath: process.execPath,
       onError: (error) => env.log(`call detection read failed: ${String(error)}`),
       onActive: (apps) => env.log(`mic in use (Windows record): ${apps.length ? apps.join(", ") : "none"}`),
+      // The apps holding the mic through capture sessions: a second source, read by the same kind of reader.
+      captureReader: createSessionsReader(CAPTURE_SESSIONS_SCRIPT, "capture sessions", env.log),
+      onCaptureActive: (apps) => env.log(`mic in use (capture sessions): ${apps.length ? apps.join(", ") : "none"}`),
+      onCaptureError: (line) => env.log(`capture sessions: ${line.slice(0, 300)}`),
     }),
     crmScreenReader: createWindowsCrmScreenReader({
       spawn: () => {
@@ -145,7 +150,7 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
     }),
     // A window that cannot take focus (focusable: false) is created WS_EX_NOACTIVATE: a click never activates the app.
     island: { prepare: () => "non-activating (Windows: not focusable)" },
-    audioSessions: createAudioSessionReader(env.log),
+    audioSessions: createSessionsReader(AUDIO_SESSIONS_SCRIPT, "audio sessions", env.log),
     phone: createWindowsPhone({
       telApp: () => {
         if (Date.now() - telAppAskedAt > 10 * 60_000) askTelApp();

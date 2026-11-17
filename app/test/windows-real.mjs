@@ -216,7 +216,22 @@ function linesOf(child) {
   while (!held.some((l) => l.startsWith("HOLD ")) && Date.now() - started < 90000 && holder.exitCode === null) await sleep(250);
   const answer = held.find((l) => l.startsWith("HOLD ")) ?? "no answer";
   console.log(`      holder: ${answer} (pid ${holder.pid}) in ${Date.now() - started} ms`);
-  if (answer !== "HOLD OPEN") {
+  if (answer.startsWith("HOLD NOENDPOINT")) {
+    // A hosted runner often has no microphone at all, so no process can hold one and the PID check cannot run here. Not
+    // a pass: printed as SKIP. The reader must still compile and answer with its report (an empty list).
+    console.log("SKIP the PID check: this machine has no capture endpoint (no microphone), so nothing can hold one");
+    const reader = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(CAPTURE_SESSIONS_SCRIPT)], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    const reports = linesOf(reader);
+    const at = Date.now();
+    while (!reports.some((l) => l.startsWith("CAPTURE ")) && Date.now() - at < 60000 && reader.exitCode === null) await sleep(250);
+    const report = reports.find((l) => l.startsWith("CAPTURE ")) ?? "no report";
+    check(parseCaptureLine(report) !== null, `the capture reader compiles under Windows PowerShell and answers (${report.slice(0, 120)})`);
+    try {
+      execFileSync("taskkill", ["/PID", String(reader.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    } catch {
+      // Already closed.
+    }
+  } else if (answer !== "HOLD OPEN") {
     failures.push(`the microphone could not be opened on this machine (${answer})`);
     console.log(`FAIL the microphone could not be opened on this machine (${answer})`);
   } else {

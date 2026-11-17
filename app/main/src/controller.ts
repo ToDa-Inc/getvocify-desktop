@@ -109,6 +109,7 @@ export class IslandController {
   private current: IslandState;
   /** Everything the dashboard has pushed, key by key (`listening` is read from here). */
   private shell: Record<string, unknown> = {};
+  private pointerLogs = 0;
   private liveType: LiveType | null = null;
   /** Which type is Vocify's and which the rep's, and the line that announces a change. */
   private proposal = new TypeProposal();
@@ -445,6 +446,11 @@ export class IslandController {
   act(action: IslandAction): void {
     // What the rep pressed and what the island was showing, so a press that seems lost can be told from one never made.
     if (action.name !== "pointer") this.effects.log?.(`island: ${action.name} pressed (${this.mode})`);
+    else if (this.pointerLogs < 20) {
+      // The cursor reaching the island at all: a rep whose presses never show here may not even be reaching it.
+      this.pointerLogs += 1;
+      this.effects.log?.(`island: pointer ${action.inside ? "over it" : "left it"} (${this.mode})`);
+    }
     switch (action.name) {
       case "toggle":
         return this.toggle();

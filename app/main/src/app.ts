@@ -571,7 +571,15 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (reach === sideReaching) return;
     sideReaching = reach;
     island.setIgnoreMouseEvents(!reach, { forward: true });
+    // A rep's pill that takes no clicks: where the cursor and the pill were each time the window started or stopped
+    // taking them (the first few per launch).
+    if (reachLogs < 40) {
+      reachLogs += 1;
+      const box = sideHits.boxes[0];
+      log(`pill input: ${reach ? "takes clicks" : "click-through"} at cursor ${x},${y} in window ${at.width}x${at.height}; pill ${box ? `${Math.round(box.x)},${Math.round(box.y)} ${Math.round(box.width)}x${Math.round(box.height)}` : "none"}${sideHits.hold ? ", held" : ""}`);
+    }
   };
+  let reachLogs = 0;
   const stopReaching = () => {
     if (sideReach) clearInterval(sideReach);
     sideReach = null;
@@ -1071,10 +1079,12 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (platform !== "win32" || !fromIsland(event.sender) || !sideActive || typeof raw !== "object" || raw === null) return;
     const { boxes, hold } = raw as { boxes?: unknown; hold?: unknown };
     const finite = (box: { x: number; y: number; width: number; height: number }) => [box.x, box.y, box.width, box.height].every(Number.isFinite);
+    const before = sideHits.boxes.length;
     sideHits = {
       boxes: Array.isArray(boxes) ? boxes.slice(0, 8).filter(finite) : [],
       hold: hold === true,
     };
+    if (sideHits.boxes.length !== before) log(`pill input: the page drew ${sideHits.boxes.length} pill area(s)`);
   });
   // A pill dragged onto another screen takes the window with it: the page keeps drawing it under the pointer.
   ipcMain.on("island:pill-drag", (event, x: unknown, y: unknown) => {
@@ -1322,6 +1332,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   log(`app ${app.getVersion()}, dashboard ${options.dashboardUrl}`);
   log(`dashboard told the platform is ${options.reportedPlatform ?? platform}`);
+  log(`screens: ${screen.getAllDisplays().map((d) => `${d.bounds.width}x${d.bounds.height} at ${d.bounds.x},${d.bounds.y} scale ${d.scaleFactor}${d.id === screen.getPrimaryDisplay().id ? " (main)" : ""}`).join("; ")}`);
   log(`started: island ${Math.round(initial.width)}x${initial.height}, notch ${Math.round(placement.geometry.notchWidth)}px, bar ${placement.geometry.barHeight}px`);
   return {
     controller,

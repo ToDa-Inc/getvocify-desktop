@@ -105,7 +105,7 @@ app.whenReady().then(async () => {
       port: STAND_PORT,
       dist,
       userId,
-      onRequest: (method, path) => { if (process.env.SOAK_DEBUG && !seen.has(method + path)) { seen.add(method + path); console.log("      api", method, path); } },
+      onRequest: (method, path) => { if (!seen.has(method + path)) { seen.add(method + path); console.log("      api", method, path); } },
       onSocket: ({ send }) => {
         socketCount += 1;
         if (callStart === null) callStart = Date.now();
@@ -130,7 +130,7 @@ app.whenReady().then(async () => {
     const { startApp } = await import(pathToFileURL(join(here, "../main/dist-shell-test/app.mjs")).href);
     handle = await startApp({ dashboardUrl: `http://127.0.0.1:${STAND_PORT}/dashboard`, trustFiles: false, userDataDir, releaseGraceMs: 600000 });
     const dash = handle.dashboard.contents;
-    if (process.env.SOAK_DEBUG) dash.on("console-message", (_e, level, message) => { if (level >= 2) console.log("      page", message.slice(0, 200)); });
+    dash.on("console-message", (_e, level, message) => { if (level >= 2) console.log("      page", message.slice(0, 300)); });
     // The page signs in with a stored refresh token, then reloads into the signed-in dashboard.
     await dash.executeJavaScript(`localStorage.setItem("vocify_refresh", "soak-refresh"); localStorage.setItem("vocify_token", ${JSON.stringify(fakeJwt(userId))})`);
     dash.reload();
@@ -145,6 +145,7 @@ app.whenReady().then(async () => {
     const started = Date.now();
     while (callStart === null && Date.now() - started < 60000) await sleep(100);
     console.log(`      before Record: mode ${handle.controller.state.mode.kind}, recorderReady ${handle.controller.state.recorderReady}`);
+    console.log("      permissions", JSON.stringify(await handle.permissions()).slice(0, 400));
     if (callStart === null) throw new Error("the dashboard did not open its transcription socket after Record");
 
     // Sampling: one row per simulated minute.

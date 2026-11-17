@@ -110,6 +110,7 @@ jobs:
       # passes: as-is, under memory pressure (a ballast leaves about 1.5 GB free), and under pressure at device scale 2.
       # About 25 minutes in all; the job timeout is 60.
       - name: Check out the dashboard for the long-call soak
+        if: always()
         uses: actions/checkout@v4
         with:
           repository: ToDa-Inc/getvocify
@@ -117,6 +118,7 @@ jobs:
           path: getvocify-dashboard
 
       - name: Build the dashboard the soak loads (its API is the soak's stand-in on this host)
+        if: always()
         shell: bash
         working-directory: ${{ github.workspace }}/getvocify-dashboard
         env:
@@ -127,6 +129,7 @@ jobs:
           npx vite build --outDir "$RUNNER_TEMP/dashboard"
 
       - name: Long call through the real dashboard
+        if: always()
         shell: bash
         env:
           SOAK_DASHBOARD_DIST: ${{ runner.temp }}/dashboard
@@ -134,6 +137,7 @@ jobs:
         run: npm run test:soak
 
       - name: Long call under memory pressure
+        if: always()
         shell: bash
         env:
           SOAK_DASHBOARD_DIST: ${{ runner.temp }}/dashboard
@@ -142,6 +146,7 @@ jobs:
         run: npm run test:soak
 
       - name: Long call under memory pressure at device scale 2
+        if: always()
         shell: bash
         env:
           SOAK_DASHBOARD_DIST: ${{ runner.temp }}/dashboard

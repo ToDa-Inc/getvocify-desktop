@@ -389,7 +389,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
                 <Line busy trailing={<button type="button" className="small-action" onClick={() => send("undo")}>Undo</button>}>
                   <span>Updating {postCall.contactName ?? "the contact"} in {crm}…</span>
                 </Line>
-                {postCall.undoUntil !== null && <UndoLine until={postCall.undoUntil} />}
+                {postCall.undoUntil !== null && <UndoLine key={postCall.undoUntil} until={postCall.undoUntil} />}
               </div>
             )}
             {postCall.stage === "done" && (
@@ -837,13 +837,14 @@ function NoteBox({ editable, text, placeholder, onChange }: { editable: boolean;
   );
 }
 
-/** How long Undo stays: a thin line that shrinks over the 5 s. */
+/** How long Undo stays: a thin line that shrinks from full to nothing, whatever the window the app gives. */
 function UndoLine({ until }: { until: number }) {
   const [now, setNow] = useState(() => Date.now());
+  const [total] = useState(() => Math.max(1, until - Date.now()));
   useEffect(() => {
     if (now >= until) return;
     const timer = setTimeout(() => setNow(Date.now()), 33);
     return () => clearTimeout(timer);
   }, [now, until]);
-  return <div className="undo-line" style={{ width: `${Math.max(0, Math.min(1, (until - now) / 5000)) * 100}%` }} />;
+  return <div className="undo-line" style={{ width: `${Math.max(0, Math.min(1, (until - now) / total)) * 100}%` }} />;
 }

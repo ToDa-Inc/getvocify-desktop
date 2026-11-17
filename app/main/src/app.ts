@@ -861,6 +861,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     followPlacement(controller.state);
     sendIslandFull();
   });
+  // The island only goes when the app does. A rep's island window was closed while the app ran (2026-11-17, Windows): it
+  // was gone for good, with every call to it failing, until the app was restarted. Whatever closes it is refused, and said.
+  island.on("close", (event) => {
+    if (quitting) return;
+    event.preventDefault();
+    log("island: something tried to close its window; it stays");
+  });
+  island.on("closed", () => log("island: its window closed"));
   island.webContents.on("render-process-gone", (_event, details) => {
     if (details.reason !== "clean-exit") pageCrashed();
     reloadIsland(`its page process is gone (${details.reason})`);
@@ -1373,7 +1381,11 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     // On its own the app never restarts under the rep's eyes: an open window waits until it is closed (or Restart now).
     canInstallUpdate: () => !dashboard.visible && canRestartForUpdate() && quietForUpdate(),
     startedAfterUpdate,
-    markUpdateRestart: () => settings.set("restartedForUpdate", true),
+    markUpdateRestart: () => {
+      settings.set("restartedForUpdate", true);
+      // The update closes the windows before the app quits: the island must let it.
+      quitting = true;
+    },
     attachUpdater: (attached) => {
       updater = attached;
       dashboard.emit("updates:changed", updateStatus());

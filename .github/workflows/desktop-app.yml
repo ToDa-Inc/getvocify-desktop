@@ -15,6 +15,10 @@ on:
         description: "Publish the result as a release that installed apps update to"
         type: boolean
         default: false
+      getvocify_ref:
+        description: "The getvocify (dashboard) ref the long-call soak builds from (its baseline runs set this)"
+        type: string
+        default: ""
 
 # Publishing a release needs write access to this repository's contents.
 permissions:
@@ -28,7 +32,7 @@ concurrency:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: app
@@ -99,6 +103,59 @@ jobs:
       # The rep's mic can cancel everything the PC plays (Zoom, a video): Chromium's echoCancellation "all".
       - name: The microphone can apply echoCancellation "all"
         run: npm run test:echo-all
+
+      # A 60-minute call through the real dashboard (built from getvocify, public, no token), its transcript scripted
+      # and fed at a compressed cadence. Memory and CPU of the dashboard and island must not climb over the call. Three
+      # passes: as-is, under memory pressure (a ballast leaves about 1.5 GB free), and under pressure at device scale 2.
+      # About 25 minutes in all; the job timeout is 60.
+      - name: Check out the dashboard for the long-call soak
+        uses: actions/checkout@v4
+        with:
+          repository: ToDa-Inc/getvocify
+          ref: ${{ inputs.getvocify_ref || 'main' }}
+          path: getvocify-dashboard
+
+      - name: Build the dashboard the soak loads (its API is the soak's stand-in on this host)
+        shell: bash
+        working-directory: ${{ github.workspace }}/getvocify-dashboard
+        env:
+          VITE_API_URL: http://127.0.0.1:8899/api/v1
+          VITE_LIVE_API_URL: http://127.0.0.1:8899/api/v1
+        run: |
+          npm ci --no-audit --no-fund
+          npx vite build --outDir "$RUNNER_TEMP/dashboard"
+
+      - name: Long call through the real dashboard
+        shell: bash
+        env:
+          SOAK_DASHBOARD_DIST: ${{ runner.temp }}/dashboard
+          SOAK_OUT: ${{ runner.temp }}/soak.jsonl
+        run: npm run test:soak
+
+      - name: Long call under memory pressure
+        shell: bash
+        env:
+          SOAK_DASHBOARD_DIST: ${{ runner.temp }}/dashboard
+          SOAK_OUT: ${{ runner.temp }}/soak.jsonl
+          SOAK_PRESSURE: "1"
+        run: npm run test:soak
+
+      - name: Long call under memory pressure at device scale 2
+        shell: bash
+        env:
+          SOAK_DASHBOARD_DIST: ${{ runner.temp }}/dashboard
+          SOAK_OUT: ${{ runner.temp }}/soak.jsonl
+          SOAK_PRESSURE: "1"
+          SOAK_DPR: "2"
+        run: npm run test:soak
+
+      - name: Keep the soak's per-minute samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: long-call-soak-samples
+          path: ${{ runner.temp }}/soak.jsonl
+          if-no-files-found: ignore
 
       - name: Build the installer
         run: npm run dist:win

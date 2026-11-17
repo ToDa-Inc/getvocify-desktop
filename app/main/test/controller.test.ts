@@ -1686,6 +1686,28 @@ test("the listening stops once the call is heard, cancelled, or never connects",
   assert.equal(never.log.soundStops, 1);
 });
 
+test("a heard call that no recording took is let go within a minute, not kept listening for as long as the app runs", () => {
+  const t = dialOnPhoneHeard();
+  t.advance(6);
+  t.log.soundWatch?.();
+  assert.equal(t.mode(), "starting");
+  t.advance(8.1);
+  assert.equal(t.log.soundStops, 0, "the start timeout alone does not stop it: a late start still takes the call over");
+  t.advance(60);
+  assert.equal(t.log.soundStops, 1, "a minute later, with no recording, the capture is let go");
+});
+
+test("a recording that starts in that minute takes the heard call over, and nothing is let go", () => {
+  const t = dialOnPhoneHeard();
+  t.advance(6);
+  t.log.soundWatch?.();
+  t.advance(9);
+  t.controller.show();
+  assert.equal(t.mode(), "recording");
+  t.advance(120);
+  assert.equal(t.log.soundStops, 0, "the recording keeps its capture");
+});
+
 test("a paused call on the phone is not measured for silence", () => {
   const t = dialOnPhoneHeard();
   t.log.soundWatch?.();

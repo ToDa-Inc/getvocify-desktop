@@ -137,9 +137,11 @@ export function SayBody({ state, act, transcript, compact = false, typeControl =
   const panelOpen = !compact || !hasSteps || ui.open;
   return (
     <Say.Provider value={ctx}>
+      {/* The call's type says what the call is, like the contact: above what to say, not among the views. */}
+      {compact && typeControl && <div className="say-type-row">{typeControl}</div>}
       <Feed />
       <div className="hairline" />
-      {(hasSteps || (compact && typeControl)) && <SayTabs hasSteps={hasSteps} />}
+      {hasSteps && <SayTabs hasSteps={hasSteps} />}
       <div className="live-views say-views" data-open={panelOpen} data-peek={ui.peek !== null} data-tab={tab}>
         {/* Both stay mounted, so the transcript keeps its place and the steps their scroll when the rep switches. */}
         <div className="say-pane" hidden={tab !== "transcript"}>
@@ -231,7 +233,7 @@ const PersonIcon = ({ size = 11 }) => (
  * carry no count, so a live "2/6" would not read as a score of the rep; Dani asked for it on 2026-11-16, in the place of
  * the progress bar). */
 function SayTabs({ hasSteps }: { hasSteps: boolean }) {
-  const { live, ui, update, act, words, compact, typeControl } = useSay();
+  const { live, ui, update, act, words, compact } = useSay();
   const progress = live.progress;
   const doneSteps = progress.steps.filter((s) => (`step:${s.id}` in ui.marks ? ui.marks[`step:${s.id}`] : s.done)).length;
   const pulse = useGrowPulse(doneSteps);
@@ -258,8 +260,6 @@ function SayTabs({ hasSteps }: { hasSteps: boolean }) {
           </button>
         ))}
       </div>}
-      {/* The call type is always in reach, with or without steps: live help follows its playbook. */}
-      {compact && typeControl && <div className="say-type-row">{typeControl}</div>}
     </div>
   );
 }

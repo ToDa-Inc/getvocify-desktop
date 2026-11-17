@@ -321,9 +321,9 @@ html:has(.side-stage), body:has(.side-stage) { overflow: hidden; }
    panel closed (Resumen, the contact) gets room of its own. */
 .open-island[data-compact="true"] .say-views { flex: 0 1 auto; min-height: 0; container-type: normal; }
 .open-island[data-compact="true"] .say-views[data-open="false"] { display: none; }
-.open-island[data-compact="true"] .say-views[data-open="false"][data-peek="true"] { display: flex; flex: none; height: 190px; }
+.open-island[data-compact="true"] .say-views[data-open="false"][data-peek="true"] { display: flex; flex: none; height: 186px; }
 .open-island[data-compact="true"] .say-views[data-open="false"][data-peek="true"] .say-pane { display: none; }
-.open-island[data-compact="true"] .say-peek .live-peek-card { max-height: 176px; }
+.open-island[data-compact="true"] .say-peek .live-peek-card { max-height: 172px; }
 .open-island[data-compact="true"] .say-pane { flex: 0 1 auto; }
 .open-island[data-compact="true"] .say-steps-tab { flex: 0 1 auto; }
 .open-island[data-compact="true"] .say-views[data-tab="transcript"][data-open="true"] { flex: 0 1 200px; }
@@ -338,7 +338,7 @@ html:has(.side-stage), body:has(.side-stage) { overflow: hidden; }
 .open-island[data-compact="true"] .say-contact { max-width: 110px; }
 
 /* ---------- Pasos as one list (2026-11-16) ---------- */
-.say-type-row { flex: none; display: flex; align-items: center; min-height: 22px; margin-left: auto; max-width: 62%; min-width: 0; }
+.say-type-row { flex: none; display: flex; align-items: center; height: 22px; padding: 4px 12px 0; box-sizing: border-box; min-width: 0; }
 .say-tabs-row .live-tabs { flex: 1 1 auto; min-width: 0; }
 .say-steps-tab { gap: 1px; }
 .say-row { padding: 0 7px; }

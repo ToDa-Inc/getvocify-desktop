@@ -216,7 +216,7 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
         compact: document.querySelector('.open-island')?.dataset.compact === 'true',
         panel: (() => { const v = document.querySelector('.say-views'); return v ? getComputedStyle(v).display !== 'none' && v.getBoundingClientRect().height > 0 : null; })(),
         controls: all('.say-controls > *').map((b) => b.getAttribute('aria-label') ?? b.title),
-        typeChip: !!document.querySelector('.say-tabs-row .say-type-row .type-tag-button'),
+        typeChip: !!document.querySelector('.say-type-row .type-tag-button'),
         findCount: text(document.querySelector('.say-find-count')),
         menu: all('.float-menu .option-row').map((r) => text(r)),
         rows: all('.say-pane:not([hidden]) .say-steps-tab .say-step').length,

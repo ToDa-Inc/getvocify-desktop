@@ -129,7 +129,8 @@
       const settled = done ? words.length : Math.max(0, shown - 3);
       const turn = { key, you, label, text: words.slice(0, settled).join(" "), pending: done ? "" : words.slice(settled, shown).join(" ") };
       meeting.turns = meeting.turns.filter((t) => t.key !== key).concat(turn);
-      set({ overlay: { turns: meeting.turns } });
+      // The turns before the one being said are final: a shell that takes changes gets the current one only.
+      set({ overlay: bridge.shell.overlayDelta ? { from: meeting.turns.length - 1, turns: meeting.turns.slice(-1) } : { turns: meeting.turns } });
       if (done) later(1100, next); else later(260, step);
     };
     step();

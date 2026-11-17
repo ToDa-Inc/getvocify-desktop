@@ -65,6 +65,8 @@ export type AppHandle = {
   islandBounds(): { x: number; y: number; width: number; height: number };
   /** The platform helper's job, by hand: the app now holding the microphone. */
   detectCall(caller: Caller | null): void;
+  /** Test hook: a `shell:state` update, as the dashboard page sends it, without a page. */
+  shellState(state: Record<string, unknown>): void;
   choosePlacement(next: "notch" | "side"): void;
   /** Test hook: the icon of an app, as the island shows it (a small PNG data URL), or null. */
   iconFor(path: string): Promise<string | null>;
@@ -1347,6 +1349,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     island,
     islandBounds: () => island.getBounds(),
     detectCall: (caller) => controller.callChanged(caller),
+    shellState: (state) => void bridge("shell:state", { state }),
     choosePlacement: (next: "notch" | "side") => setPlacement(next),
     iconFor,
     permissions: () => bridge("permissions:status", {}),

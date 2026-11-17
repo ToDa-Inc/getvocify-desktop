@@ -138,6 +138,17 @@ app.whenReady().then(async () => {
     handle.detectCall(null);
     check(mode() === "idle", "the call app letting go returns it to idle");
 
+    // --- a long transcript: the page sends 600 turns, then only the one that changes; the shell keeps the rest
+    const longTurn = (i) => ({ key: `long-${i}`, you: i % 2 === 0, label: i % 2 === 0 ? null : "Them", text: `line ${i} `.repeat(8).trim(), pending: "" });
+    const longTurns = Array.from({ length: 600 }, (_, i) => longTurn(i));
+    handle.shellState({ overlay: { turns: longTurns } });
+    check(await until(() => controller.state.turns.length === 600, 8000, "600 turns"), "a whole overlay of 600 turns reaches the island's list");
+    const kept = controller.state.turns[10];
+    handle.shellState({ overlay: { from: 599, turns: [{ ...longTurn(599), text: "changed at the end" }, longTurn(600)] } });
+    check(await until(() => controller.state.turns.length === 601, 8000, "601 turns"), "a change from the last turn on adds the new turn");
+    check(controller.state.turns[10] === kept || controller.state.turns[10].text === kept.text, "turns before the change are kept as they were");
+    check(controller.state.turns[599].text === "changed at the end", "the changed turn is replaced");
+
     // --- permissions, as the dashboard reads them
     const permissions = await handle.permissions();
     check(["authorized", "denied", "never_requested"].includes(permissions.microphone) && ["win32", "darwin"].includes(permissions.platform), `permissions report a platform and a microphone state (${JSON.stringify(permissions)})`);

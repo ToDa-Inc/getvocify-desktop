@@ -7,6 +7,7 @@ import { createWindowsCallDetector } from "../src/platform/windows/call-detector
 import { createWindowsCrmScreenReader } from "../src/platform/windows/crm-screen-reader.ts";
 import { createWindowsPermissions } from "../src/platform/windows/permissions.ts";
 import type { ReaderChild } from "../src/windows/page-reader-process.ts";
+import type { DetectedCaller } from "../src/platform/types.ts";
 import { callDetectorContract } from "./contracts/call-detector.contract.ts";
 import { crmScreenReaderContract } from "./contracts/crm-screen-reader.contract.ts";
 import { permissionsContract } from "./contracts/permissions.contract.ts";
@@ -186,4 +187,51 @@ test("Windows phone: once the call has started, the press still waiting is stopp
   const dialer = createWindowsPhone({ telApp: () => "Enlace Móvil", openExternal: () => {}, openSoundRecording: () => {}, pressCall: () => {}, stopPressing: () => void (stopped += 1) });
   dialer.callStarted();
   assert.equal(stopped, 1);
+});
+
+/** Windows with the reader reporting the record itself: the registry is asked only while the reader is silent. */
+test("Windows reads the record through its reader, asks the registry only while the reader is silent, and logs an error once", async () => {
+  let now = START;
+  let registryReads = 0;
+  let report: ((line: string) => void) | null = null;
+  const errors: string[] = [];
+  const callers: (DetectedCaller | null)[] = [];
+  let tick: (() => void) | null = null;
+  const detector = createWindowsCallDetector({
+    read: async () => {
+      registryReads += 1;
+      return "";
+    },
+    now: () => now,
+    every: (_ms, fn) => {
+      tick = fn;
+      return () => void (tick = null);
+    },
+    ownExePath: VOCIFY,
+    captureReader: {
+      start(onLine) {
+        report = onLine;
+      },
+      stop() {
+        report = null;
+      },
+    },
+    onCaptureError: (line) => errors.push(line),
+  });
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  const zoom = `CONSENT [{"k":"NonPackaged\\\\C#Program Files#Zoom#bin#Zoom.exe","s":"${(BigInt(START - 60_000) + 11644473600000n) * 10000n}","e":"0"}]`;
+  detector.start((caller) => callers.push(caller));
+  await settle();
+  const asked = registryReads;
+  report?.(zoom);
+  await settle();
+  assert.equal(callers.at(-1)?.name, "Zoom", "the call is seen from the reader's record, at once");
+  now += 2000;
+  tick?.();
+  await settle();
+  assert.equal(registryReads, asked, "no registry query while the reader reports");
+  report?.("CONSENT_ERROR access denied");
+  report?.("CONSENT_ERROR access denied");
+  assert.deepEqual(errors, ["CONSENT_ERROR access denied"], "the same error is logged once");
+  detector.stop();
 });

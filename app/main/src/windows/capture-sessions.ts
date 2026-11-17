@@ -4,9 +4,34 @@
  * privacy record says. Windows' record stopped being written on some PCs, so this is a second source for call detection.
  * The reader prints `CAPTURE [{"pid":..,"app":"..","path":"..","id":".."}]` on every change (see audio-sessions.ts).
  */
-import type { MicUse } from "./mic-use.ts";
+import { parseTicks, useOf, type MicUse } from "./mic-use.ts";
 
 export const CAPTURE_PREFIX = "CAPTURE ";
+export const CONSENT_PREFIX = "CONSENT ";
+
+/**
+ * `CONSENT [...]` from the reader: the microphone-use record under the consent store, read in the reader (no program is
+ * launched per look). Each item is a key below the microphone key with its times as text (see audio-sessions.ts). Null
+ * for any other line, including a `CONSENT_ERROR`.
+ */
+export function parseConsentLine(line: string): MicUse[] | null {
+  if (!line.startsWith(CONSENT_PREFIX)) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line.slice(CONSENT_PREFIX.length));
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) return null;
+  const text = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
+  return parsed.flatMap((item): MicUse[] => {
+    if (typeof item !== "object" || item === null) return [];
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.k !== "string") return [];
+    const use = useOf(entry.k, parseTicks(text(entry.s)), parseTicks(text(entry.e)));
+    return use ? [use] : [];
+  });
+}
 
 /** One capture session: the process holding the microphone, and the session instance (two sessions of one app are two). */
 export type CaptureSession = { pid: number; app: string; path: string | null; id: string };

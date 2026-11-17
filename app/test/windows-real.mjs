@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { crmUrlsOf, encodePowerShell, parsePageOutput, READ_PAGES_SCRIPT } from "../main/src/windows/browser-pages.ts";
 import { MIC_CONSENT_KEY, parseMicConsent, pickCaller } from "../main/src/windows/mic-use.ts";
 import { AUDIO_SESSIONS_SCRIPT, CAPTURE_SESSIONS_SCRIPT } from "../main/src/windows/audio-sessions.ts";
-import { parseCaptureLine } from "../main/src/windows/capture-sessions.ts";
+import { parseCaptureLine, parseConsentLine } from "../main/src/windows/capture-sessions.ts";
 import { parseSessionsLine } from "../main/src/call-audio-session.ts";
 import { parseTasklist } from "../main/src/resources.ts";
 
@@ -266,6 +266,39 @@ function linesOf(child) {
     execFileSync("taskkill", ["/PID", String(holder.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
   } catch {
     // Already closed.
+  }
+}
+
+/* ---------- 5. the microphone-use record, read by the capture reader itself (no registry query per look) ---------- */
+// A fake app's entry is written into the record with `reg add`; the capture reader must report it on its CONSENT line,
+// parsed as the same use `reg query` gives. This is the one place the reader's C# (the consent walk) runs for real.
+{
+  const consentKey = `${MIC_CONSENT_KEY}\\NonPackaged\\C:#vocify-ci#Consent.exe`;
+  try {
+    reg("add", consentKey, "/v", "LastUsedTimeStart", "/t", "REG_QWORD", "/d", ticks(Date.now() - 2000), "/f");
+    reg("add", consentKey, "/v", "LastUsedTimeStop", "/t", "REG_QWORD", "/d", "0", "/f");
+    const reader = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(CAPTURE_SESSIONS_SCRIPT)], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    const lines = linesOf(reader);
+    const at = Date.now();
+    const consent = () => parseConsentLine(lines.filter((l) => l.startsWith("CONSENT ")).at(-1) ?? "");
+    while (!consent()?.some((u) => u.exe === "consent.exe") && Date.now() - at < 60000 && reader.exitCode === null) await sleep(250);
+    const seen = consent()?.find((u) => u.exe === "consent.exe");
+    console.log(`      consent from the reader in ${Date.now() - at} ms: ${seen ? `consent.exe active=${seen.active}` : "not listed"}`);
+    check(seen?.active === true, "the capture reader reads the microphone-use record itself, and reports the fake app as active");
+    try {
+      execFileSync("taskkill", ["/PID", String(reader.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    } catch {
+      // Already closed.
+    }
+  } catch (error) {
+    failures.push(`the consent test threw: ${error}`);
+    console.log(`FAIL the consent test threw: ${error}`);
+  } finally {
+    try {
+      reg("delete", consentKey, "/f");
+    } catch {
+      // Already gone.
+    }
   }
 }
 

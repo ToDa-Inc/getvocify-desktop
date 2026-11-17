@@ -109,6 +109,18 @@ jobs:
       # and fed at a compressed cadence. Memory and CPU of the dashboard and island must not climb over the call. Three
       # passes: as-is, under memory pressure (a ballast leaves about 1.5 GB free), and under pressure at device scale 2.
       # About 25 minutes in all; the job timeout is 60.
+      # The runner's Windows says no desktop app may use the microphone; the soak's microphone is a fake device, so
+      # the setting is allowed for this runner user (the setting the page's microphone check reads).
+      - name: Let desktop apps use the microphone for the soak
+        if: always()
+        shell: pwsh
+        run: |
+          $base = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone'
+          New-Item -Path "$base\NonPackaged" -Force | Out-Null
+          Set-ItemProperty -Path $base -Name Value -Value Allow
+          Set-ItemProperty -Path "$base\NonPackaged" -Name Value -Value Allow
+          (Get-ItemProperty -Path $base).Value
+
       - name: Check out the dashboard for the long-call soak
         if: always()
         uses: actions/checkout@v4

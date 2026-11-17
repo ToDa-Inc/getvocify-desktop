@@ -17,7 +17,8 @@ import { HelpMarker, useHelpMarker } from "../say/Marker.tsx";
 type Act = (action: IslandAction) => void;
 
 /** A press that moves less than this is a tap (open or close), more is a drag. */
-const DRAG_SLOP = 4;
+// How far a press may wander and still be a click: a remote or virtual-machine mouse moves a few pixels on a click.
+const DRAG_SLOP = 8;
 
 export function SideDock({ state, act }: { state: IslandState; act: Act }) {
   const kind = state.mode.kind;
@@ -149,15 +150,25 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
     const p = press.current;
     press.current = null;
     reportHits();
-    if (!p?.moved || !area) return;
+    if (!p) return;
+    if (!p.moved) {
+      // A press let go where it began opens or closes it here, not on the click event: on a rep's Windows PC that event
+      // never came (2026-11-17), so the pill took no clicks. The click that may still follow is not counted again.
+      if (event.type !== "pointerup") return;
+      suppressClick.current = true;
+      act({ name: "toggle" });
+      return;
+    }
+    if (!area) return;
     suppressClick.current = true;
     const point = local(event, p.grabX, p.grabY);
     const next = snap(dragCentre(point, nearestEdge(point, area), area), area);
     setSpot(next);
     setDrag(null);
     window.vocifyIsland?.pillDrop?.(next);
-  }, [area, reportHits]);
-  // A drag ends with a click on the same element: that one does not open or close it.
+  }, [area, reportHits, act]);
+  // A press already opened or closed it, or a drag ended on it: that click does not count again. A click with no press
+  // before it (the keyboard, an assistive tool) opens or closes it.
   const onClick = () => {
     if (suppressClick.current) {
       suppressClick.current = false;

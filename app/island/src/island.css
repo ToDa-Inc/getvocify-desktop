@@ -186,6 +186,8 @@ button:focus, button:focus-visible, textarea:focus { outline: none; }
 .island[data-reduce-motion="true"] .type-note-pulse { display: none; }
 /* The island's hairline between the channel rows and the type rows of the same menu. */
 .float-menu .menu-divider { margin: 4px 6px; }
+.menu-heading { flex: none; display: flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; font-size: 10.5px; color: var(--secondary); opacity: 0.8; }
+.menu-heading > svg { flex: none; }
 
 .live-help-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--secondary); }
 .live-help-toggle[data-on="true"] { color: var(--beige); }

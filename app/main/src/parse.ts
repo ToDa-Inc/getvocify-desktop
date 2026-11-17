@@ -123,7 +123,16 @@ function webUrl(raw: unknown): string | null {
 
 export type LiveChannelKind = "call" | "meeting";
 /** Types by channel: the recording's channel, and whether the rep may switch it (not on a Vocify call). */
-export type LiveChannel = { selected: LiveChannelKind; fixed: boolean; options: { key: LiveChannelKind; label: string }[] };
+export type LiveChannelGroup = { key: LiveChannelKind; label: string; options: { key: string; label: string }[] };
+/** `groups`: both channels' types at once, each under its heading (a type of both is in both); `general`: the types
+ * outside any channel (Interna). Absent from an older dashboard, and from a call that cannot switch channel. */
+export type LiveChannel = {
+  selected: LiveChannelKind;
+  fixed: boolean;
+  options: { key: LiveChannelKind; label: string }[];
+  groups?: LiveChannelGroup[];
+  general?: { key: string; label: string }[];
+};
 export type LiveType = {
   selected: string | null;
   proposed: boolean;
@@ -149,7 +158,17 @@ export function parseLiveChannel(raw: unknown): LiveChannel | null {
     CHANNEL_KINDS.includes(option.key),
   );
   if (selected === undefined || !CHANNEL_KINDS.includes(selected) || options.length !== CHANNEL_KINDS.length) return null;
-  return { selected: selected as LiveChannelKind, fixed: bool(raw.fixed) ?? false, options };
+  const fixed = bool(raw.fixed) ?? false;
+  const groups = list(raw.groups).flatMap((group) => {
+    const key = str(group.key);
+    const label = str(group.label);
+    return key !== undefined && label !== undefined && CHANNEL_KINDS.includes(key)
+      ? [{ key: key as LiveChannelKind, label, options: labelled(group.options) }]
+      : [];
+  });
+  // Both headings or none: half a list would hide a channel.
+  const byChannel = !fixed && groups.length === CHANNEL_KINDS.length;
+  return { selected: selected as LiveChannelKind, fixed, options, ...(byChannel && { groups, general: labelled(raw.general) }) };
 }
 
 /** Null when there are no options to pick from. */

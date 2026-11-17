@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { backgroundLine, cornerRadius, earWidth, islandSize, offerBriefLines, showsConversation, showsMeeting, RECORDING_HEIGHT, sizesItself } from "./geometry.ts";
 import { JobsBadge, JobsLine, jobsIndicator } from "./Background.tsx";
 import { levelsStore } from "./levels.ts";
@@ -963,35 +963,75 @@ export function OpenIsland({ state, act, compact = false, onPopupExtent }: { sta
         </IconButton>
       </div>}
       {typeAnchor && menu && (
-        <FloatMenu anchor={typeAnchor} width={190} onClose={closeType} onExtent={onPopupExtent} label="Call type">
-          {menu.channel && (
+        <FloatMenu anchor={typeAnchor} width={190} maxHeight={groupedMenuHeight(menu)} onClose={closeType} onExtent={onPopupExtent} label="Call type">
+          {menu.channel?.groups ? (
+            // One list: each channel's types under its heading (a type of both is under both), then the ones of no channel.
             <>
-              {menu.channel.rows.map((row) => (
+              {menu.channel.groups.filter((group) => group.rows.length > 0).map((group, index) => (
+                <Fragment key={group.key}>
+                  {index > 0 && <div className="hairline menu-divider" />}
+                  <div className="menu-heading">
+                    {group.key === "call" ? <Phone size={10} /> : <Video size={10} />}
+                    <span>{group.label}</span>
+                  </div>
+                  {group.rows.map((row) => (
+                    <MenuRow
+                      key={row.key}
+                      label={row.label}
+                      selected={row.checked}
+                      onPick={() => {
+                        act({ name: "pickCallType", key: row.key, channel: group.key });
+                        setTypeAnchor(null);
+                      }}
+                    />
+                  ))}
+                </Fragment>
+              ))}
+              {(menu.channel.general ?? []).length > 0 && <div className="hairline menu-divider" />}
+              {(menu.channel.general ?? []).map((row) => (
                 <MenuRow
                   key={row.key}
-                  icon={row.key === "call" ? <Phone size={11} /> : <Video size={11} />}
                   label={row.label}
                   selected={row.checked}
                   onPick={() => {
-                    // The menu stays open: switching the channel changes the types listed under it.
-                    if (!row.checked) act({ name: "pickChannel", kind: row.key });
+                    act({ name: "pickCallType", key: row.key });
+                    setTypeAnchor(null);
                   }}
                 />
               ))}
-              <div className="hairline menu-divider" />
+            </>
+          ) : (
+            <>
+              {menu.channel && (
+                <>
+                  {menu.channel.rows.map((row) => (
+                    <MenuRow
+                      key={row.key}
+                      icon={row.key === "call" ? <Phone size={11} /> : <Video size={11} />}
+                      label={row.label}
+                      selected={row.checked}
+                      onPick={() => {
+                        // The menu stays open: switching the channel changes the types listed under it.
+                        if (!row.checked) act({ name: "pickChannel", kind: row.key });
+                      }}
+                    />
+                  ))}
+                  <div className="hairline menu-divider" />
+                </>
+              )}
+              {menu.rows.map((row) => (
+                <MenuRow
+                  key={row.key}
+                  label={row.label}
+                  selected={row.checked}
+                  onPick={() => {
+                    act({ name: "pickCallType", key: row.key });
+                    setTypeAnchor(null);
+                  }}
+                />
+              ))}
             </>
           )}
-          {menu.rows.map((row) => (
-            <MenuRow
-              key={row.key}
-              label={row.label}
-              selected={row.checked}
-              onPick={() => {
-                act({ name: "pickCallType", key: row.key });
-                setTypeAnchor(null);
-              }}
-            />
-          ))}
         </FloatMenu>
       )}
       {state.keypadOpen && state.dial?.phase === "active" && keypadAnchor && (
@@ -1560,6 +1600,17 @@ const TYPE_NOTE_FOLD_MS = 180;
 /** The call type in the controls row. A type Vocify just set or changed grows the tag into a line that says so
  * (`Propone: Demo · Cambiar`, `Cambia a Demo · Deshacer`) for a few seconds, then it folds back. The list is open
  * under the tag means the rep is choosing: no line then, the tick already moves. */
+/** The list under two headings is taller than the plain one: the rows, two headings and the dividers, so Interna is not
+ * left to scroll. Undefined keeps the plain list's height. */
+function groupedMenuHeight(menu: TypeMenuView | null): number | undefined {
+  const groups = menu?.channel?.groups?.filter((group) => group.rows.length > 0);
+  if (!groups) return undefined;
+  const general = menu?.channel?.general?.length ?? 0;
+  const rows = groups.reduce((sum, group) => sum + group.rows.length, 0) + general;
+  const dividers = groups.length - 1 + (general > 0 ? 1 : 0);
+  return Math.min(440, rows * 26 + groups.length * 22 + dividers * 9 + 8 + 2);
+}
+
 function TypeControl({ menu, language, reduceMotion, listOpen, onOpenList, onUndo }: {
   menu: TypeMenuView;
   language: Language;

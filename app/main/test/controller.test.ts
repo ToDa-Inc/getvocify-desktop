@@ -783,6 +783,52 @@ test("types by channel: the menu also says the channel, and a switch is shown at
   assert.deepEqual(t.last("call:channel"), { kind: "meeting" });
 });
 
+const GROUPED_TYPES = {
+  selected: "cold",
+  proposed: false,
+  options: [{ key: "cold", label: "Llamada en frío" }, { key: "negotiation", label: "Propuesta y negociación" }, { key: "internal", label: "Interna" }],
+  channel: {
+    ...CHANNEL_TYPES.channel,
+    groups: [
+      { key: "call", label: "Llamadas", options: [{ key: "cold", label: "Llamada en frío" }, { key: "negotiation", label: "Propuesta y negociación" }] },
+      { key: "meeting", label: "Reuniones", options: [{ key: "demo", label: "Demo" }, { key: "negotiation", label: "Propuesta y negociación" }] },
+    ],
+    general: [{ key: "internal", label: "Interna" }],
+  },
+};
+
+test("types by channel: both channels' types come in one list, and only the call's own channel is ticked", () => {
+  const t = recording();
+  t.controller.applyShellState({ liveType: GROUPED_TYPES });
+  const channel = t.controller.state.typeMenu?.channel;
+  assert.deepEqual(channel?.groups?.map((group) => [group.key, group.label, group.rows.map((row) => [row.key, row.checked])]), [
+    ["call", "Llamadas", [["cold", true], ["negotiation", false]]],
+    ["meeting", "Reuniones", [["demo", false], ["negotiation", false]]],
+  ]);
+  assert.deepEqual(channel?.general?.map((row) => [row.key, row.checked]), [["internal", false]]);
+});
+
+test("types by channel: a type picked under the other heading switches the channel with it, and says both to the dashboard", () => {
+  const t = recording();
+  t.controller.applyShellState({ liveType: GROUPED_TYPES });
+  t.controller.act({ name: "pickCallType", key: "negotiation", channel: "meeting" });
+  const channel = t.controller.state.typeMenu?.channel;
+  assert.equal(channel?.title, "Reunión");
+  assert.deepEqual(channel?.groups?.map((group) => group.rows.map((row) => row.checked)), [[false, false], [false, true]]);
+  assert.deepEqual(t.last("call:type"), { key: "negotiation", channel: "meeting" });
+  // Interna has no channel: the call stays on the one it is on.
+  t.controller.act({ name: "pickCallType", key: "internal" });
+  assert.deepEqual(t.last("call:type"), { key: "internal" });
+});
+
+test("types by channel: a call that cannot switch channel gets no headings, and half a list is no list", () => {
+  const t = recording();
+  t.controller.applyShellState({ liveType: { ...GROUPED_TYPES, channel: { ...GROUPED_TYPES.channel, fixed: true } } });
+  assert.equal(t.controller.state.typeMenu?.channel, null);
+  t.controller.applyShellState({ liveType: { ...GROUPED_TYPES, channel: { ...GROUPED_TYPES.channel, groups: GROUPED_TYPES.channel.groups.slice(0, 1) } } });
+  assert.equal(t.controller.state.typeMenu?.channel?.groups, undefined);
+});
+
 test("types by channel: a fixed channel (a Vocify call) is not offered and never switches", () => {
   const t = recording();
   t.controller.applyShellState({ liveType: { ...CHANNEL_TYPES, channel: { ...CHANNEL_TYPES.channel, fixed: true } } });

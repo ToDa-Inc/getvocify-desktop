@@ -136,6 +136,19 @@ const channelTypeMenu = {
   },
 };
 
+// The same, with both channels' types in one list under two headings (a type of both is under both), Interna once.
+const groupedTypeMenu = {
+  ...channelTypeMenu,
+  channel: {
+    ...channelTypeMenu.channel,
+    groups: [
+      { key: "call", label: "Llamadas", rows: [{ key: "cold", label: "Llamada en frío", checked: true }, { key: "negotiation", label: "Propuesta y negociación", checked: false }] },
+      { key: "meeting", label: "Reuniones", rows: [{ key: "demo", label: "Demo", checked: false }, { key: "negotiation", label: "Propuesta y negociación", checked: false }, { key: "operations", label: "Operaciones", checked: false }] },
+    ],
+    general: [{ key: "internal", label: "Interna", checked: false }],
+  },
+};
+
 const postCall = (stage, extra = {}) => ({
   stage, memoId: "memo-1", contactName: "Marta Ruiz", changes: [], canApprove: false, applied: null, undoUntil: null, note: null,
   email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, crmUrl: null, noAnswer: false, savedOn: [], dealCreatable: false, ...extra,
@@ -261,6 +274,7 @@ export const fixtures = [
   { name: "recording-open-type-change", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Demo y cierre", note: { id: 2, kind: "change", label: "Demo y cierre" } }, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-type-change-long", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Llamada de seguimiento con decisor", note: { id: 3, kind: "change", label: "Llamada de seguimiento con decisor" } }, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-type-propose-en", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, language: "en", typeMenu: { ...typeMenu, title: "Discovery call", note: { id: 4, kind: "propose", label: "Discovery call" } }, liveHelp: true }, expect: { width: 460, height: 400 } },
+  { name: "recording-open-type-groups", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: groupedTypeMenu, liveHelp: true }, steps: [".type-tag-button"], expect: { width: 460, height: 400 } },
   { name: "recording-open-channel", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: channelTypeMenu, liveHelp: true }, expect: { width: 460, height: 400 } },
   { name: "recording-open-channel-list", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: channelTypeMenu, liveHelp: true }, steps: [".type-tag-button"], expect: { width: 460, height: 400 } },
   { name: "recording-open-channel-no-type", state: { mode: { kind: "recording" }, expanded: true, clock: clock(754), turns, typeMenu: { ...channelTypeMenu, title: "Type", placeholder: true, proposed: false, channel: { title: "Reunión", rows: [{ key: "call", label: "Llamada", checked: false }, { key: "meeting", label: "Reunión", checked: true }] } }, liveHelp: true }, expect: { width: 460, height: 400 } },
@@ -423,6 +437,9 @@ export const interactions = [
   { name: "in-call-mutes", fixture: "in-call", click: ".controls .circle-button", expect: [{ name: "toggleMute" }] },
   { name: "in-call-hangs-up", fixture: "in-call", click: ".controls .stop-button", expect: [{ name: "hangup" }] },
   { name: "keypad-sends-digit", fixture: "in-call-muted-keypad", click: ".dial-key", expect: [{ name: "digit", digit: "1" }] },
+  // Under the second heading: the type goes with its channel. Interna belongs to no channel and goes alone.
+  { name: "pick-type-under-meetings", fixture: "recording-open-type-groups", click: ".option-row:nth-of-type(3)", expect: [{ name: "pickCallType", key: "demo", channel: "meeting" }], after: true },
+  { name: "pick-type-general", fixture: "recording-open-type-groups", click: ".float-menu .option-row:last-of-type", expect: [{ name: "pickCallType", key: "internal" }], after: true },
   { name: "pick-type", fixture: "recording-open-type-list", click: ".option-row:nth-child(2)", expect: [{ name: "pickCallType", key: "demo" }], after: true },
 ];
 

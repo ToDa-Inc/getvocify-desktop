@@ -405,6 +405,15 @@ export class IslandController {
       ? {
           title: live.options.find((option) => option.key === live.selected)?.label ?? live.selected,
           rows: live.options.map((option) => ({ key: option.key, label: option.label, checked: option.key === live.selected })),
+          ...(live.groups && {
+            // A type under two headings is ticked only under the call's own channel.
+            groups: live.groups.map((group) => ({
+              key: group.key,
+              label: group.label,
+              rows: group.options.map((option) => ({ key: option.key, label: option.label, checked: group.key === live.selected && option.key === this.liveType?.selected })),
+            })),
+            general: (live.general ?? []).map((option) => ({ key: option.key, label: option.label, checked: option.key === this.liveType?.selected })),
+          }),
         }
       : null;
     // "Reunión · Call type" would name the wrong thing: with a channel shown, no type yet is just "Type".
@@ -476,7 +485,7 @@ export class IslandController {
       case "dismissFinish":
         return this.dismissFinish();
       case "pickCallType":
-        return this.pickCallType(action.key);
+        return this.pickCallType(action.key, action.channel);
       case "undoCallType":
         return this.undoCallType();
       case "pickMic":
@@ -1009,12 +1018,18 @@ export class IslandController {
   }
 
   /** The type the rep chose while recording; null hands it back to Vocify's proposal. */
-  private pickCallType(key: string | null): void {
+  private pickCallType(key: string | null, channel?: LiveChannelKind): void {
     this.proposal.pick(key);
     this.stopTimer("typeNote");
+    const live = this.liveType;
+    // Picked under the other channel's heading: the call is on that channel from now (the dashboard sends back its types).
+    if (live?.channel && channel && !live.channel.fixed && live.channel.selected !== channel) {
+      const types = live.channel.groups?.find((group) => group.key === channel)?.options ?? live.options;
+      this.liveType = { ...live, options: [...types, ...(live.channel.general ?? [])], channel: { ...live.channel, selected: channel } };
+    }
     if (key !== null && this.liveType) this.liveType = { ...this.liveType, selected: key, proposed: false };
     if (this.liveType) this.set({ typeMenu: this.typeMenuView() });
-    this.effects.emit("call:type", { key });
+    this.effects.emit("call:type", channel ? { key, channel } : { key });
   }
 
   /** The mic the rep picked (island or the app's menu); the dashboard remembers it and moves a live recording onto it. */

@@ -51,7 +51,14 @@ export type Assist = {
 
 export type TypeMenuRow = { key: string; label: string; checked: boolean };
 /** Types by channel: the recording's channel and the two it can be; null when it is not offered. */
-export type ChannelMenuView = { title: string; rows: { key: "call" | "meeting"; label: string; checked: boolean }[] };
+export type ChannelMenuView = {
+  title: string;
+  rows: { key: "call" | "meeting"; label: string; checked: boolean }[];
+  /** One list under two headings, each channel's types (a type of both is under both); only when the dashboard sends them. */
+  groups?: { key: "call" | "meeting"; label: string; rows: TypeMenuRow[] }[];
+  /** The types outside any channel (Interna), once, after the headings. */
+  general?: TypeMenuRow[];
+};
 /** A type Vocify just set or changed, announced in the tag for a few seconds: `change` can be undone. */
 export type TypeNoteView = { id: number; kind: "propose" | "change"; label: string };
 /** `proposed`: the type is Vocify's, from the conversation. `note`: it was just set or changed and the tag says so. */
@@ -364,7 +371,8 @@ export type IslandAction =
   | { name: "discard" }
   /** Close the card that says the ended recording failed. */
   | { name: "dismissFinish" }
-  | { name: "pickCallType"; key: string | null }
+  /** `channel`: the type was picked under that channel's heading, so the call switches to it with the type. */
+  | { name: "pickCallType"; key: string | null; channel?: "call" | "meeting" }
   /** Undo on "Cambia a ...": back to the type before, now the rep's. */
   | { name: "undoCallType" }
   | { name: "pickChannel"; kind: "call" | "meeting" }

@@ -1287,7 +1287,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     );
   };
   setTimeout(() => void sampleResources().catch((error) => log(`resources: not measured (${String(error)})`)), 60_000).unref();
-  setInterval(() => void sampleResources().catch((error) => log(`resources: not measured (${String(error)})`)), 10 * 60_000).unref();
+  // Every ten minutes, and every minute while recording: a call that grows the app's memory shows minute by minute
+  // which process grows (a 40-minute meeting froze a rep's computer, 2026-11-17).
+  let resourceMinutes = 0;
+  setInterval(() => {
+    resourceMinutes += 1;
+    if (resourceMinutes % 10 !== 0 && !recordingOrFinishing()) return;
+    void sampleResources().catch((error) => log(`resources: not measured (${String(error)})`));
+  }, 60_000).unref();
 
   app.on("before-quit", (event) => {
     if (!controller.isListening) {

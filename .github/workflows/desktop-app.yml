@@ -142,37 +142,42 @@ jobs:
 
       - name: Long call through the real dashboard
         if: always()
+        timeout-minutes: 12
         shell: bash
         env:
           SOAK_DASHBOARD_DIST: ${{ runner.temp }}/dashboard
           SOAK_OUT: ${{ runner.temp }}/soak.jsonl
-        run: npm run test:soak
+        run: mkdir -p "$RUNNER_TEMP/soak-logs" && npm run test:soak 2>&1 | tee "$RUNNER_TEMP/soak-logs/plain.log"
 
       - name: Long call under memory pressure
         if: always()
+        timeout-minutes: 12
         shell: bash
         env:
           SOAK_DASHBOARD_DIST: ${{ runner.temp }}/dashboard
           SOAK_OUT: ${{ runner.temp }}/soak.jsonl
           SOAK_PRESSURE: "1"
-        run: npm run test:soak
+        run: npm run test:soak 2>&1 | tee "$RUNNER_TEMP/soak-logs/pressure.log"
 
       - name: Long call under memory pressure at device scale 2
         if: always()
+        timeout-minutes: 12
         shell: bash
         env:
           SOAK_DASHBOARD_DIST: ${{ runner.temp }}/dashboard
           SOAK_OUT: ${{ runner.temp }}/soak.jsonl
           SOAK_PRESSURE: "1"
           SOAK_DPR: "2"
-        run: npm run test:soak
+        run: npm run test:soak 2>&1 | tee "$RUNNER_TEMP/soak-logs/pressure-dpr2.log"
 
-      - name: Keep the soak's per-minute samples
+      - name: Keep the soak's per-minute samples and logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: long-call-soak-samples
-          path: ${{ runner.temp }}/soak.jsonl
+          name: long-call-soak
+          path: |
+            ${{ runner.temp }}/soak.jsonl
+            ${{ runner.temp }}/soak-logs
           if-no-files-found: ignore
 
       - name: Build the installer

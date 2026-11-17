@@ -20,9 +20,10 @@ on:
 permissions:
   contents: write
 
-# One release at a time, so two pushes cannot race to publish.
+# One release at a time, so two pushes cannot race to publish. A test run of a branch that does not publish waits in its
+# own queue: sharing the release queue, a branch run replaced a release waiting its turn (GitHub keeps one pending run).
 concurrency:
-  group: desktop-release
+  group: ${{ (github.event_name == 'push' || inputs.publish) && 'desktop-release' || format('desktop-test-{0}', github.ref) }}
   cancel-in-progress: false
 
 jobs:

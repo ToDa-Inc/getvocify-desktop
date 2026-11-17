@@ -813,6 +813,12 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
 
   const trace = traceOn ? createTranscriptTrace(options.userDataDir) : null;
 
+  /** The state for the island without its turns: those go as changes (`island:turns`). */
+  const withoutTurns = (state: IslandState): Omit<IslandState, "turns"> => {
+    const { turns: _turns, ...rest } = state;
+    return rest;
+  };
+
   function pushState(state: IslandState): void {
     trace?.(state);
     // Every state the island shows during a call counts as activity for the quiet period before an update.
@@ -821,15 +827,24 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (island.isDestroyed()) return;
     // The window first, so it is already big enough when the page starts drawing the bigger island.
     if (!followPlacement(state)) fit(targetSize(state), false);
-    island.webContents.send("island:state", state);
+    const change = controller.takeTurnsChange();
+    if (change) island.webContents.send("island:turns", change);
+    island.webContents.send("island:state", withoutTurns(state));
     refreshTray(state);
     dashboard.releaseIfIdle();
   }
 
+  /** The island's whole state: its turns are sent whole too, and it keeps them. */
+  const sendIslandFull = () => {
+    controller.takeTurnsChange();
+    island.webContents.send("island:turns", { turnsFrom: 0, turns: controller.state.turns });
+    island.webContents.send("island:state", withoutTurns(controller.state));
+  };
+
   await island.loadFile(join(here, "../../island/dist/index.html"));
   // Before the first state is sent: a pill saved at boot is drawn in its side column, not in the notch window.
   followPlacement(controller.state);
-  island.webContents.send("island:state", controller.state);
+  sendIslandFull();
   /**
    * An island page that hangs or dies (the app having run for days, the PC woken from sleep) would sit there taking no
    * click, and only Task Manager could end it. It is logged, and the page is loaded again with the state it missed.
@@ -844,7 +859,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   ipcMain.on("island:ready", (event) => {
     if (island.isDestroyed() || event.sender !== island.webContents) return;
     followPlacement(controller.state);
-    island.webContents.send("island:state", controller.state);
+    sendIslandFull();
   });
   island.webContents.on("render-process-gone", (_event, details) => {
     if (details.reason !== "clean-exit") pageCrashed();

@@ -16,6 +16,12 @@ declare global {
   }
 }
 
+// Stable for the life of the page: the rows that use it are not drawn again for every state.
+const act: IslandHost["act"] = (action) => {
+  if (window.vocifyIsland) window.vocifyIsland.act(action);
+  else window.__islandActions?.push(action);
+};
+
 function App() {
   const [state, setState] = useState<IslandState | null>(null);
   useEffect(() => {
@@ -38,10 +44,6 @@ function App() {
     };
   }, []);
   if (!state) return null;
-  const act: IslandHost["act"] = (action) => {
-    if (window.vocifyIsland) window.vocifyIsland.act(action);
-    else window.__islandActions?.push(action);
-  };
   return <Island state={state} act={act} />;
 }
 

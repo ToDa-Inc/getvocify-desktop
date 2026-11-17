@@ -1,14 +1,34 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { IslandAction, IslandState, Levels } from "../../island/src/types.ts";
+import type { IslandAction, IslandState, Levels, Turn } from "../../island/src/types.ts";
 import type { PillSpot } from "../../core/pill.ts";
 
 // Answers the app's health check from the page's own thread: a page that is hung cannot (see `reloadIsland`).
 ipcRenderer.on("island:ping", () => ipcRenderer.send("island:pong"));
 
+/**
+ * The turns the island keeps. The shell sends what changed (the turns from `turnsFrom` on); the rest of the list stays as
+ * it was, so the turns that did not change are the same objects and the island does not draw them again.
+ */
+let turns: Turn[] = [];
+ipcRenderer.on("island:turns", (_event, change: { turnsFrom: number; turns: Turn[] }) => {
+  turns = [...turns.slice(0, change.turnsFrom), ...change.turns];
+});
+
+/** The small lists the island is sent whole with each state: an unchanged one keeps its object (the rows that use it). */
+const kept = new Map<string, { json: string; value: unknown }>();
+function stable<T>(name: string, value: T): T {
+  const json = JSON.stringify(value) ?? "";
+  const before = kept.get(name);
+  if (before && before.json === json) return before.value as T;
+  kept.set(name, { json, value });
+  return value;
+}
+
 contextBridge.exposeInMainWorld("vocifyIsland", {
   platform: process.platform,
   onState(callback: (state: IslandState) => void) {
-    const handler = (_event: unknown, state: IslandState) => callback(state);
+    const handler = (_event: unknown, state: Omit<IslandState, "turns">) =>
+      callback({ ...state, turns, voices: stable("voices", state.voices), people: stable("people", state.people) } as IslandState);
     ipcRenderer.on("island:state", handler);
     ipcRenderer.send("island:ready");
     return () => ipcRenderer.removeListener("island:state", handler);

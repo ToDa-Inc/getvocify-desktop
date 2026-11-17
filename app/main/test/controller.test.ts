@@ -901,6 +901,21 @@ test("an overlay that takes changes keeps the turns before `from`, replaces the 
   assert.equal(t.controller.state.turns.length, 0);
 });
 
+test("the island is sent only the turns that changed: from the first changed one on, and a whole list when the overlay is whole", () => {
+  const t = recording();
+  t.controller.applyShellState({ overlay: { turns: [{ key: "a", you: true, text: "Hello" }, { key: "b", you: false, text: "Hi" }] } });
+  assert.deepEqual(t.controller.takeTurnsChange(), { turnsFrom: 0, turns: [{ id: "a", you: true, label: null, text: "Hello", pending: "" }, { id: "b", you: false, label: null, text: "Hi", pending: "" }] });
+  assert.equal(t.controller.takeTurnsChange(), null, "taken once");
+  t.controller.applyShellState({ overlay: { from: 1, turns: [{ key: "b", you: false, text: "Hi there" }, { key: "c", you: true, text: "Sure" }] } });
+  assert.deepEqual(t.controller.takeTurnsChange(), {
+    turnsFrom: 1,
+    turns: [{ id: "b", you: false, label: null, text: "Hi there", pending: "" }, { id: "c", you: true, label: null, text: "Sure", pending: "" }],
+  });
+  // A voices-only overlay changes no turn.
+  t.controller.applyShellState({ overlay: { voices: [{ id: 1, label: "Marta" }] } });
+  assert.equal(t.controller.takeTurnsChange(), null);
+});
+
 test("an overlay's voices reach the island, turns without them stay as they were, and bad ones are dropped", () => {
   const t = recording();
   t.controller.applyShellState({

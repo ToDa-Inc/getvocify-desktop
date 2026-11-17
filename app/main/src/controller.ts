@@ -6,7 +6,7 @@ import { TypeMenu } from "../../core/typeMenu.ts";
 import { TypeProposal, type Language } from "../../core/typeProposal.ts";
 import { WaveSide } from "../../core/waveSide.ts";
 import { DEFAULT_SPOT, type PillSpot } from "../../core/pill.ts";
-import type { Assist, Geometry, IslandAction, IslandState, Levels, LiveAction, Mode, PostCallData, VoiceAction } from "../../island/src/types.ts";
+import type { Assist, Geometry, IslandAction, IslandState, Levels, LiveAction, Mode, PostCallData, Turn, VoiceAction } from "../../island/src/types.ts";
 import { postCallPending } from "../../island/src/types.ts";
 import { parseAssist, parseBackground, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parseMic, parsePostCall, parsePeople, parseTurnChanges, parseTurns, parseVoices, type LiveChannelKind, type LiveType } from "./parse.ts";
 
@@ -154,6 +154,15 @@ export class IslandController {
   private dismissedMeeting: string | null = null;
   /** True when a native recorder draws the transcript itself; the dashboard's overlay then must not overwrite it. */
   nativeTranscript = false;
+  /** The turns changed since the island was last sent them: the island keeps the first `turnsFrom` and takes `turns`. */
+  private turnsChange: { turnsFrom: number; turns: Turn[] } | null = null;
+
+  /** What the island must be sent for its turns (then cleared); null when they are as the island has them. */
+  takeTurnsChange(): { turnsFrom: number; turns: Turn[] } | null {
+    const change = this.turnsChange;
+    this.turnsChange = null;
+    return change;
+  }
 
   constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean; language?: Language; placement?: "notch" | "side"; pill?: PillSpot; finishOnStop?: boolean; hangUpGrace?: number }) {
     this.effects = effects;
@@ -374,10 +383,15 @@ export class IslandController {
         const kept = this.current.turns.slice(0, changes.from);
         if (changes.from <= this.current.turns.length && (changes.turns.length > 0 || changes.from < this.current.turns.length)) {
           patch.turns = [...kept, ...changes.turns];
+          this.turnsChange = { turnsFrom: changes.from, turns: changes.turns };
         }
       } else {
-        const turns = parseTurns(update.overlay);
-        if (turns && JSON.stringify(turns) !== JSON.stringify(this.current.turns)) patch.turns = turns;
+        // An overlay without a list of turns (voices or people only) leaves the turns as they are.
+        const turns = (update.overlay as { turns?: unknown }).turns === undefined ? null : parseTurns(update.overlay);
+        if (turns && JSON.stringify(turns) !== JSON.stringify(this.current.turns)) {
+          patch.turns = turns;
+          this.turnsChange = { turnsFrom: 0, turns };
+        }
       }
       const voices = parseVoices(update.overlay);
       if (JSON.stringify(voices) !== JSON.stringify(this.current.voices ?? [])) patch.voices = voices;

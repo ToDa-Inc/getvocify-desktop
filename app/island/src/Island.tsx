@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { backgroundLine, cornerRadius, earWidth, islandSize, offerBriefLines, showsConversation, showsMeeting, RECORDING_HEIGHT, sizesItself } from "./geometry.ts";
 import { JobsBadge, JobsLine, jobsIndicator } from "./Background.tsx";
 import { levelsStore } from "./levels.ts";
@@ -908,7 +908,10 @@ export function OpenIsland({ state, act, compact = false, onPopupExtent }: { sta
   const menu = state.typeMenu;
   const hasBrief = Boolean(state.dial?.brief?.length || state.dial?.companyBrief);
   // The other side's voices, when the dashboard tells them apart: a name above a line then opens the list to fix it.
-  const voiceMenu: VoiceMenu | undefined = state.voices?.length ? { voices: state.voices, people: state.people ?? [], act, language: state.language } : undefined;
+  const voiceMenu = useMemo<VoiceMenu | undefined>(
+    () => (state.voices?.length ? { voices: state.voices, people: state.people ?? [], act, language: state.language } : undefined),
+    [state.voices, state.people, state.language, act],
+  );
   const callControls = state.dial ? (
     <CallBar dial={state.dial} keypadOpen={state.keypadOpen} keypadButton={keypadButton} act={act} />
   ) : (
@@ -956,7 +959,7 @@ export function OpenIsland({ state, act, compact = false, onPopupExtent }: { sta
         {callControls}
         {typeControl}
         <div className="grow" />
-        {state.turns.length > 0 && <CopyButton text={transcriptText(state.turns)} help="Copy the transcript" />}
+        {state.turns.length > 0 && <CopyButton text={() => transcriptText(state.turns)} help="Copy the transcript" />}
         {state.liveHelp !== null && <LiveHelpToggle on={state.liveHelp} onClick={() => act({ name: "toggleLiveHelp" })} />}
         <IconButton help="Open Vocify" onClick={() => act({ name: "openApp" })}>
           <ArrowUpRight size={12} />
@@ -1164,6 +1167,10 @@ const GLIDE_LIMIT_MS = 400;
  */
 function TranscriptScroll({ turns, reduceMotion, marks, voices }: { turns: Turn[]; reduceMotion: boolean; marks?: TranscriptMarks; voices?: VoiceMenu }) {
   const ref = useRef<HTMLDivElement>(null);
+  // The tap is the same function for the life of the list: a row is not drawn again for a new closure.
+  const tapFor = useRef(marks?.onTap ?? null);
+  tapFor.current = marks?.onTap ?? null;
+  const tap = useCallback((turnId: string) => tapFor.current?.(turnId), []);
   const followingRef = useRef(true);
   const [following, setFollowing] = useState(true);
   const glide = useRef<{ frame: number; limit: ReturnType<typeof setTimeout> } | null>(null);
@@ -1271,12 +1278,12 @@ function TranscriptScroll({ turns, reduceMotion, marks, voices }: { turns: Turn[
           {turns.length === 0 && <div className="listening">Listening…</div>}
           <div className="bubbles">
             {turns.map((turn) => (
-              <TurnBubble
+              <MemoTurnBubble
                 key={turn.id}
                 turn={turn}
                 arrives={opened.current && !reduceMotion}
                 source={marks?.sources.has(turn.id) ?? false}
-                onTap={marks?.onTap && !turn.you ? () => marks.onTap!(turn.id) : null}
+                onTap={marks?.onTap && !turn.you ? tap : null}
                 tapHelp={marks?.tapHelp ?? null}
                 voices={voices}
               />
@@ -1316,7 +1323,7 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 /** A button that copies `text` and says so for a moment (a check, and its help text). */
-function CopyButton({ text, help, className }: { text: string; help: string; className?: string }) {
+function CopyButton({ text, help, className }: { text: string | (() => string); help: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -1327,7 +1334,7 @@ function CopyButton({ text, help, className }: { text: string; help: string; cla
     <IconButton
       help={copied ? "Copied" : help}
       className={className ? `copy-button ${className}` : "copy-button"}
-      onClick={() => void copyText(text).then((ok) => ok && setCopied(true))}
+      onClick={() => void copyText(typeof text === "function" ? text() : text).then((ok) => ok && setCopied(true))}
     >
       {copied ? <Check size={11} stroke={2.6} /> : <Copy size={11} />}
     </IconButton>
@@ -1339,7 +1346,7 @@ function CopyButton({ text, help, className }: { text: string; help: string; cla
  * words several times a second, and a bubble that followed every rewrite would shrink and stretch under the reader.
  * It takes its real size again once the turn has settled.
  */
-function TurnBubble({ turn, arrives, source = false, onTap = null, tapHelp = null, voices }: { turn: Turn; arrives: boolean; source?: boolean; onTap?: (() => void) | null; tapHelp?: string | null; voices?: VoiceMenu }) {
+function TurnBubble({ turn, arrives, source = false, onTap = null, tapHelp = null, voices }: { turn: Turn; arrives: boolean; source?: boolean; onTap?: ((turnId: string) => void) | null; tapHelp?: string | null; voices?: VoiceMenu }) {
   const parts = turnParts(turn);
   const bubble = useRef<HTMLDivElement>(null);
   const floor = useRef({ width: 0, height: 0 });
@@ -1375,7 +1382,7 @@ function TurnBubble({ turn, arrives, source = false, onTap = null, tapHelp = nul
             // Selecting words to copy is not a tap.
             if (window.getSelection()?.toString()) return;
             event.stopPropagation();
-            onTap();
+            onTap(turn.id);
           } : undefined}
         >
           <span className="words">{parts.text}</span>
@@ -1395,6 +1402,9 @@ function TurnBubble({ turn, arrives, source = false, onTap = null, tapHelp = nul
     </div>
   );
 }
+
+/** A row is drawn again only when its turn or what it shows changed: the others keep their last drawing. */
+const MemoTurnBubble = memo(TurnBubble);
 
 /* ---------- small pieces ---------- */
 

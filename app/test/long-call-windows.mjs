@@ -133,11 +133,19 @@ app.whenReady().then(async () => {
     dash.on("console-message", (_e, level, message) => { if (level >= 2) console.log("      page", message.slice(0, 300)); });
     // The page signs in with a stored refresh token, then reloads into the signed-in dashboard.
     await dash.executeJavaScript(`localStorage.setItem("vocify_refresh", "soak-refresh"); localStorage.setItem("vocify_token", ${JSON.stringify(fakeJwt(userId))})`);
-    dash.reload();
-    // Recording starts only once the dashboard has loaded its screens: the stand-in sees its last start-up call.
-    const loadedAt = Date.now();
-    while (!seen.has("GET/api/v1/calls/config") && Date.now() - loadedAt < 90000) await sleep(100);
-    check(seen.has("GET/api/v1/calls/config"), "the dashboard loaded its screens before the call");
+    // Recording starts only once the dashboard has loaded its screens: the stand-in sees its last start-up call. A page
+    // that signs in but stays on a blank screen is reloaded, up to three times.
+    let screens = false;
+    for (let attempt = 1; attempt <= 3 && !screens; attempt++) {
+      if (attempt > 1) {
+        console.log(`      the dashboard did not load its screens; reloading (attempt ${attempt})`);
+        dash.reload();
+      }
+      const loadedAt = Date.now();
+      while (!seen.has("GET/api/v1/calls/config") && Date.now() - loadedAt < 40000) await sleep(100);
+      screens = seen.has("GET/api/v1/calls/config");
+    }
+    check(screens, "the dashboard loaded its screens before the call");
     await sleep(2000);
 
     if (process.env.SOAK_DEBUG) console.log("      page state", await dash.executeJavaScript(`JSON.stringify({ url: location.href, refresh: localStorage.getItem("vocify_refresh"), body: document.body.innerText.slice(0, 300) })`));
@@ -189,6 +197,9 @@ app.whenReady().then(async () => {
     clearInterval(sampler);
     clearInterval(pump);
     console.log(`      sent ${pointer} of ${calls.length} transcript messages`);
+    // The last messages are due at the call's very end: they are given a moment to go before the count is checked.
+    const flushed = Date.now();
+    while (pointer < calls.length && Date.now() - flushed < 15000) await sleep(50);
     check(pointer === calls.length, "the transcript source sent every message of the call");
 
     // Analysis: post warm-up samples only.

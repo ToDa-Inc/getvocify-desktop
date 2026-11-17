@@ -442,6 +442,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   };
   // Once the app is quitting (a tray quit, an update restart) the dashboard window must close, not hide.
   let quitting = false;
+  /** The app is restarting for an update: the updater ends it, not the quit watch. */
+  let updateRestart = false;
   // The dashboard page does the recording and, after Stop, the upload: it must stay until the call is handed over.
   const recordingOrFinishing = () => ["recording", "stopped", "finishing"].includes(controller.state.mode.kind);
   // What an update restart must never cut: a recording, or a call note being written or saved. A call's card left open
@@ -1322,9 +1324,24 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     void sampleResources().catch((error) => log(`resources: not measured (${String(error)})`));
   }, 60_000).unref();
 
+  // A quit the rep asked for always ends the app. On a rep's Windows PC a close took the island down and left the app
+  // running without it (2026-11-17), so opening Vocify again only showed its window. If the app is still here a few
+  // seconds after quitting began, the log names the windows left and the app exits. Not for an update: the updater
+  // ends the app itself, and runs the installer as it does.
+  let quitWatch: ReturnType<typeof setTimeout> | null = null;
+  const watchQuit = () => {
+    if (quitWatch || updateRestart) return;
+    quitWatch = setTimeout(() => {
+      const left = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed()).map((w) => w.getTitle() || w.webContents.getURL().split("?")[0] || "untitled");
+      log(`quit: still running 5 s after quitting (windows left: ${left.join(", ") || "none"}); exiting`);
+      app.exit(0);
+    }, 5000);
+    quitWatch.unref();
+  };
   app.on("before-quit", (event) => {
     if (!controller.isListening) {
       quitting = true;
+      watchQuit();
       return;
     }
     const choice = dialog.showMessageBoxSync({
@@ -1336,7 +1353,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       cancelId: 0,
     });
     if (choice === 0) event.preventDefault();
-    else quitting = true;
+    else {
+      quitting = true;
+      watchQuit();
+    }
   });
 
   let controlsWindow: BrowserWindow | null = null;
@@ -1385,6 +1405,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       settings.set("restartedForUpdate", true);
       // The update closes the windows before the app quits: the island must let it.
       quitting = true;
+      updateRestart = true;
     },
     attachUpdater: (attached) => {
       updater = attached;

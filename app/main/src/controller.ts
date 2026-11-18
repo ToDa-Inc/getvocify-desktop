@@ -46,6 +46,10 @@ const SKIPPED_LINGER = 4;
  * seconds is past a conversation's normal gaps and a thinking pause, and short enough that a call which is over stops soon
  * after the last word. Hold music is sound, so it never counts. Only once the far side has been heard (see `farSideHeard`). */
 const CALL_END_SILENCE = 10;
+/** The same while the call app being recorded still holds the mic. Its letting go is the hang-up (`watchForHangUp`), so the
+ * silence is only the backstop for an app that keeps the mic after hanging up: a silent hold or a transfer («te paso con mi
+ * compañero») must not end the call. Ringover and Chrome at Movertis cut 10 s into a hold (2026-11-18). */
+const CALL_APP_SILENCE = 60;
 /** A pointer resting on a countdown holds it, but never this long: a leave the island never hears (a click-through window,
  * a menu that took the pointer) must not keep the card open for good. */
 const HOVER_HOLD_CAP = 20;
@@ -838,9 +842,14 @@ export class IslandController {
     if (them === true || you === true) this.armSilence();
   }
 
-  /** Counts the silence that ends the recording, once the far side has been heard. */
+  /** Counts the silence that ends the recording, once the far side has been heard: longer while the call app is on the mic. */
   private armSilence(): void {
-    if (this.farSideHeard) this.start("callSilence", CALL_END_SILENCE, () => this.callWentSilent());
+    if (this.farSideHeard) this.start("callSilence", this.silenceLimit(), () => this.callWentSilent());
+  }
+
+  private silenceLimit(): number {
+    const appId = this.recordingCaller?.appId ?? null;
+    return appId !== null && holds(this.currentCaller, appId) ? CALL_APP_SILENCE : CALL_END_SILENCE;
   }
 
   /** The call on the phone stopped playing in its audio session (Windows): its hang-up, with a call app's grace. */
@@ -860,6 +869,7 @@ export class IslandController {
     if (this.mode !== "recording") return;
     // Paused, nothing is measured: the silence says nothing about the call.
     if (this.current.paused) return this.armSilence();
+    this.effects.log?.(`recording ended: ${this.silenceLimit()} s of silence on both sides`);
     this.stop(true);
   }
 

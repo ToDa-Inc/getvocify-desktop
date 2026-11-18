@@ -1616,6 +1616,36 @@ test("any recording, not only a call on the phone, ends after 10 s of silence on
   assert.deepEqual(t.commands().slice(-1), ["pause"]);
 });
 
+test("while the recorded call app holds the mic, a silent hold lasts 60 s before the silence ends the call", () => {
+  const t = setup();
+  t.controller.callChanged(zoom);
+  t.controller.act({ name: "record" });
+  t.controller.show();
+  t.controller.applyShellState({ callActivity: { them: true, you: false } });
+  t.controller.applyShellState({ callActivity: { them: false, you: false } });
+  t.advance(59.9);
+  assert.equal(t.mode(), "recording", "a transfer or a silent hold is not a hang-up while the call app is on the mic");
+  t.controller.applyShellState({ callActivity: { them: true, you: false } });
+  t.advance(59.9);
+  assert.equal(t.mode(), "recording", "the voice coming back restarts the count");
+  t.advance(0.2);
+  assert.equal(t.mode(), "stopped", "an app that keeps the mic after hanging up still ends");
+  assert.equal(t.controller.state.mode.kind === "stopped" && t.controller.state.mode.title, "Call ended");
+});
+
+test("the call app letting go of the mic ends the call at once, without waiting for the silence", () => {
+  const t = setup();
+  t.controller.callChanged(zoom);
+  t.controller.act({ name: "record" });
+  t.controller.show();
+  t.controller.applyShellState({ callActivity: { them: true, you: false } });
+  t.advance(20);
+  assert.equal(t.mode(), "recording");
+  t.controller.callChanged(null);
+  t.advance(2.1);
+  assert.equal(t.mode(), "stopped", "the hang-up is the mic, not the 60 s");
+});
+
 test("the silence does not start before the far side is heard, however long both sides are quiet", () => {
   const t = recording();
   t.controller.applyShellState({ callActivity: { them: false, you: true } });

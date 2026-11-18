@@ -310,6 +310,9 @@ app.whenReady().then(main).catch((error) => {
   app.exit(1);
 });
 
+/** Clicks what the selector finds; false when nothing matches (a missing target names its test instead of ending the run). */
+const clickIn = (win, selector) => win.webContents.executeJavaScript(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`);
+
 async function main() {
   // Destroying the last live window makes the next window's renderer fail to start in some environments,
   // so one hidden window stays open for the whole run.
@@ -335,8 +338,10 @@ for (const fixture of fixtures) {
     // The island that sizes itself glides to its new height: measured once it is there.
     if (fixture.selfSized) await new Promise((resolve) => setTimeout(resolve, 700));
   }
-  const m = await measure(win, fixture);
-  if (m.missing) problems.push("island did not render");
+  // A measuring script that throws names its fixture (on the Windows runner one did, 2026-11-18, and ended the run unnamed).
+  const m = await measure(win, fixture).catch((error) => ({ missing: true, thrown: String(error?.message ?? error) }));
+  if (m.thrown) problems.push(`the measuring script threw: ${m.thrown}${errors.length ? ` (page: ${errors.join(" | ")})` : ""}`);
+  else if (m.missing) problems.push("island did not render");
   else {
     if (m.width !== fixture.expect.width || (!fixture.fit && !fixture.natural && !fixture.selfSized && m.height !== fixture.expect.height)) {
       problems.push(`size ${m.width}x${m.height}, expected ${fixture.expect.width}x${fixture.expect.height}`);
@@ -438,8 +443,9 @@ for (const fixture of fixtures) {
 for (const test of interactions) {
   const fixture = fixtures.find((f) => f.name === test.fixture);
   const { win } = await open(fixture);
+  const missing = [];
   for (const selector of fixture.steps ?? []) {
-    await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).click(); true`);
+    if (!(await clickIn(win, selector))) missing.push(selector);
     await frame();
   }
   if (fixture.next) {
@@ -448,13 +454,20 @@ for (const test of interactions) {
   }
   // Clicks that set the scene first (untick a change...), then the click whose action is checked.
   for (const selector of test.before ?? []) {
-    await win.webContents.executeJavaScript(`document.querySelector(${JSON.stringify(selector)}).click(); true`);
+    if (!(await clickIn(win, selector))) missing.push(selector);
     await frame();
   }
   // What the island sends when it mounts (the closed marker seen) lands a few frames late on a slow machine: let it, so it is not counted as the click's.
   for (let i = 0; i < 5; i++) await frame();
-  await win.webContents.executeJavaScript(`window.__islandActions.length = 0; document.querySelector(${JSON.stringify(test.click)}).click(); true`);
+  await win.webContents.executeJavaScript(`window.__islandActions.length = 0; true`);
+  if (!(await clickIn(win, test.click))) missing.push(test.click);
   await frame();
+  if (missing.length) {
+    report.push({ name: `click:${test.name}`, problems: [`click target missing: ${missing.join(", ")}`] });
+    failures.push(`click:${test.name}: click target missing: ${missing.join(", ")}`);
+    win.destroy();
+    continue;
+  }
   const actions = await win.webContents.executeJavaScript(`JSON.parse(JSON.stringify(window.__islandActions))`);
   const ok = JSON.stringify(actions) === JSON.stringify(test.expect);
   report.push({ name: `click:${test.name}`, actions, problems: ok ? [] : [`sent ${JSON.stringify(actions)}, expected ${JSON.stringify(test.expect)}`] });
@@ -467,6 +480,7 @@ for (const test of pillDrags) {
   const fixture = fixtures.find((f) => f.name === test.fixture);
   const { win } = await open(fixture);
   const got = await win.webContents.executeJavaScript(`(async () => {
+    if (!document.querySelector('.side-strip')) return { error: "no .side-strip on the page" };
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const drops = [];
     window.vocifyIsland = { act: (a) => window.__islandActions.push(a), resize: () => {}, pillDrop: (spot) => drops.push(spot), pillDrag: () => {}, interactive: () => {} };

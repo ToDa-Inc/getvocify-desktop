@@ -39,7 +39,18 @@ const KIND_ICON: Record<Kind, () => ReactNode> = { answer: ReplyIcon, unknown: (
 
 type Ended = "answered" | "promised" | null;
 
-function Card({ point, ack, flash, onDone }: { point: SayPoint; ack: boolean; flash: number | null; onDone: () => void }) {
+/** Earlier cards: a small clock. */
+const ClockIcon = () => (
+  <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </svg>
+);
+
+/** The cards before the one on screen: a clock and how many, on its first line. A tap shows them above it; another hides them. */
+type History = { count: number; on: boolean; toggle: () => void };
+
+function Card({ point, ack, flash, onDone, history }: { point: SayPoint; ack: boolean; flash: number | null; onDone: () => void; history?: History }) {
   const { state, ui, words, still } = useSay();
   const say = words.say;
   const kind = kindOf(point);
@@ -77,7 +88,9 @@ function Card({ point, ack, flash, onDone }: { point: SayPoint; ack: boolean; fl
           <span className="say-ended"><Check size={8} stroke={3.6} />{endedLabel}</span>
         ) : why === "read" ? (
           <span className="say-kind say-why-icon" data-kind={kind}><BulbIcon /></span>
-        ) : why === "quote" ? null : (
+        ) : why === "quote" ? (
+          <span className="say-kind say-why-icon" data-kind={kind}><KindIcon /></span>
+        ) : (
           <span className="say-kind" data-kind={kind}>
             <KindIcon />
             {say.kinds[kind]}
@@ -86,7 +99,12 @@ function Card({ point, ack, flash, onDone }: { point: SayPoint; ack: boolean; fl
           </span>
         )}
         {why === "read" ? <span className="say-read">{point.read}</span> : why === "quote" ? <span className="say-quote">{point.quote}</span> : <span className="say-words">{title}</span>}
-        {why === "quote" && <span className="grow" />}
+        {history && (
+          <button type="button" className="say-history" data-on={history.on} title={say.older} aria-label={say.older} aria-pressed={history.on} onClick={history.toggle}>
+            <ClockIcon />
+            <span>{history.count}</span>
+          </button>
+        )}
         {point.live && !point.draft && !thinking && kind !== "explore" && (
           <button type="button" className="live-close say-done" title={say.done} aria-label={say.done} onClick={onDone}>
             <Check size={8} stroke={3.4} />
@@ -124,8 +142,6 @@ const THINKING_AFTER_MS = 400;
  * that line, and how much of the panel an open answer may take. */
 const FEED_HEIGHT = 102;
 const WORK_ROW = 18;
-/** The pile's edges under the card, when there are answers before it. */
-const PILE = 12;
 // Its padding (6 + 6) and the 2 px the list keeps above and below a card it brings into view.
 const FEED_PADDING = 16;
 const FEED_MAX_SHARE = 0.55;
@@ -203,12 +219,12 @@ export function Feed() {
     const height = (el: HTMLElement | null) => (el ? Math.ceil(el.getBoundingClientRect().height) : 0);
     const card = list ? height(list) : open && next ? height(open) + 6 + height(next) : height(open ?? next);
     // Grows only for a card its own height cannot hold whole; then exactly as much as that card needs.
-    const need = card + FEED_PADDING + WORK_ROW + (past > 0 ? PILE : 0);
+    const need = card + FEED_PADDING + WORK_ROW;
     // The island that sizes itself: the zone is as tall as what it shows, so nothing is left empty above the tabs.
     if (compact) {
       const quiet = feed.querySelector<HTMLElement>(".say-quiet");
       const content = card || (quiet ? COMPACT_QUIET : 0);
-      feed.style.height = `${Math.max(COMPACT_MIN, Math.min(content + FEED_PADDING + WORK_ROW + (past > 0 ? PILE : 0), COMPACT_MAX))}px`;
+      feed.style.height = `${Math.max(COMPACT_MIN, Math.min(content + FEED_PADDING + WORK_ROW, COMPACT_MAX))}px`;
       return;
     }
     feed.style.height = need > FEED_HEIGHT && room > FEED_HEIGHT ? `${Math.min(need, room)}px` : "";
@@ -368,10 +384,11 @@ export function Feed() {
       ) : (
         <FollowScroll follow={false} still={still}>
           <div className="say-list">
-            {points.map((point) => (
+            {points.map((point, index) => (
               <Card
                 key={point.id}
                 point={point}
+                history={index === points.length - 1 && past > 0 ? { count: past, on: older, toggle: () => update({ older: !ui.older }) } : undefined}
                 ack={now - (endedAt.current.get(point.id) ?? -Infinity) < ACK_MS}
                 flash={ui.flashId === point.id && ui.flashAt !== null && now - ui.flashAt < 1200 ? ui.flashAt : (arrivedAt.current.get(point.id) ?? null)}
                 onDone={() => {
@@ -384,14 +401,8 @@ export function Feed() {
           </div>
         </FollowScroll>
       )}
-      {/* The answers before the one on screen: a pile, the edges of the cards under it. A tap spreads them above it as the
-          list they are; another gathers them. */}
-      {past > 0 && (
-        <button type="button" className="say-pile" data-on={older} title={say.older} aria-label={say.older} aria-pressed={older} onClick={() => update({ older: !ui.older })}>
-          <i />
-          {past > 1 && <i />}
-        </button>
-      )}
+      {/* One card at a time, and nothing under it: the pile of earlier cards' edges read as cards stacked (Dani,
+          2026-11-18). What was said before is in the transcript. */}
       {work}
     </div>
   );

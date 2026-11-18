@@ -233,6 +233,8 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
         why: text([...cards].reverse().find((c) => c.dataset.live === 'true')?.querySelector('.say-read, .say-quote')),
         pile: all('.say-pile i').length,
         pileOn: document.querySelector('.say-pile')?.dataset.on === 'true',
+        history: document.querySelector('.say-history span')?.textContent ?? null,
+        historyOn: document.querySelector('.say-feed')?.dataset.older === 'true',
         stepQ: text(document.querySelector('.say-step-q')),
         briefLines: all('.say-line', peek).length,
         offline: text(document.querySelector('.say-offline .lost-title')),

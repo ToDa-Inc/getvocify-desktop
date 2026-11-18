@@ -8,7 +8,7 @@ export const IDLE_EAR = 36;
 /** Room for an app icon or a small record dot, no more. */
 export const CALL_EAR = 46;
 export const POST_CALL_WIDTH = 420;
-/** The open island's width when the island rests at a screen edge (the after-call card gets 40 more, the recording, which shows a transcript, 100). */
+/** The open island's width when the island rests at a screen edge (the after-call card gets 40 more; the recording is as wide as under the notch, 460, so its bar at the foot fits). */
 export const SIDE_WIDTH = 300;
 export const COLLAPSED_RADIUS = 12;
 export const OPEN_RADIUS = 22;
@@ -60,16 +60,17 @@ export function showsConversation(state: { mode: { kind: Kind }; live?: unknown;
   return state.mode.kind === "recording" && Boolean(state.live) && state.liveTab === "conversation";
 }
 
-/** Qué decir under the notch is as tall as what it shows (its card, the tabs, the bar; plus what the rep opens), never
- * taller than the open recording was (RECORDING_HEIGHT, or half the screen). At the side the panel keeps its own height. */
-export function sizesItself(state: { mode: { kind: Kind }; live?: { view?: string } | null; placement?: string }): boolean {
-  return state.mode.kind === "recording" && state.live?.view === "say" && state.placement !== "side";
+/** Qué decir is as tall as what it shows (its card, the tabs, the bar with the call's controls at the foot; plus what the
+ * rep opens), never taller than the open recording was (RECORDING_HEIGHT, or half the screen). Under the notch and at the
+ * side alike: one layout, so the controls are at the foot wherever the island is (Windows reps saw them on top, 2026-11-18). */
+export function sizesItself(state: { mode: { kind: Kind }; live?: { view?: string } | null }): boolean {
+  return state.mode.kind === "recording" && state.live?.view === "say";
 }
 
 export function islandSize(g: Geometry, kind: Kind, open: boolean, postCallBody = 44, briefLines = 0, meeting = false, conversation = false, side = false): Size {
   const closed = { width: gap(g) + earWidth(kind, false) * 2, height: g.barHeight };
   // At the side of the screen the open island is a narrow card, not the notch's wide bar.
-  const wide = (min: number) => (side ? (min >= 460 ? SIDE_WIDTH + 100 : min >= 420 ? SIDE_WIDTH + 40 : SIDE_WIDTH) : Math.max(gap(g) + EAR * 2, min));
+  const wide = (min: number) => (side ? (min >= 460 ? SIDE_WIDTH + 160 : min >= 420 ? SIDE_WIDTH + 40 : SIDE_WIDTH) : Math.max(gap(g) + EAR * 2, min));
   const brief = briefLines > 0 ? BRIEF_HEAD + briefLines * BRIEF_LINE : 0;
   switch (kind) {
     case "idle":

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Check } from "./icons.tsx";
 
@@ -30,7 +30,8 @@ export function FloatMenu({ anchor, width, maxHeight, role = "listbox", align = 
   /** "end": its right edge lines up with what opened it (something at the island's right, like the wave). */
   align?: "start" | "end";
   onClose: () => void;
-  /** Where the dropdown ends (px from the window's top), so the window can grow to include it; null once it closes. */
+  /** Where the dropdown ends (px from the window's top), so the window can grow to include it; null once it closes.
+   * Without it the window cannot grow: a dropdown with no room below it opens above what opened it, when it fits there. */
   onExtent?: (bottom: number | null) => void;
   label: string;
   children: ReactNode;
@@ -39,6 +40,21 @@ export function FloatMenu({ anchor, width, maxHeight, role = "listbox", align = 
   // The rows' text lines up under the value that opened it, inside the island's width.
   const wanted = align === "end" ? anchor.x + anchor.width + PADDING + 8 - width : anchor.x - PADDING - 8;
   const left = Math.max(8, Math.min(wanted, document.documentElement.clientWidth - width - 8));
+  const below = anchor.y + anchor.height + 4;
+  const [top, setTop] = useState(below);
+  // Measured before it is painted, and again when its rows change: they decide its height.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const place = () => {
+      const above = anchor.y - 4 - el.offsetHeight;
+      setTop(!onExtent && below + el.offsetHeight > window.innerHeight - 8 && above >= 8 ? above : below);
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [anchor.y, below, onExtent]);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -81,7 +97,7 @@ export function FloatMenu({ anchor, width, maxHeight, role = "listbox", align = 
       className="float-menu"
       role={role}
       aria-label={label}
-      style={{ top: anchor.y + anchor.height + 4, left, width, maxHeight: maxHeight ?? VISIBLE * ROW + PADDING * 2 }}
+      style={{ top, left, width, maxHeight: maxHeight ?? VISIBLE * ROW + PADDING * 2 }}
       onClick={(event) => event.stopPropagation()}
     >
       {children}

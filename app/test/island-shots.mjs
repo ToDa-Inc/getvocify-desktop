@@ -89,6 +89,8 @@ const measure = (win, fixture) => win.webContents.executeJavaScript(`(() => {
     crmLink: [...document.querySelectorAll('.postcall-line .text-action')].map((e) => e.textContent.trim()).join('|'),
     listening: !!document.querySelector('.listening'),
     keypad: !!document.querySelector('.float-menu .dial-pad'),
+    // An open dropdown is whole inside the window (at the side the window is the screen and cannot grow for it).
+    menuInside: (() => { const b = document.querySelector('.float-menu')?.getBoundingClientRect(); return b ? b.top >= 0 && b.left >= 0 && b.bottom <= innerHeight && b.right <= innerWidth : null; })(),
     copyButtons: document.querySelectorAll('.copy-button').length,
     bubbleText: document.querySelector('.bubble')?.textContent.replace(/•+$/, '').trim() ?? null,
     repeatedLabels: (() => {
@@ -387,7 +389,7 @@ for (const fixture of fixtures) {
     }
     if (fixture.expect.briefRows !== undefined && m.briefRows !== fixture.expect.briefRows) problems.push(`${m.briefRows} row(s) in the call's brief, expected ${fixture.expect.briefRows}`);
     if (fixture.expect.briefMaxHeight !== undefined && m.briefHeight > fixture.expect.briefMaxHeight) problems.push(`the call's brief is ${m.briefHeight}px tall, expected at most ${fixture.expect.briefMaxHeight}px`);
-    for (const key of ["briefOpen", "listening", "keypad", "bubbleText", "copyButtons", "ticked", "saveLabel", "crmLink", "marker", "side"]) {
+    for (const key of ["briefOpen", "listening", "keypad", "bubbleText", "copyButtons", "ticked", "saveLabel", "crmLink", "marker", "side", "menuInside"]) {
       if (fixture.expect[key] !== undefined && JSON.stringify(m[key] ?? null) !== JSON.stringify(fixture.expect[key])) problems.push(`${key} is ${JSON.stringify(m[key])}, expected ${JSON.stringify(fixture.expect[key])}`);
     }
     if (m.clipped) problems.push(`${m.clipped} bubble(s) cut off at the island edge`);

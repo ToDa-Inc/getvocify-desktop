@@ -60,13 +60,15 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
     return () => observer.disconnect();
   }, [natural]);
 
-  // The window follows the island: reported here, because only the page knows the height.
+  // The window follows the island: reported here, because only the page knows the height. At the side the window is the
+  // screen and the pill places the panel by its own measure, so there is nothing to report.
+  const side = state.placement === "side";
   useEffect(() => {
-    if (!natural || cardHeight === null) return;
+    if (!natural || cardHeight === null || side) return;
     const reported = { width: size.width, height: Math.max(cardHeight, popupBottom ?? 0) };
     if (window.vocifyIsland) window.vocifyIsland.resize(reported);
     else (window.__islandSizes ??= []).push(reported);
-  }, [natural, cardHeight, popupBottom, size.width]);
+  }, [natural, cardHeight, popupBottom, size.width, side]);
 
   const style = {
     width: size.width,
@@ -304,7 +306,8 @@ function Body({ state, act, onPopupExtent, compact = false }: { state: IslandSta
   const mode = state.mode;
   switch (mode.kind) {
     case "recording":
-      return <OpenIsland state={state} act={act} compact={compact} onPopupExtent={compact ? onPopupExtent : undefined} />;
+      // At the side the window is the screen and cannot grow: a dropdown from the foot opens upward where there is no room below.
+      return <OpenIsland state={state} act={act} compact={compact} onPopupExtent={compact && state.placement !== "side" ? onPopupExtent : undefined} />;
     case "call":
       return <CallMenu state={state} caller={mode.caller} act={act} />;
     case "stopped":
@@ -887,7 +890,7 @@ function KeypadPopover({ anchor, onDigit, onClose, onExtent, align = "start" }: 
 /* ---------- open recording ---------- */
 
 /**
- * `compact`: the island sizes itself (Qué decir under the notch, 2026-11-16). There is no controls row: what controls the
+ * `compact`: the island sizes itself (Qué decir under the notch, 2026-11-16; at the side too, 2026-11-19). There is no controls row: what controls the
  * call sits at the right of the bar at the foot, always in the same place (pause and stop on a recording; mute, keypad
  * and hang up on a call dialled from the island), with one menu for the rest (copy the transcript, live help, open
  * Vocify); the call type is at the top of Pasos. A dropdown opened from the foot reaches past the island, so the window

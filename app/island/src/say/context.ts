@@ -34,12 +34,12 @@ export type SayUi = {
   older: boolean;
   /** The panel under the tabs is open (the island that sizes itself: closed until the rep taps a tab; the same tab closes it). */
   open: boolean;
-  /** «Por averiguar» is open under its row. */
-  find: boolean;
+  /** «Por averiguar» as the rep left it: none until they tap its row (then it is open or closed as they chose). */
+  find: boolean | null;
 };
 
 export const initialSayUi = (): SayUi => ({
-  peek: null, tab: "steps", respond: null, recap: null, flashId: null, flashAt: null, reopened: [], dismissed: [], marks: {}, askStep: null, rewrite: null, older: false, open: false, find: false,
+  peek: null, tab: "steps", respond: null, recap: null, flashId: null, flashAt: null, reopened: [], dismissed: [], marks: {}, askStep: null, rewrite: null, older: false, open: false, find: null,
 });
 
 /** A card as the rep sees it: the rep's ✓ and Responder's bringing back applied. */

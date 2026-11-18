@@ -55,8 +55,8 @@ export function StepsTab() {
     update({ askStep: { kind: todo.kind as "step" | "data", id: todo.id, after: live.asks.step?.seq ?? 0, at: nowMs() } });
   };
   const known = data.filter((t) => t.done).length;
-  // Open on its own while what the call is on is something to find out; else when the rep opens it.
-  const findOpen = ui.find || current?.kind === "data";
+  // Open when the rep opens it; until they do, on its own while what the call is on is something to find out.
+  const findOpen = ui.find ?? (current?.kind === "data");
   const asking = (todo: Todo) => Boolean(ui.askStep && ui.askStep.kind === todo.kind && ui.askStep.id === todo.id && !todo.done);
 
   return (

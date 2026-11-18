@@ -142,6 +142,12 @@ app.whenReady().then(async () => {
     // NSWindow (macOS ignores its non-activating flag), so native/mac-panel asks the window not to activate Vocify. Checked on
     // both: a click on the island that hands the keyboard to Vocify also brings its dashboard forward.
     const callKeepsFocus = (step) => check(foregroundPid() === callPid, `${step}: the call window keeps the keyboard`);
+    /** Once the island lets go of the keyboard (a moment after the caret leaves a field), the call window must have it again. */
+    const callGetsKeyboardBack = async (step) => {
+      const end = Date.now() + 2000;
+      while (foregroundPid() !== callPid && Date.now() < end) await sleep(100);
+      callKeepsFocus(step);
+    };
 
     /* ---------- idle ---------- */
     await click(".topbar");
@@ -214,6 +220,7 @@ app.whenReady().then(async () => {
     check((await page(`!document.querySelector('.float-menu')`)) === true, "a single-choice list closes on the pick");
     await click(".change-value", { index: 1, fx: 0.3, type: " and SaaS" });
     await click(".postcall-title");
+    await callGetsKeyboardBack("typing a value, then clicking elsewhere in the card");
     check((await page(`document.querySelectorAll('.value-text')[1].firstElementChild.textContent`)) === "Software and SaaS", `a free-text value is typed in place (${await text(".value-text", 1)})`);
     await snap("card-edited");
     // A free-text value the dashboard does not write as typed is not offered for typing: a click ticks it, as on the Mac.
@@ -236,6 +243,7 @@ app.whenReady().then(async () => {
     check((await text(".note-text")).endsWith("Follow up Thursday."), `the note is typed in (${JSON.stringify(await text(".note-text"))})`);
     await snap("card-note");
     await click(".postcall-tab", { index: 0 });
+    await callGetsKeyboardBack("typing the note, then clicking elsewhere in the card");
     actions.length = 0;
     await click(".postcall-actions .primary-action");
     const approve = actions.find((a) => a.type === "approve");
@@ -248,8 +256,7 @@ app.whenReady().then(async () => {
     await click(".postcall-header .icon-button");
     check(await until(() => mode() === "idle" && controller.state.postCall === null, 4000, "dismissed"), "Done clears the card and the island rests");
     check(!island.isFocusable(), "the island gives the keyboard back once the card is gone");
-    await sleep(400);
-    callKeepsFocus("after typing in the card and closing it");
+    await callGetsKeyboardBack("after typing in the card and closing it");
 
     /* ---------- a detected call ---------- */
     // Call detection reports "no call" first, as the Windows watcher does at start.

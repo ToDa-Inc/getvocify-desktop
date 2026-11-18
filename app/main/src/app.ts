@@ -1065,26 +1065,40 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   ipcMain.handle("island:keyboard", (event, mode: string) => {
     if (!fromIsland(event.sender)) return false;
     const windows = platform === "win32";
-    const giveBack = () => {
-      island.setFocusable(false);
-      if (island.isFocused()) island.blur();
+    /**
+     * Windows: Electron's setFocusable and blur end by handing the keyboard to the next visible window under the island (it
+     * calls SetForegroundWindow on it, even when the island does not have the keyboard), not to the window the rep was in.
+     * The island is topmost, so that was the taskbar (topmost too) and the rep's next keys went there. Out of the topmost
+     * band for that moment, the window under the island is the top ordinary window: the one the rep is in.
+     */
+    const outOfTopmost = (change: () => void) => {
+      if (!windows) return change();
+      island.setAlwaysOnTop(false);
+      change();
+      island.setAlwaysOnTop(true, "screen-saver");
     };
+    const setFocusable = (on: boolean) => outOfTopmost(() => island.setFocusable(on));
+    const giveBack = () =>
+      outOfTopmost(() => {
+        island.setFocusable(false);
+        if (island.isFocused()) island.blur();
+      });
     if (mode === "available") {
       cardTakesKeys = true;
-      if (!windows) island.setFocusable(true);
+      if (!windows) setFocusable(true);
     } else if (mode === "over") {
       // Electron's setFocusable on Windows also drops focus: never call it when nothing changes (it would blur a field).
-      if (!island.isFocusable()) island.setFocusable(true);
+      if (!island.isFocusable()) setFocusable(true);
     } else if (mode === "now" && !windows) {
       // The island is a panel that never activates the app: focusing it gives its field the keys without taking the call's window away.
-      if (!island.isFocusable()) island.setFocusable(true);
+      if (!island.isFocusable()) setFocusable(true);
       if (!island.isFocused()) island.focus();
       island.webContents.focus();
     } else if (mode === "now") {
       // Windows: the click in the field was input to this app, so it may bring its window to the front; a window created
       // "never activate" is not activated by the click itself. Each way is tried until the island has the keyboard.
       if (windows && !island.isFocused()) {
-        if (!island.isFocusable()) island.setFocusable(true);
+        if (!island.isFocusable()) setFocusable(true);
         island.focus();
         if (!island.isFocused()) {
           island.show();
@@ -1095,8 +1109,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       }
     } else if (mode === "release") {
       if (!windows && cardTakesKeys) return true;
-      if (!island.isFocused()) island.setFocusable(false);
-      else giveBack();
+      giveBack();
     } else {
       cardTakesKeys = false;
       giveBack();

@@ -116,6 +116,12 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
   }, [open, setInteractive]);
   // Leaving the pill gives the window its clicks back.
   useEffect(() => () => window.vocifyIsland?.interactive?.(true), []);
+  // Windows: once the window is click-through the pointer's leave never arrives, so the app says when the cursor has left
+  // (the card closes on its normal schedule instead of staying open and the pill's hover lit).
+  useEffect(
+    () => window.vocifyIsland?.onCursorLeft?.(() => press.current === null && act({ name: "pointer", inside: false })),
+    [act],
+  );
 
   const rest = area ? pillCentre(spot, area) : null;
   // In the window's own coordinates: when a drag takes the window onto another screen they are that screen's at once.
@@ -207,6 +213,7 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
             onPointerMove={onPointerMove}
             onPointerUp={endPress}
             onPointerCancel={endPress}
+            onLostPointerCapture={endPress}
             onPointerEnter={() => act({ name: "pointer", inside: true })}
             onPointerLeave={() => press.current === null && act({ name: "pointer", inside: false })}
             onClick={onClick}

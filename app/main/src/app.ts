@@ -577,6 +577,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (reach === sideReaching) return;
     sideReaching = reach;
     island.setIgnoreMouseEvents(!reach, { forward: true });
+    // Once the window is click-through the page gets no pointer leave: the cursor leaving is told to it from here.
+    if (!reach) island.webContents.send("island:cursor-left");
     // A rep's pill that takes no clicks: where the cursor and the pill were each time the window started or stopped
     // taking them (the first few per launch).
     if (reachLogs < 40) {

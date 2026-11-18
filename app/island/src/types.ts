@@ -406,6 +406,8 @@ export type IslandHost = {
   onState(cb: (state: IslandState) => void): () => void;
   /** Voice levels arrive on their own channel so they never trigger a render. */
   onLevels(cb: (levels: Levels) => void): () => void;
+  /** As a pill on Windows, the pointer left the pill and its panel: the window gets no leave of its own there. */
+  onCursorLeft?(cb: () => void): () => void;
   act(action: IslandAction): void;
   /**
    * The after-call card is as tall as its content, which only the page can measure (fonts differ by OS).

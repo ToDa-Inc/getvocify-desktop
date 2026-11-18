@@ -43,6 +43,12 @@ contextBridge.exposeInMainWorld("vocifyIsland", {
     ipcRenderer.on("island:levels", handler);
     return () => ipcRenderer.removeListener("island:levels", handler);
   },
+  /** Windows: the pointer has left the pill and its panel (the window no longer gets the pointer's leave). */
+  onCursorLeft(callback: () => void) {
+    const handler = () => callback();
+    ipcRenderer.on("island:cursor-left", handler);
+    return () => ipcRenderer.removeListener("island:cursor-left", handler);
+  },
   resize(size: { width: number; height: number }) {
     ipcRenderer.send("island:resize", size);
   },

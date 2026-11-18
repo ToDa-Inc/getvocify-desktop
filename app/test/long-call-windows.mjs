@@ -138,7 +138,8 @@ app.whenReady().then(async () => {
     let screens = false;
     for (let attempt = 1; attempt <= 3 && !screens; attempt++) {
       if (attempt > 1) {
-        console.log(`      the dashboard did not load its screens; reloading (attempt ${attempt})`);
+        console.log(`      the dashboard did not load its screens; signing in again and reloading (attempt ${attempt})`);
+        await dash.executeJavaScript(`localStorage.setItem("vocify_refresh", "soak-refresh"); localStorage.setItem("vocify_token", ${JSON.stringify(fakeJwt(userId))})`);
         dash.reload();
       }
       const loadedAt = Date.now();

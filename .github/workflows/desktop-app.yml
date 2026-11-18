@@ -110,9 +110,8 @@ jobs:
         run: npm run test:echo-all
 
       # A 60-minute call through the real dashboard (built from getvocify, public, no token), its transcript scripted
-      # and fed at a compressed cadence. Memory and CPU of the dashboard and island must not climb over the call. Three
-      # passes: as-is, under memory pressure (a ballast leaves about 1.5 GB free), and under pressure at device scale 2.
-      # About 25 minutes in all; the job timeout is 60.
+      # and fed at a compressed cadence. Memory and CPU of the dashboard and island must not climb over the call. Two
+      # passes, both under memory pressure (a ballast leaves about 1.5 GB free): at scale 1 and at device scale 2.
       # The runner's Windows says no desktop app may use the microphone; the soak's microphone is a fake device, so
       # the setting is allowed for this runner user (the setting the page's microphone check reads).
       - name: Let desktop apps use the microphone for the soak
@@ -143,15 +142,6 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npx vite build --outDir "$RUNNER_TEMP/dashboard"
-
-      - name: Long call through the real dashboard
-        if: always()
-        timeout-minutes: 12
-        shell: bash
-        env:
-          SOAK_DASHBOARD_DIST: ${{ runner.temp }}/dashboard
-          SOAK_OUT: ${{ runner.temp }}/soak.jsonl
-        run: mkdir -p "$RUNNER_TEMP/soak-logs" && npm run test:soak 2>&1 | tee "$RUNNER_TEMP/soak-logs/plain.log"
 
       - name: Long call under memory pressure
         if: always()

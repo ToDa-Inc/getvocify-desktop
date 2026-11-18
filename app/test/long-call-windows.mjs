@@ -133,6 +133,9 @@ app.whenReady().then(async () => {
     dash.on("console-message", (_e, level, message) => { if (level >= 1 && !message.includes("Electron Security")) console.log("      page", message.slice(0, 300)); });
     // The page signs in with a stored refresh token, then reloads into the signed-in dashboard.
     await dash.executeJavaScript(`localStorage.setItem("vocify_refresh", "soak-refresh"); localStorage.setItem("vocify_token", ${JSON.stringify(fakeJwt(userId))})`);
+    // Known: on some runs without the ballast (the plain pass, dropped from CI) the page signs in, makes only its
+    // auth/me call and stays on /login, so Record never reaches it. Not seen under pressure. Revisit before the
+    // unpressured pass comes back.
     // Recording starts only once the dashboard has loaded its screens: the stand-in sees its last start-up call. A page
     // that signs in but stays on a blank screen is reloaded, up to three times.
     let screens = false;

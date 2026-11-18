@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CHECK_EVERY_MS, startUpdater, type UpdateSource } from "../src/updater.ts";
+import { CHECK_EVERY_MS, OFFER_AGAIN_MS, startUpdater, type UpdateSource } from "../src/updater.ts";
 
-function setup(canInstall: () => boolean, canRestart?: () => boolean) {
+function setup(canInstall: () => boolean, canRestart?: () => boolean, now: () => number = () => 1000) {
   const handlers: Record<string, (arg: never) => void> = {};
   const timers: { ms: number; fn: () => void; stopped: boolean }[] = [];
-  const calls = { checks: 0, installs: [] as unknown[][], before: 0 };
+  const calls = { checks: 0, installs: [] as unknown[][], before: 0, notices: [] as { version: string; restart: () => void }[] };
   const source = {
     autoDownload: false,
     autoInstallOnAppQuit: false,
@@ -18,10 +18,11 @@ function setup(canInstall: () => boolean, canRestart?: () => boolean) {
   const states: string[] = [];
   const updater = startUpdater({
     onState: (s) => void states.push(s.state),
-    now: () => 1000,
+    now,
     source,
     canInstallNow: canInstall,
     canRestartNow: canRestart,
+    notify: (version, restart) => void calls.notices.push({ version, restart }),
     every: (ms, fn) => {
       const t = { ms, fn, stopped: false };
       timers.push(t);
@@ -76,24 +77,56 @@ test("a manual check asks now, outside the half-hourly rhythm", () => {
   assert.equal(t.calls.checks, 2);
 });
 
-test("a downloaded update is installed at once when nothing is in progress, silently and relaunching", () => {
+test("a downloaded update is offered at once when nothing is in progress, and never installed by itself", () => {
   const t = setup(() => true);
   t.handlers["update-downloaded"]({ version: "0.4.9" } as never);
-  assert.deepEqual(t.calls.installs, [[true, true]]);
-  assert.equal(t.calls.before, 1, "the app is told first so it can start quietly after the restart");
+  assert.deepEqual(t.calls.notices.map((n) => n.version), ["0.4.9"]);
+  assert.equal(t.calls.installs.length, 0, "the app does not restart on its own");
+  assert.equal(t.calls.before, 0);
 });
 
-test("while a meeting is being recorded the update waits, and goes in the moment it is free", () => {
+test("while a meeting is being recorded the offer waits, and comes the moment it is free", () => {
   let busy = true;
   const t = setup(() => !busy);
   t.handlers["update-downloaded"]({ version: "0.4.9" } as never);
-  assert.equal(t.calls.installs.length, 0);
+  assert.equal(t.calls.notices.length, 0);
   const waiting = t.timers[1];
   waiting.fn();
-  assert.equal(t.calls.installs.length, 0, "still busy");
+  assert.equal(t.calls.notices.length, 0, "still busy");
   busy = false;
   waiting.fn();
-  assert.equal(t.calls.installs.length, 1);
+  assert.equal(t.calls.notices.length, 1);
+  waiting.fn();
+  assert.equal(t.calls.notices.length, 1, "not again at once");
+  assert.equal(t.calls.installs.length, 0);
+});
+
+test("the same build is offered again only after four hours, a newer build at once", () => {
+  let at = 1000;
+  const t = setup(() => true, undefined, () => at);
+  t.handlers["update-downloaded"]({ version: "0.4.9" } as never);
+  at += OFFER_AGAIN_MS - 1;
+  t.timers[1].fn();
+  assert.equal(t.calls.notices.length, 1);
+  at += 1;
+  t.timers[1].fn();
+  assert.equal(t.calls.notices.length, 2);
+  t.handlers["update-downloaded"]({ version: "0.5.0" } as never);
+  assert.equal(t.calls.notices.at(-1)?.version, "0.5.0");
+  assert.equal(t.calls.installs.length, 0);
+});
+
+test("clicking the offer restarts into the build, and a click during a recording waits", () => {
+  let busy = false;
+  const t = setup(() => !busy, () => !busy);
+  t.handlers["update-downloaded"]({ version: "0.4.9" } as never);
+  busy = true;
+  t.calls.notices[0].restart();
+  assert.equal(t.calls.installs.length, 0, "still recording");
+  busy = false;
+  t.calls.notices[0].restart();
+  assert.deepEqual(t.calls.installs, [[true, true]]);
+  assert.equal(t.calls.before, 1, "the app is told first so it can start quietly after the restart");
 });
 
 test("no further checks once an update is downloaded, and errors are logged, never thrown", () => {
@@ -120,11 +153,11 @@ test("Restart now installs the downloaded build at once, and refuses while a rec
   assert.deepEqual(t.calls.installs, [[true, true]]);
 });
 
-test("an open window holds the automatic restart back, but not Restart now", () => {
+test("an open window holds the offer back, but not Restart now", () => {
   let windowOpen = true;
   const t = setup(() => !windowOpen, () => true);
   t.handlers["update-downloaded"]({ version: "0.4.9" } as never);
-  assert.equal(t.calls.installs.length, 0, "the rep is looking at the app");
+  assert.equal(t.calls.notices.length, 0, "the rep is looking at the app");
   assert.equal(t.updater.install(), true);
   assert.equal(t.calls.installs.length, 1);
   windowOpen = false;

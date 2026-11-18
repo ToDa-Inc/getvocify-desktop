@@ -1,7 +1,8 @@
 /**
- * Self-update from GitHub Releases. The installed app checks for a newer build, downloads it in the background and
- * installs it once nothing is being recorded and the window is closed; otherwise it waits (and installs on the next quit). The rep can also
- * restart into it at once (`install`).
+ * Self-update from GitHub Releases. The installed app checks for a newer build and downloads it in the background. It
+ * never restarts by itself: once the build is downloaded and nothing is in progress, the rep is asked (one native
+ * notice, again for the same build only every few hours) and a click restarts into it. Otherwise the build installs on
+ * the next quit. The rep can also restart into it at once (`install`).
  */
 
 /** The part of electron-updater's `autoUpdater` this file uses. */
@@ -40,6 +41,8 @@ export type UpdaterOptions = {
   canInstallNow(): boolean;
   /** For Restart now: true when only the rep's own wish is in the way (not recording, no call note being saved). */
   canRestartNow?(): boolean;
+  /** Asks the rep to restart into a downloaded build; `restart` does it when they say yes. */
+  notify?(version: string, restart: () => void): void;
   every(ms: number, fn: () => void): () => void;
   log(message: string): void;
   /** Called just before the app quits to install. */
@@ -50,7 +53,10 @@ export type UpdaterOptions = {
 };
 
 export const CHECK_EVERY_MS = 30 * 60_000;
-const RETRY_INSTALL_MS = 30_000;
+/** How often a downloaded build is checked for a moment when nothing is in progress. */
+const OFFER_EVERY_MS = 30_000;
+/** The same build is offered again only after this long. */
+export const OFFER_AGAIN_MS = 4 * 60 * 60_000;
 
 export type Updater = {
   stop(): void;
@@ -71,21 +77,26 @@ export function startUpdater(options: UpdaterOptions): Updater {
 
   let downloaded: string | null = null;
   let stopWaiting: (() => void) | null = null;
+  let offered: { version: string; at: number } | null = null;
   let current: UpdateState = { state: "idle" };
   const set = (next: UpdateState) => {
     current = next;
     options.onState?.(next);
   };
 
-  const installIfIdle = (allowed: () => boolean = options.canInstallNow): boolean => {
-    if (downloaded === null || !allowed()) return false;
+  const restart = (): boolean => {
+    if (downloaded === null || !(options.canRestartNow ?? options.canInstallNow)()) return false;
     log(`updating to ${downloaded}`);
     options.beforeInstall?.();
     source.quitAndInstall(true, true);
     return true;
   };
-  const installWhenIdle = () => {
-    if (!installIfIdle()) stopWaiting ??= options.every(RETRY_INSTALL_MS, installWhenIdle);
+  const offerWhenIdle = () => {
+    if (downloaded === null || !options.canInstallNow()) return;
+    if (offered?.version === downloaded && now() - offered.at < OFFER_AGAIN_MS) return;
+    offered = { version: downloaded, at: now() };
+    log(`update ${downloaded} offered`);
+    options.notify?.(downloaded, () => void restart());
   };
 
   source.on("checking-for-update", () => {
@@ -97,7 +108,8 @@ export function startUpdater(options: UpdaterOptions): Updater {
     downloaded = info.version;
     log(`update ${info.version} downloaded`);
     set({ state: "ready", next: info.version });
-    installWhenIdle();
+    offerWhenIdle();
+    stopWaiting ??= options.every(OFFER_EVERY_MS, offerWhenIdle);
   });
   source.on("error", (error) => {
     log(`update check failed: ${error.message}`);
@@ -118,7 +130,7 @@ export function startUpdater(options: UpdaterOptions): Updater {
   const stopChecking = options.every(CHECK_EVERY_MS, check);
   return {
     check,
-    install: () => installIfIdle(options.canRestartNow ?? options.canInstallNow),
+    install: restart,
     state: () => current,
     stop: () => {
       stopChecking();

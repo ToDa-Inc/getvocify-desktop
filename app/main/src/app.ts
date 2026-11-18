@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, nativeImage, net, powerMonitor, screen, shell, systemPreferences, Tray, webContents } from "electron";
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, Notification, nativeImage, net, powerMonitor, screen, shell, systemPreferences, Tray, webContents } from "electron";
 import { freemem, totalmem } from "node:os";
 import { existsSync } from "node:fs";
 import { open as openFile } from "node:fs/promises";
@@ -78,7 +78,7 @@ export type AppHandle = {
   canInstallUpdate(): boolean;
   /** Restart now: the same, except an open window does not hold it back (the rep asked). */
   canRestartForUpdate(): boolean;
-  /** True when this start is the restart after an automatic update. */
+  /** True when this start is the restart into an update the rep chose. */
   startedAfterUpdate: boolean;
   /** Called just before an update restarts the app. */
   markUpdateRestart(): void;
@@ -86,6 +86,8 @@ export type AppHandle = {
   attachUpdater(updater: { check(): void; install(): boolean; state(): UpdateState }): void;
   /** The updater's state changed: the dashboard's Settings is told. */
   updateStateChanged(state: UpdateState): void;
+  /** A downloaded build is ready and the app is idle: one native notice; its click calls `restart`. */
+  notifyUpdate(version: string, restart: () => void): void;
   /** Writes a line to the app's log file. */
   log(message: string): void;
   quit(): void;
@@ -1413,6 +1415,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   log(`dashboard told the platform is ${options.reportedPlatform ?? platform}`);
   log(`screens: ${screen.getAllDisplays().map((d) => `${d.bounds.width}x${d.bounds.height} at ${d.bounds.x},${d.bounds.y} scale ${d.scaleFactor}${d.id === screen.getPrimaryDisplay().id ? " (main)" : ""}`).join("; ")}`);
   log(`started: island ${Math.round(initial.width)}x${initial.height}, notch ${Math.round(placement.geometry.notchWidth)}px, bar ${placement.geometry.barHeight}px`);
+  let updateNotice: Notification | null = null;
   return {
     controller,
     dashboard,
@@ -1442,6 +1445,17 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     updateStateChanged: () => {
       dashboard.emit("updates:changed", updateStatus());
       refreshTray(controller.state);
+    },
+    notifyUpdate: (version, restart) => {
+      if (!Notification.isSupported()) return;
+      const es = controller.state.language === "es";
+      // Kept in a variable: a notice that is garbage-collected before it is clicked is never clicked.
+      updateNotice = new Notification({
+        title: es ? "Nueva versión de Vocify lista" : "New Vocify version ready",
+        body: es ? `Reinicia para actualizar a ${version}.` : `Restart to update to ${version}.`,
+      });
+      updateNotice.on("click", restart);
+      updateNotice.show();
     },
     log,
     quit: () => app.quit(),

@@ -132,7 +132,9 @@ const FEED_MAX_SHARE = 0.55;
 /** Where the island sizes itself: the zone's least and most (a longer card, or the earlier ones spread, scroll inside),
  * and the height of the greyed place shown while there is no card. */
 const COMPACT_MIN = 60;
-const COMPACT_MAX = 200;
+// As much as the island leaves it (its 400 px cap less the notch bar, the type line, the tabs and the bar): a suggestion
+// is read whole, never behind a scroll (Dani, 2026-11-18). About eleven lines; only past that does it scroll.
+const COMPACT_MAX = 260;
 const COMPACT_QUIET = 50;
 
 export function Feed() {
@@ -196,9 +198,10 @@ export function Feed() {
     const list = older ? feed.querySelector<HTMLElement>(".say-list") : null;
     // Responder with nothing to answer shows "Te falta saber" alone, which is no live point: it is measured too, or the
     // zone fell to its least (60 px) and a script showed one line behind a scroll (Windows, 2026-11-18).
-    const next = open ? null : feed.querySelector<HTMLElement>('[data-id="say-next"]');
-    const shown = open ?? next;
-    const card = list ? Math.ceil(list.getBoundingClientRect().height) : shown ? Math.ceil(shown.getBoundingClientRect().height) : 0;
+    // With a card open as well, both are shown, one under the other (6 px apart), and both count.
+    const next = feed.querySelector<HTMLElement>('[data-id="say-next"]');
+    const height = (el: HTMLElement | null) => (el ? Math.ceil(el.getBoundingClientRect().height) : 0);
+    const card = list ? height(list) : open && next ? height(open) + 6 + height(next) : height(open ?? next);
     // Grows only for a card its own height cannot hold whole; then exactly as much as that card needs.
     const need = card + FEED_PADDING + WORK_ROW + (past > 0 ? PILE : 0);
     // The island that sizes itself: the zone is as tall as what it shows, so nothing is left empty above the tabs.

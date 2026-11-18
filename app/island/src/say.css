@@ -314,6 +314,9 @@ html:has(.side-stage), body:has(.side-stage) { overflow: hidden; }
 .open-island[data-compact="true"] { flex: 0 1 auto; }
 .open-island[data-compact="true"] .hairline { display: none; }
 .open-island[data-compact="true"] .say-feed { padding-bottom: 0; }
+/* The zone is as tall as the open answer, kept in view: no scrollbar beside it (the answer it replaced leaves above). */
+.open-island[data-compact="true"] .say-feed .live-scroll { scrollbar-width: none; }
+.open-island[data-compact="true"] .say-feed .live-scroll::-webkit-scrollbar { display: none; }
 .open-island[data-compact="true"] .say-tabs-row { padding: 4px 12px 6px; }
 /* Nothing open: neither tab reads as chosen. Pasos says how many steps are done. */
 .live-tab-count { margin-left: 2px; font-size: 10.5px; font-variant-numeric: tabular-nums; color: rgba(255, 255, 255, 0.45); }

@@ -194,7 +194,11 @@ export function Feed() {
     const room = Math.round((feed.parentElement?.clientHeight ?? 0) * FEED_MAX_SHARE);
     // With the earlier answers brought back, the whole list counts: it gets the room, and scrolls inside past it.
     const list = older ? feed.querySelector<HTMLElement>(".say-list") : null;
-    const card = list ? Math.ceil(list.getBoundingClientRect().height) : open ? Math.ceil(open.getBoundingClientRect().height) : 0;
+    // Responder with nothing to answer shows "Te falta saber" alone, which is no live point: it is measured too, or the
+    // zone fell to its least (60 px) and a script showed one line behind a scroll (Windows, 2026-11-18).
+    const next = open ? null : feed.querySelector<HTMLElement>('[data-id="say-next"]');
+    const shown = open ?? next;
+    const card = list ? Math.ceil(list.getBoundingClientRect().height) : shown ? Math.ceil(shown.getBoundingClientRect().height) : 0;
     // Grows only for a card its own height cannot hold whole; then exactly as much as that card needs.
     const need = card + FEED_PADDING + WORK_ROW + (past > 0 ? PILE : 0);
     // The island that sizes itself: the zone is as tall as what it shows, so nothing is left empty above the tabs.

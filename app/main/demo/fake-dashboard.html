@@ -54,6 +54,12 @@
   const set = (state) => bridge.shell.setState(state);
   let liveType = { selected: "discovery", proposed: true, options: OPTIONS };
   let postCall = null;
+  // Who the demo call may have been with, and who a search of the CRM finds.
+  const PEOPLE = [
+    { id: "demo-marta", name: "Marta Ruiz", detail: "Acme Logistics" },
+    { id: "demo-javier", name: "Javier Ortega", detail: "Acme Logistics" },
+    { id: "demo-lucia", name: "Lucía Pérez", detail: "lucia@transportesperez.es" },
+  ];
   const setPostCall = (patch) => { postCall = patch === null ? null : { ...postCall, ...patch }; set({ postCall }); };
 
   bridge.shell.onCommand((name) => {
@@ -86,6 +92,21 @@
       case "skipEmail": setPostCall({ email: { ...postCall.email, state: "skipped" } }); break;
       case "unskipEmail": setPostCall({ email: { ...postCall.email, state: "ready" } }); break;
       case "addMeeting": setPostCall({ meeting: { ...postCall.meeting, state: "added" } }); break;
+      // The contact picker, as the dashboard answers it: a search of the CRM, then the update read again for the pick.
+      case "searchContacts": {
+        const query = String(action.query || "");
+        if (query.length < 2) { setPostCall({ contactSearch: null }); break; }
+        setPostCall({ contactSearch: { query, results: [], busy: true } });
+        later(400, () => postCall && postCall.contactSearch?.query === query && setPostCall({ contactSearch: { query, results: PEOPLE.filter((p) => p.name.toLowerCase().includes(query.toLowerCase())), busy: false } }));
+        break;
+      }
+      case "setContact": {
+        const person = PEOPLE.find((p) => p.id === action.contactId);
+        if (!person) break;
+        setPostCall({ stage: "writing", contactId: person.id, contactName: person.name, changes: [], canApprove: false, contactSearch: null });
+        later(900, () => postCall && postCall.contactId === person.id && setPostCall({ stage: "ready", canApprove: true, changes: CHANGES }));
+        break;
+      }
       default: break;
     }
   });
@@ -158,7 +179,7 @@
     later(600, () => set({ finish: { step: "uploading" } }));
     later(1300, () => {
       log("sent; writing the update");
-      postCall = { stage: "writing", memoId: "demo-" + Date.now(), contactName: "Marta Ruiz", crm: "HubSpot", changes: [], canApprove: false, notes: false, type: { key: "discovery", label: "Discovery call", options: OPTIONS } };
+      postCall = { stage: "writing", memoId: "demo-" + Date.now(), contactName: "Marta Ruiz", contactId: "demo-marta", contacts: PEOPLE.slice(0, 2), crm: "HubSpot", changes: [], canApprove: false, notes: false, type: { key: "discovery", label: "Discovery call", options: OPTIONS } };
       set({ finish: null, postCall });
     });
     later(1200, () => bridge.drafts.remove("demo-draft"));

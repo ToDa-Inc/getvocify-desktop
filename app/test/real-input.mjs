@@ -219,9 +219,18 @@ app.whenReady().then(async () => {
     check((await text(".value-text")).startsWith("Manager"), `picking an option shows it (${await text(".value-text")})`);
     check((await page(`!document.querySelector('.float-menu')`)) === true, "a single-choice list closes on the pick");
     await click(".change-value", { index: 1, fx: 0.3, type: " and SaaS" });
-    await click(".postcall-title");
+    // Elsewhere: a group's label, plain text (the title is the contact picker, which takes the keyboard for its search).
+    await click(".group-label");
     await callGetsKeyboardBack("typing a value, then clicking elsewhere in the card");
     check((await page(`document.querySelectorAll('.value-text')[1].firstElementChild.textContent`)) === "Software and SaaS", `a free-text value is typed in place (${await text(".value-text", 1)})`);
+
+    // The contact in the title opens the picker with its search ready to type in; a click elsewhere closes it and the
+    // call gets the keyboard back.
+    await click(".postcall-contact");
+    check((await page(`document.activeElement?.classList.contains('contact-search-input') === true`)) === true, "the contact picker opens with its search focused");
+    await click(".group-label");
+    check((await page(`!document.querySelector('.float-menu')`)) === true, "a click elsewhere closes the contact picker");
+    await callGetsKeyboardBack("searching a contact, then clicking elsewhere in the card");
     await snap("card-edited");
     // A free-text value the dashboard does not write as typed is not offered for typing: a click ticks it, as on the Mac.
     await click(".change-value", { index: 2, fx: 0.3 });

@@ -35,7 +35,7 @@ async function open(fixture) {
   await win.loadFile(dist);
   await win.webContents.insertCSS(`html,body{background:${WALLPAPER} !important}`);
   // Each fixture starts from nothing remembered (a folded section from an earlier run must not carry over).
-  await win.webContents.executeJavaScript(`try { localStorage.clear(); } catch {} window.__fixedNow=${NOW}; true`);
+  await win.webContents.executeJavaScript(`try { localStorage.clear(); } catch {} window.__fixedNow=${NOW}; document.documentElement.addEventListener('mouseleave', (e) => { window.__lastLeave = 'leave at ' + e.clientX + ',' + e.clientY + ' t=' + Math.round(performance.now()); }); true`);
   const started = await win.webContents.executeJavaScript(`new Promise(r=>{let n=0;const t=()=>window.__setIslandState?r(true):++n>300?r(false):setTimeout(t,10);t()})`);
   if (!started) errors.push("island script never started (window.__setIslandState missing)");
   if (started) await win.webContents.executeJavaScript(`window.__setIslandState(${JSON.stringify(fixture.state)}); true`);
@@ -473,8 +473,10 @@ for (const test of interactions) {
   if (!(await clickIn(win, test.click))) missing.push(test.click);
   await frame();
   if (missing.length) {
-    report.push({ name: `click:${test.name}`, problems: [`click target missing: ${missing.join(", ")}`] });
-    failures.push(`click:${test.name}: click target missing: ${missing.join(", ")}`);
+    // What the page held instead: whether a dropdown is up and what is in it, and where the pointer last was.
+    const seen = await win.webContents.executeJavaScript(`(() => { const m = document.querySelector('.float-menu'); return m ? 'menu: ' + m.getAttribute('role') + ' ' + m.textContent.trim().slice(0, 120) : 'no menu; ' + (window.__lastLeave ?? 'no leave seen'); })()`);
+    report.push({ name: `click:${test.name}`, problems: [`click target missing: ${missing.join(", ")} (${seen})`] });
+    failures.push(`click:${test.name}: click target missing: ${missing.join(", ")} (${seen})`);
     win.destroy();
     continue;
   }

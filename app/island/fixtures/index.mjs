@@ -172,6 +172,7 @@ const postCallTasks = [
 
 const leadStatusToPick = { key: "contacts:hs_lead_status", label: "Lead Status", object: "contact", from: null, to: "Choose", value: "", options: [{ value: "NEW", label: "New" }, { value: "ATTEMPTED_TO_CONTACT", label: "Attempted to contact" }, { value: "CONNECTED", label: "Connected" }], multiple: false, editable: false, check: false, pending: true, when: null, whenSuggested: false, dueAt: null };
 
+// As the app's parser hands them over: a field that is not a task has no day (`when` null), never undefined.
 const postCallChanges = [
   {
     key: "contact:title",
@@ -237,7 +238,7 @@ const postCallChanges = [
     multiple: false,
     check: false,
   },
-];
+].map((change) => ({ when: null, whenSuggested: false, dueAt: null, ...change }));
 
 const answer = {
   label: "Price objection",

@@ -310,8 +310,17 @@ app.whenReady().then(main).catch((error) => {
   app.exit(1);
 });
 
-/** Clicks what the selector finds; false when nothing matches (a missing target names its test instead of ending the run). */
-const clickIn = (win, selector) => win.webContents.executeJavaScript(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; el.click(); return true; })()`);
+/** Clicks what the selector finds, once it is there (up to 2 s: a dropdown opened by the click before can take a while
+ * to draw on the Windows runner, where a fixed wait missed it twice, 2026-11-18/19); false when it never appears, so a
+ * missing target names its test instead of ending the run. */
+const clickIn = (win, selector) => win.webContents.executeJavaScript(`(async () => {
+  for (let waited = 0; waited <= 2000; waited += 50) {
+    const el = document.querySelector(${JSON.stringify(selector)});
+    if (el) { el.click(); return true; }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
+})()`);
 
 async function main() {
   // Destroying the last live window makes the next window's renderer fail to start in some environments,

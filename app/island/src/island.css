@@ -403,6 +403,18 @@ button.type-tag:hover { color: var(--text); }
 .option-row > svg:first-child { flex: none; color: var(--beige); opacity: 0; transition: opacity 120ms; }
 .option-row[data-selected="true"] > svg:first-child { opacity: 1; }
 .option-row[data-dim="true"]:not(:hover) { color: var(--secondary); opacity: 0.85; }
+/* A person in the contact picker: the name, and under it what tells two apart. */
+.option-row[data-detail="true"] { height: 34px; }
+.option-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; text-align: left; }
+.option-label, .option-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.option-detail { font-size: 10.5px; color: var(--secondary); opacity: 0.8; }
+.contact-search { flex: none; padding: 2px 2px 4px; }
+/* The contact the call is saved on, in the card's title: a picker, quiet until hovered. */
+button.postcall-contact { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: transparent; font: inherit; font-size: 13px; font-weight: 600; color: var(--text); cursor: default; }
+button.postcall-contact > svg { flex: none; color: var(--secondary); transition: color 120ms; }
+button.postcall-contact:hover > svg { color: var(--text); }
+button.postcall-contact[data-empty="true"] { color: var(--beige); }
+.postcall-contact-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .option-row span { flex: 1; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 
 /* calling the CRM contact on screen */

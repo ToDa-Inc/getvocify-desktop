@@ -4,7 +4,7 @@ import { ArrowUpRight, Briefcase, Building, Calendar, Check, ChevronDown, Close,
 import { dayAfter, dueLabel, dueOfMoment, type TaskDue } from "../../core/taskDates.ts";
 import { keyboardNow, keyboardOver, releaseKeyboardSoon } from "./keyboard.ts";
 import { TaskDatePicker } from "./TaskDatePicker.tsx";
-import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallData, type PostCallMeeting, type PostCallSavedOn } from "./types.ts";
+import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallContact, type PostCallData, type PostCallMeeting, type PostCallSavedOn } from "./types.ts";
 
 /**
  * The after-call card: a port of `PostCallMenu` (MeetingPill.swift) with its layout numbers (`PostCallLayout`).
@@ -66,6 +66,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const [tasks, setTasks] = useState<NewTask[]>([]);
   const [taskEdits, setTaskEdits] = useState<Record<string, TaskEdit>>({});
   const [dateMenu, setDateMenu] = useState<{ key: string; anchor: Anchor } | null>(null);
+  const [contactMenu, setContactMenu] = useState<Anchor | null>(null);
 
   // A new call: its own ticks, picks and note.
   useEffect(() => {
@@ -78,6 +79,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
     setTasks([]);
     setTaskEdits({});
     setDateMenu(null);
+    setContactMenu(null);
   }, [postCall.memoId]);
 
   // Past its changes (applying, done...), a value's options no longer apply.
@@ -85,6 +87,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
     if (postCall.stage !== "ready") {
       setOptions(null);
       setDateMenu(null);
+      setContactMenu(null);
     }
   }, [postCall.stage]);
 
@@ -125,7 +128,8 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
 
   // The island never takes the keyboard (a click must not take it from the call), except while this card can still save:
   // then its note and its free-text values can be typed in, and a click in them focuses the window like any text field.
-  const typable = postCall.stage === "ready" && postCall.canApprove;
+  // The contact picker's search is typed in too, so a card waiting for its contact takes the keyboard as well.
+  const typable = postCall.stage === "ready" && (postCall.canApprove || !postCall.noAnswer);
   useEffect(() => {
     if (!typable) return;
     void window.vocifyIsland?.keyboard?.("available");
@@ -136,7 +140,34 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
     setOptions(null);
     setTypeMenu(null);
     setDateMenu(null);
+    setContactMenu(null);
   }, []);
+  // Who the call is saved on, picked here: the people Vocify found, or anyone the CRM finds by name, email or phone.
+  // A call nobody answered keeps its contact (it was dialled).
+  const contactPickable = postCall.stage === "ready" && !postCall.noAnswer;
+  const openContactMenu = (target: Element) => {
+    const anchor = anchorOf(target);
+    setOptions(null);
+    setTypeMenu(null);
+    setDateMenu(null);
+    setContactMenu((open) => (open ? null : anchor));
+  };
+  const chooseContactButton = (
+    <button
+      type="button"
+      className="primary-action"
+      title={`Pick who it was with, then save to ${postCallCrmName(postCall)}`}
+      onMouseEnter={keyboardOver}
+      onMouseDown={keyboardNow}
+      onClick={(event) => {
+        event.stopPropagation();
+        openContactMenu(event.currentTarget);
+      }}
+    >
+      <UserRound size={9} />
+      <span>Choose contact</span>
+    </button>
+  );
 
   const toggleChange = (key: string) => {
     // Ticking a change of a record left out puts the call back on that record, with that change ticked.
@@ -264,7 +295,26 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
     <>
       <div className="postcall-card" style={{ padding: `${L.top}px ${L.inset}px ${L.bottom}px` }}>
         <div className="postcall-header" style={{ height: L.header }}>
-          <span className="postcall-title">{postCall.contactName ?? "Your call"}</span>
+          {contactPickable ? (
+            <button
+              type="button"
+              className="postcall-title postcall-contact"
+              data-empty={!postCall.contactId}
+              title={postCall.contactId ? "Save the call on someone else" : "Choose who it was with"}
+              aria-expanded={contactMenu !== null}
+              onMouseEnter={keyboardOver}
+              onMouseDown={keyboardNow}
+              onClick={(event) => {
+                event.stopPropagation();
+                openContactMenu(event.currentTarget);
+              }}
+            >
+              <span className="postcall-contact-name">{postCall.contactId ? postCall.contactName ?? "Contact" : "Choose contact"}</span>
+              <ChevronDown size={7} stroke={3.6} />
+            </button>
+          ) : (
+            <span className="postcall-title">{postCall.contactName ?? "Your call"}</span>
+          )}
           {postCall.type &&
             (postCall.type.options.length === 0 ? (
               <span className="type-tag" title="What this call was scored as">{postCall.type.label}</span>
@@ -304,13 +354,23 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
               <Line icon={<PhoneDown size={11} />}><span className="dim">No answer. Logged in {crm} as no answer</span></Line>
             )}
             {postCall.stage === "writing" && <Line busy><span className="dim">Writing the update…</span></Line>}
-            {postCall.stage === "ready" && nothingSure && (
-              <Line icon={<ExclamationCircle />} trailing={postCall.canApprove ? undefined : review}>
+            {postCall.stage === "ready" && nothingSure && postCall.canApprove && (
+              <Line icon={<ExclamationCircle />}>
                 {/* With a note to save, nothing is wrong: there are simply no fields to change. */}
-                <span className={postCall.canApprove && noteToSave ? "dim" : undefined}>
-                  {postCall.canApprove && noteToSave ? "No fields to change" : "Nothing clear enough to write from here"}
-                </span>
+                <span className={noteToSave ? "dim" : undefined}>{noteToSave ? "No fields to change" : "Nothing clear enough to write from here"}</span>
               </Line>
+            )}
+            {postCall.stage === "ready" && nothingSure && !postCall.canApprove && (
+              <>
+                <Line icon={<UserRound size={11} />}>
+                  <span className="dim">No contact yet: choose who it was with to save the note</span>
+                </Line>
+                <div className="postcall-actions" style={{ height: L.actions }}>
+                  {contactPickable ? chooseContactButton : null}
+                  <div className="grow" />
+                  {review}
+                </div>
+              </>
             )}
             {postCall.stage === "ready" && nothingSure && postCall.canApprove && (
               <>
@@ -373,12 +433,10 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
                     </>
                   ) : (
                     <>
-                      {/* No contact on this recording: Vocify's review has the contact picker, and saves from there. */}
-                      <button type="button" className="primary-action" title={`Pick who it was with in Vocify, then save to ${crm}`} onClick={() => send("chooseContact")}>
-                        <ArrowUpRight size={9} stroke={2.6} />
-                        <span>Choose contact to save</span>
-                      </button>
+                      {/* No contact on this recording: chosen here, then the update is read again for them. */}
+                      {contactPickable ? chooseContactButton : null}
                       <div className="grow" />
+                      {review}
                     </>
                   )}
                 </div>
@@ -492,6 +550,20 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
               }}
             />
           ))}
+        </FloatMenu>
+      )}
+      {contactMenu && contactPickable && (
+        <FloatMenu anchor={contactMenu} width={250} maxHeight={CONTACT_MENU_HEIGHT} role="group" onClose={closeMenus} onExtent={onPopupExtent} label="Contact">
+          <ContactPicker
+            chosen={postCall.contactId}
+            contacts={postCall.contacts ?? []}
+            search={postCall.contactSearch ?? null}
+            onSearch={(query) => send("searchContacts", { query })}
+            onPick={(contact) => {
+              setContactMenu(null);
+              if (contact.id !== postCall.contactId) send("setContact", { contactId: contact.id });
+            }}
+          />
         </FloatMenu>
       )}
       {dateMenu && (() => {
@@ -685,6 +757,68 @@ function ValueEditor({ text, onDone }: { text: string; onDone: (text: string | n
         releaseKeyboardSoon();
       }}
     />
+  );
+}
+
+/** The search line and up to six people under it. */
+const CONTACT_MENU_HEIGHT = 4 * 2 + 30 + 6 * 34;
+
+/**
+ * Who the call is saved on: the people Vocify found for it (the chosen one ticked), and anyone the CRM finds once the rep
+ * types a name, an email or a phone. Picking one keeps it on the call; the dashboard reads the update again for them.
+ */
+function ContactPicker({ chosen, contacts, search, onSearch, onPick }: {
+  chosen: string | null;
+  contacts: PostCallContact[];
+  search: { query: string; results: PostCallContact[]; busy: boolean } | null;
+  onSearch: (query: string) => void;
+  onPick: (contact: PostCallContact) => void;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState(search?.query ?? "");
+  useEffect(() => {
+    input.current?.focus();
+    return () => releaseKeyboardSoon();
+  }, []);
+  // Asked once the rep stops typing; under two letters the people Vocify found are listed again.
+  useEffect(() => {
+    const trimmed = query.trim();
+    const timer = setTimeout(() => onSearch(trimmed.length >= 2 ? trimmed : ""), trimmed.length >= 2 ? 300 : 0);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the text decides when to ask
+  }, [query]);
+  const searching = query.trim().length >= 2;
+  const answered = searching && search?.query === query.trim();
+  const rows = searching ? (answered ? search!.results : []) : contacts;
+  const busy = searching && (!answered || search!.busy);
+  return (
+    <>
+      <div className="contact-search">
+        <input
+          ref={input}
+          className="task-input contact-search-input"
+          value={query}
+          placeholder="Search name, email or phone"
+          spellCheck={false}
+          autoComplete="off"
+          maxLength={100}
+          onMouseEnter={keyboardOver}
+          onMouseDown={keyboardNow}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && rows.length > 0) {
+              event.preventDefault();
+              onPick(rows[0]);
+            }
+          }}
+        />
+      </div>
+      {rows.map((contact) => (
+        <MenuRow key={contact.id} label={contact.name} detail={contact.detail} selected={contact.id === chosen} onPick={() => onPick(contact)} />
+      ))}
+      {busy && rows.length === 0 && <div className="menu-heading">Searching…</div>}
+      {!busy && rows.length === 0 && <div className="menu-heading">{searching ? "No one found" : "Type to search the CRM"}</div>}
+    </>
   );
 }
 

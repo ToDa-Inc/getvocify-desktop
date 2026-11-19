@@ -211,6 +211,25 @@ test("Discard throws the stopped recording away: the dashboard is told to drop i
 
 /* ---------- the finished calls the dashboard is still on ---------- */
 
+test("the card's contact picker gets who the call may be with and what a search found; a person without an id or a name is left out", () => {
+  const t = recording();
+  t.controller.applyShellState({
+    postCall: postCall("ready", {
+      contactId: " c1 ",
+      contacts: [{ id: "c1", name: "Marta Ruiz", detail: "Acme" }, { id: "", name: "No id" }, { id: "c2", name: "  " }, "junk"],
+      contactSearch: { query: "Noel", results: [{ id: "c3", name: "Noel Garcia" }], busy: true },
+    }),
+  });
+  const card = t.controller.state.postCall;
+  assert.equal(card?.contactId, "c1");
+  assert.deepEqual(card?.contacts, [{ id: "c1", name: "Marta Ruiz", detail: "Acme" }]);
+  assert.deepEqual(card?.contactSearch, { query: "Noel", results: [{ id: "c3", name: "Noel Garcia", detail: null }], busy: true });
+  t.controller.applyShellState({ postCall: postCall("ready") });
+  assert.equal(t.controller.state.postCall?.contactId, null, "an older dashboard sends none: no contact, nothing listed");
+  assert.deepEqual(t.controller.state.postCall?.contacts, []);
+  assert.equal(t.controller.state.postCall?.contactSearch, null);
+});
+
 test("a dashboard that reports its finished calls leaves the island free at once: no spinner, the next recording starts, the last card does not open again", () => {
   const t = recording();
   t.controller.applyShellState({ background: [], postCall: postCall("done") });

@@ -1,6 +1,6 @@
 import type {
   Assist, Clock, Finish, LiveContact, LiveData, LiveDecision, LiveGoal, LiveNext, LiveNow, LiveOutcome, LivePart, LivePoint, LiveProgress, LiveRecap, LiveResponder, LiveRewrite, LiveStep, LiveStepAsk, LiveView,
-  BackgroundJob, MicDevice, MicView, PostCallChange, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn, VoiceChoice,
+  BackgroundJob, MicDevice, MicView, PostCallChange, PostCallContact, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn, VoiceChoice,
 } from "../../island/src/types.ts";
 
 /**
@@ -112,7 +112,23 @@ export function parsePostCall(raw: unknown): PostCallData | null {
       return kind && name ? [{ kind, name }] : [];
     }),
     dealCreatable: bool(raw.dealCreatable) ?? false,
+    contactId: nonBlank(raw.contactId)?.trim() ?? null,
+    contacts: contactsOf(raw.contacts),
+    contactSearch: isRaw(raw.contactSearch) && nonBlank(raw.contactSearch.query)
+      ? { query: nonBlank(raw.contactSearch.query)!, results: contactsOf(raw.contactSearch.results), busy: bool(raw.contactSearch.busy) ?? false }
+      : null,
   };
+}
+
+/** People the card can save the call on: an id and a name each, at most 20. */
+function contactsOf(raw: unknown): PostCallContact[] {
+  return list(raw)
+    .flatMap((c) => {
+      const id = nonBlank(c.id)?.trim();
+      const name = nonBlank(c.name)?.trim();
+      return id && name ? [{ id, name, detail: nonBlank(c.detail) }] : [];
+    })
+    .slice(0, 20);
 }
 
 /** Only a web link is ever opened from the card. */

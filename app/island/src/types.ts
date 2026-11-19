@@ -261,7 +261,15 @@ export type PostCallData = {
   savedOn: PostCallSavedOn[];
   /** The call has no deal and the company lets Vocify create one: "+ New deal" is offered, off until the rep ticks it. */
   dealCreatable: boolean;
+  /** The contact the update is for; null while nobody is chosen (the card then asks who it was with). */
+  contactId: string | null;
+  /** Who it may have been with, the chosen one first: the contact picker lists them before any search. */
+  contacts: PostCallContact[];
+  /** The rep's search in the contact picker and what the CRM found; null when nothing is searched. */
+  contactSearch: { query: string; results: PostCallContact[]; busy: boolean } | null;
 };
+/** A person the call can be saved on: their name, and what tells two apart (the company, else the email). */
+export type PostCallContact = { id: string; name: string; detail: string | null };
 export type PostCallSavedOn = { kind: "deal" | "company" | "contact"; name: string };
 
 /** What a finished call still needs. Working: Vocify is writing it up. Needs: an update waits for the rep. Failed: it could not be written, and stays until retried. Followup: logged as no answer, with an optional follow-up. Done: saved, for a moment. */

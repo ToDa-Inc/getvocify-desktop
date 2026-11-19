@@ -151,8 +151,17 @@ const groupedTypeMenu = {
 
 const postCall = (stage, extra = {}) => ({
   stage, memoId: "memo-1", contactName: "Marta Ruiz", changes: [], canApprove: false, applied: null, undoUntil: null, note: null,
-  email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, crmUrl: null, noAnswer: false, savedOn: [], dealCreatable: false, ...extra,
+  email: null, meeting: null, notes: false, summary: null, crm: "HubSpot", offerStopEmails: false, type: null, crmUrl: null, noAnswer: false, savedOn: [], dealCreatable: false,
+  contactId: "c-marta", contacts: [], contactSearch: null, ...extra,
 });
+
+// Who the call may have been with (the preview's candidates), and what a search in the picker found.
+const CONTACTS = [
+  { id: "c-marta", name: "Marta Ruiz", detail: "Acme Logistics" },
+  { id: "c-matias", name: "Matias Trujillo", detail: "mtrujillo@involvegbi.es" },
+  { id: "c-noel", name: "Noel Garcia", detail: "LYN" },
+];
+const NO_CONTACT = { contactId: null, contactName: "Noel", canApprove: false, contacts: CONTACTS.slice(1) };
 
 const SAVED_ON = [{ kind: "deal", name: "Acme renewal 2027" }, { kind: "company", name: "Acme Logistics" }, { kind: "contact", name: "Marta Ruiz" }];
 
@@ -334,6 +343,13 @@ export const fixtures = [
   { name: "postcall-open-new-deal", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [leadStatusToPick], canApprove: true, savedOn: SAVED_ON.slice(1), dealCreatable: true, summary: "Llamada en frío.", notes: true, email: { state: "ready", to: "j@acme.com", subject: "Hola", preview: "Hola" } }) }, expect: { width: 420 }, fit: true },
   { name: "postcall-open-new-deal-on", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, savedOn: [SAVED_ON[2]], dealCreatable: true }) }, expect: { width: 420 }, fit: true, steps: [".saved-chip[data-offer]"] },
   // nothing to change on the record, but the call has its note: it can still be saved
+  // Who the call is saved on is picked in the card: the name in the title opens the people Vocify found, and a search.
+  { name: "postcall-open-contact-picker", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, contacts: CONTACTS }) }, expect: { width: 420, menuInside: true }, fit: true, steps: [".postcall-contact"] },
+  { name: "postcall-open-contact-search", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges.slice(0, 2), canApprove: true, contacts: CONTACTS, contactSearch: { query: "Lucia", results: [{ id: "c-lucia", name: "Lucía Pérez", detail: "Transportes Pérez" }], busy: false } }) }, expect: { width: 420, menuInside: true }, fit: true, steps: [".postcall-contact"] },
+  // No contact on the call: the card asks who it was with and picks them here, fields or none.
+  { name: "postcall-open-no-contact", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { ...NO_CONTACT, changes: postCallChanges.slice(0, 2) }) }, expect: { width: 420 }, fit: true },
+  { name: "postcall-open-no-contact-no-fields", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { ...NO_CONTACT, summary: "Revisamos el presupuesto con Noel.", notes: true }) }, expect: { width: 420 }, fit: true },
+  { name: "postcall-open-no-contact-picker", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { ...NO_CONTACT, summary: "Revisamos el presupuesto con Noel.", notes: true }) }, expect: { width: 420, menuInside: true }, fit: true, steps: [".postcall-actions .primary-action"] },
   { name: "postcall-open-note-only", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [], canApprove: true, savedOn: [SAVED_ON[0]], summary: "Revisamos el presupuesto con Marta.", notes: true }) }, expect: { width: 420 }, fit: true },
   { name: "postcall-open-ready-all-changes", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges, canApprove: true }) }, expect: { width: 420, height: 450 }, fit: true },
   { name: "postcall-open-applying", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("applying", { undoUntil: NOW + 3500 }) }, expect: { width: 420, height: 200 }, fit: true },
@@ -353,7 +369,7 @@ export const fixtures = [
   // every change is ticked, the one Vocify was less sure of included
   { name: "postcall-open-all-ticked", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallChanges, canApprove: true }) }, expect: { width: 420, ticked: 5, saveLabel: "Save 5 to HubSpot" }, fit: true },
   // a recording with no contact: nothing is saved from here, the card sends the rep to Vocify's contact picker
-  { name: "postcall-open-needs-contact", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { contactName: null, changes: postCallChanges.slice(3) }) }, expect: { width: 420, ticked: 2, saveLabel: "Choose contact to save" }, fit: true },
+  { name: "postcall-open-needs-contact", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { contactName: null, contactId: null, changes: postCallChanges.slice(3) }) }, expect: { width: 420, ticked: 2, saveLabel: "Choose contact" }, fit: true },
   { name: "postcall-open-done-link", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("done", { applied: 4, crmUrl: "https://app.hubspot.com/contacts/1/record/0-1/42" }) }, expect: { width: 420, height: 200, crmLink: "Open in HubSpot" }, fit: true },
   // a call with no field to write: the lead status is still offered, and its note can be saved on its own
   { name: "postcall-open-lead-status-only", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: [leadStatusToPick], canApprove: true, summary: "Voicemail.", notes: true }) }, expect: { width: 420, ticked: 0, saveLabel: "Save note to HubSpot" }, fit: true },
@@ -418,6 +434,9 @@ export const interactions = [
   { name: "finish-after-stop", fixture: "stopped-open-manual", click: ".primary-action", expect: [{ name: "finish" }] },
   { name: "open-vocify-after-failed-send", fixture: "finishing-open-failed", click: ".primary-action", expect: [{ name: "openApp" }] },
   // Save writes what is ticked: an unticked change, and one the call wasn't clear on, are left out (as the Mac app sends it).
+  { name: "contact-pick-sends-it", fixture: "postcall-open-contact-picker", click: ".float-menu .option-row:nth-of-type(2)", expect: [{ name: "postCall", type: "setContact", details: { contactId: "c-matias" } }] },
+  { name: "contact-pick-same-sends-nothing", fixture: "postcall-open-contact-picker", click: ".float-menu .option-row:nth-of-type(1)", expect: [] },
+  { name: "no-contact-pick-sends-it", fixture: "postcall-open-no-contact-picker", click: ".float-menu .option-row:nth-of-type(2)", expect: [{ name: "postCall", type: "setContact", details: { contactId: "c-noel" } }] },
   { name: "save-leaves-out-unticked", fixture: "postcall-open-ready", before: [".change-row .change-toggle"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: ["contact:title"], edits: {} } }] },
   { name: "save-sends-a-picked-value", fixture: "postcall-open-ready", before: [".change-row .change-value", ".option-row:nth-child(2)"], click: ".primary-action", expect: [{ name: "postCall", type: "approve", details: { omit: [], edits: { "contact:title": "manager" } } }] },
   { name: "call-glyph-opens-confirm", fixture: "idle-callable", click: ".call-glyph", expect: [{ name: "openDialConfirm" }] },

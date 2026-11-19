@@ -106,12 +106,19 @@ export function FloatMenu({ anchor, width, maxHeight, role = "listbox", align = 
   );
 }
 
-export function MenuRow({ label, selected, dim = false, icon, onPick }: { label: string; selected: boolean; dim?: boolean; icon?: ReactNode; onPick: () => void }) {
+export function MenuRow({ label, detail, selected, dim = false, icon, onPick }: { label: string; /** A second, quieter line (what tells two people apart). */ detail?: string | null; selected: boolean; dim?: boolean; icon?: ReactNode; onPick: () => void }) {
   return (
-    <button type="button" className="option-row" role="option" aria-selected={selected} data-selected={selected} data-dim={dim} onClick={onPick}>
+    <button type="button" className="option-row" role="option" aria-selected={selected} data-selected={selected} data-dim={dim} data-detail={Boolean(detail)} onClick={onPick}>
       <Check size={10} stroke={3} />
       {icon && <span className="option-icon" aria-hidden>{icon}</span>}
-      <span>{label}</span>
+      {detail ? (
+        <span className="option-text">
+          <span className="option-label">{label}</span>
+          <span className="option-detail">{detail}</span>
+        </span>
+      ) : (
+        <span>{label}</span>
+      )}
     </button>
   );
 }

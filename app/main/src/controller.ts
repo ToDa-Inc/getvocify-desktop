@@ -746,7 +746,7 @@ export class IslandController {
         return;
       case "postCall":
         this.transition(mode, !expanded);
-        if (this.current.expanded) this.startCountdown(POST_CALL_LINGER);
+        if (this.current.expanded) this.postCallCountdown();
         return;
       case "finishing":
         // Closing a failure ends the wait; otherwise it just peeks at where the call is.
@@ -811,6 +811,24 @@ export class IslandController {
       this.set({ countdown: { ...countdown, remaining, runningSince: now } });
       this.scheduleAutoClose(remaining);
     }
+  }
+
+  /**
+   * The open after-call card's countdown. A card the rep still has to act on (a call they spoke on, with something to save
+   * or check) never closes by itself: it stays until they save, dismiss or close it. A rep's card closed twice while they
+   * were unticking a task, and they had to open it again each time (2026-11-20). A call nobody answered offers an optional
+   * follow-up only, so its card still closes after the usual wait and waits on the closed island; a saved one goes after 3 s.
+   */
+  private postCallCountdown(): void {
+    const postCall = this.current.postCall;
+    if (!postCall) return;
+    if ((postCall.stage === "ready" || postCall.stage === "review") && !postCall.noAnswer) {
+      this.stopTimer("autoClose");
+      this.stopTimer("hoverHold");
+      this.set({ countdown: null });
+      return;
+    }
+    this.startCountdown(postCall.stage === "done" && postCallPending(postCall) === 0 ? DONE_LINGER : POST_CALL_LINGER);
   }
 
   private startCountdown(total: number): void {
@@ -1056,9 +1074,7 @@ export class IslandController {
       this.lastPostCallStage = postCall.stage;
       const open = postCall.stage !== "writing";
       this.transition({ kind: "postCall" }, open);
-      if (open && postCall.stage !== "applying") {
-        this.startCountdown(postCall.stage === "done" && postCallPending(postCall) === 0 ? DONE_LINGER : POST_CALL_LINGER);
-      }
+      if (open && postCall.stage !== "applying") this.postCallCountdown();
     } else {
       this.transition({ kind: "idle" }, false);
     }

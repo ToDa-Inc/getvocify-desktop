@@ -1016,7 +1016,7 @@ test("a state with nothing new makes no render", () => {
 
 /* ---------- after the call ---------- */
 
-test("the call's update waits for the island to come back to rest, then opens with a 14 s countdown", () => {
+test("the call's update waits for the island to come back to rest, then opens and stays open while it needs the rep", () => {
   const t = recording();
   t.controller.applyShellState({ postCall: { ...postCall("writing"), memoId: "m0" } });
   assert.equal(t.mode(), "recording", "not shown while recording");
@@ -1028,9 +1028,37 @@ test("the call's update waits for the island to come back to rest, then opens wi
   assert.equal(t.controller.state.expanded, false, "writing stays closed: the spinner says enough");
   t.controller.applyShellState({ postCall: postCall("ready", { canApprove: true }) });
   assert.equal(t.controller.state.expanded, true);
+  assert.equal(t.controller.state.countdown, null, "no countdown: the rep is choosing what to save");
+  t.advance(120);
+  assert.equal(t.controller.state.expanded, true, "still open two minutes later (2026-11-20: it closed while the rep unticked a task)");
+  t.controller.act({ name: "pointer", inside: true });
+  t.advance(60);
+  t.controller.act({ name: "pointer", inside: false });
+  t.advance(60);
+  assert.equal(t.controller.state.expanded, true, "the pointer coming and going never closes it");
+});
+
+test("a no-answer card still closes after 14 s and waits on the closed island", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.advance(6);
+  t.controller.applyShellState({ postCall: postCall("ready", { canApprove: true, noAnswer: true }) });
+  assert.equal(t.controller.state.expanded, true);
   assert.equal(t.controller.state.countdown?.total, 14);
   t.advance(14.1);
   assert.equal(t.controller.state.expanded, false);
+  assert.equal(t.mode(), "postCall", "it waits on the island for the follow-up");
+});
+
+test("the rep closing the card and opening it again: it stays open again", () => {
+  const t = setup();
+  t.controller.applyShellState({ postCall: postCall("ready", { canApprove: true }) });
+  t.controller.act({ name: "toggle" });
+  assert.equal(t.controller.state.expanded, false);
+  t.controller.act({ name: "toggle" });
+  assert.equal(t.controller.state.expanded, true);
+  t.advance(120);
+  assert.equal(t.controller.state.expanded, true);
 });
 
 test("applying stops the countdown so the card stays until it is done", () => {

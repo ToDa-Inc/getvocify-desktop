@@ -29,6 +29,7 @@ import { createBrowserCallWatch } from "./windows/browser-call.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
 import { createCrmScreenWatcher } from "./crm-screen-watcher.ts";
 import { createStallWatch } from "./stall-watch.ts";
+import { createPageHeartbeat } from "./page-heartbeat.ts";
 import { CrmPages } from "../../core/crmPages.ts";
 import { runQuiet } from "./platform/exec.ts";
 import { createPlatform } from "./platform/index.ts";
@@ -915,23 +916,30 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   });
   // A page that is hung may raise no event at all: the preload answers a ping on the page's own thread, so a page that
   // stops answering is reloaded. (The first answer comes with the first load; a reload starts the count again.)
-  let lastPong = Date.now();
-  island.webContents.on("did-finish-load", () => (lastPong = Date.now()));
-  ipcMain.on("island:pong", (event) => {
-    if (!island.isDestroyed() && event.sender === island.webContents) lastPong = Date.now();
+  // Time asleep is not silence: see page-heartbeat.ts.
+  const islandHeartbeat = createPageHeartbeat({
+    now: () => Date.now(),
+    every: (ms, fn) => {
+      const timer = setInterval(fn, ms);
+      timer.unref();
+      return () => clearInterval(timer);
+    },
+    ping: () => {
+      if (!island.isDestroyed()) island.webContents.send("island:ping");
+    },
+    // A hung page cannot run a reload: its process is ended, and the event above loads the page again.
+    end: () => {
+      if (!island.isDestroyed()) island.webContents.forcefullyCrashRenderer();
+    },
+    log,
+    name: "island",
   });
-  const heartbeat = setInterval(() => {
-    if (island.isDestroyed()) return;
-    if (Date.now() - lastPong > 30_000) {
-      lastPong = Date.now();
-      // A hung page cannot run a reload: its process is ended, and the event above loads the page again.
-      log("island: its page did not answer for 30 seconds, ending it");
-      island.webContents.forcefullyCrashRenderer();
-      return;
-    }
-    island.webContents.send("island:ping");
-  }, 10_000);
-  heartbeat.unref();
+  island.webContents.on("did-finish-load", () => islandHeartbeat.answered());
+  ipcMain.on("island:pong", (event) => {
+    if (!island.isDestroyed() && event.sender === island.webContents) islandHeartbeat.answered();
+  });
+  islandHeartbeat.start();
+  powerMonitor.on("resume", () => islandHeartbeat.resumed());
   // Before it is ever shown: a click on the island must never activate Vocify (that brings the dashboard forward).
   log(`island: ${os.island.prepare(island)}`);
   island.showInactive();

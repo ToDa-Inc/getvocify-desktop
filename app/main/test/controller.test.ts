@@ -187,6 +187,17 @@ test("finish on stop: a hang-up ends the call at once too", () => {
   assert.deepEqual(t.commands().slice(-2), ["pause", "stop"]);
 });
 
+test("finish on stop: the island never flashes the stopped card open", () => {
+  const t = recording();
+  t.controller.setFinishOnStop(true);
+  t.controller.act({ name: "toggle" });
+  const from = t.log.states.length;
+  t.controller.stop(true);
+  const shown = t.log.states.slice(from);
+  assert.ok(shown.length > 0, "the island was redrawn");
+  assert.ok(!shown.some((state) => state.mode.kind === "stopped" && state.expanded), "the stopped card is never drawn open");
+});
+
 test("finish on stop switched off again: Stop waits for the countdown as before", () => {
   const t = recording();
   t.controller.setFinishOnStop(true);

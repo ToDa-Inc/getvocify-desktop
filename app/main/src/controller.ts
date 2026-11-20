@@ -900,7 +900,9 @@ export class IslandController {
     this.grace = grace;
     this.leftStoppedCard = false;
     this.run(grace.onStop);
-    this.transition({ kind: "stopped", title: grace.title }, true);
+    // Processed at once (Finish when the call ends): the stopped card is not opened, only to close a few milliseconds later
+    // (a rep's island flashed open and shut at each hang-up, 2026-11-19).
+    this.transition({ kind: "stopped", title: grace.title }, !this.finishOnStop);
     // No step in between: the call is processed now, as if Finish had been pressed (it can still be deleted in Vocify).
     if (this.finishOnStop) return this.finishRecording();
     this.startCountdown(StopGrace.seconds);

@@ -129,16 +129,59 @@ test("clicking the offer restarts into the build, and a click during a recording
   assert.equal(t.calls.before, 1, "the app is told first so it can start quietly after the restart");
 });
 
-test("no further checks once an update is downloaded, and errors are logged, never thrown", () => {
-  const t = setup(() => false);
+test("checks go on after a download, and a newer build replaces the one waiting; errors are logged, never thrown", () => {
+  const t = setup(() => true);
   t.handlers.error(new Error("offline") as never);
   assert.match(t.logs.at(-1) ?? "", /offline/);
-  t.handlers["update-downloaded"]({ version: "0.4.9" } as never);
+  t.handlers["update-downloaded"]({ version: "0.4.395" } as never);
+  assert.equal(t.calls.notices.at(-1)?.version, "0.4.395");
   const before = t.calls.checks;
   t.timers[0].fn();
-  assert.equal(t.calls.checks, before);
+  assert.equal(t.calls.checks, before + 1, "the half-hourly check still runs");
+  t.handlers["update-downloaded"]({ version: "0.4.396" } as never);
+  assert.deepEqual(t.updater.state(), { state: "ready", next: "0.4.396" });
+  assert.equal(t.calls.notices.at(-1)?.version, "0.4.396", "the newest is offered at once");
   t.stop();
   assert.ok(t.timers.every((x) => x.stopped));
+});
+
+test("a disk too full to unpack the update says so, and Restart is no longer offered for it", () => {
+  const t = setup(() => true);
+  t.handlers["update-downloaded"]({ version: "0.4.395" } as never);
+  t.handlers.error(new Error("ditto: /Users/x/Library/Caches/com.vocify.app.ShipIt/update.9weHHrF/Vocify.app/Contents/x/locale.pak: No space left on device") as never);
+  const state = t.updater.state();
+  assert.equal(state.state, "failed");
+  assert.match(state.state === "failed" ? state.reason : "", /Not enough free space/);
+  assert.equal(t.updater.install(), false, "nothing to restart into");
+});
+
+test("a restart that never quits says so after 20 s instead of waiting forever", () => {
+  const later: (() => void)[] = [];
+  const handlers: Record<string, (arg: never) => void> = {};
+  const logs: string[] = [];
+  const updater = startUpdater({
+    source: {
+      autoDownload: false,
+      autoInstallOnAppQuit: false,
+      allowPrerelease: false,
+      checkForUpdates: async () => undefined,
+      quitAndInstall: () => undefined,
+      on: (event: string, listener: (arg: never) => void) => void (handlers[event] = listener),
+    } as unknown as UpdateSource,
+    canInstallNow: () => true,
+    every: () => () => undefined,
+    log: (m) => logs.push(m),
+    now: () => 1000,
+    after: (_ms, fn) => void later.push(fn),
+  });
+  handlers["update-downloaded"]({ version: "0.4.395" } as never);
+  assert.equal(updater.install(), true);
+  assert.equal(later.length, 1);
+  later[0]();
+  const state = updater.state();
+  assert.equal(state.state, "failed");
+  assert.match(state.state === "failed" ? state.reason : "", /could not restart into 0\.4\.395/);
+  assert.match(logs.at(-1) ?? "", /still running 20 s after restarting/);
 });
 
 test("Restart now installs the downloaded build at once, and refuses while a recording makes it wait", () => {

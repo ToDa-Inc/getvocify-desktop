@@ -50,7 +50,19 @@ export type UpdaterOptions = {
   /** Called on every change of state. */
   onState?(state: UpdateState): void;
   now?(): number;
+  /** Runs `fn` once after `ms` (setTimeout by default). */
+  after?(ms: number, fn: () => void): void;
 };
+
+/** How long a restart into an update may take before the app says it did not happen. */
+export const RESTART_GIVE_UP_MS = 20_000;
+
+/** What a failure to install says in Settings: the disk being full is said plainly. */
+function installFailure(message: string): string | null {
+  if (/no space left on device|ENOSPC/i.test(message)) return "Not enough free space on the disk to install the update. Free some space, then check again.";
+  if (/ShipIt|ditto|Squirrel|code signature|could not be installed/i.test(message)) return `The update could not be installed: ${message}`;
+  return null;
+}
 
 export const CHECK_EVERY_MS = 30 * 60_000;
 /** How often a downloaded build is checked for a moment when nothing is in progress. */
@@ -84,11 +96,28 @@ export function startUpdater(options: UpdaterOptions): Updater {
     options.onState?.(next);
   };
 
+  const after = options.after ?? ((ms: number, fn: () => void) => void setTimeout(fn, ms).unref?.());
+  /** The downloaded build cannot be installed (the Mac could not unpack it): Settings says why, and Restart is no
+   * longer offered for it. The next check downloads it, or a newer one, again. */
+  const installFailed = (reason: string) => {
+    downloaded = null;
+    stopWaiting?.();
+    stopWaiting = null;
+    set({ state: "failed", reason, checkedAt: now() });
+  };
   const restart = (): boolean => {
     if (downloaded === null || !(options.canRestartNow ?? options.canInstallNow)()) return false;
-    log(`updating to ${downloaded}`);
+    const version = downloaded;
+    log(`updating to ${version}`);
     options.beforeInstall?.();
     source.quitAndInstall(true, true);
+    // A quit that never comes (macOS had no update ready to install, 2026-11-20: the disk was full) must not leave the
+    // button waiting forever: still running a while later, the app says so.
+    after(RESTART_GIVE_UP_MS, () => {
+      if (downloaded !== version) return;
+      log(`update: still running ${RESTART_GIVE_UP_MS / 1000} s after restarting into ${version}`);
+      installFailed(`Vocify could not restart into ${version}. Quit Vocify and open it again to install it.`);
+    });
     return true;
   };
   const offerWhenIdle = () => {
@@ -105,6 +134,8 @@ export function startUpdater(options: UpdaterOptions): Updater {
   source.on("update-available", (info) => set({ state: "downloading", next: info.version }));
   source.on("update-not-available", () => set({ state: "current", checkedAt: now() }));
   source.on("update-downloaded", (info) => {
+    // A newer build than the one already waiting replaces it: the rep is offered the newest.
+    if (downloaded !== info.version) offered = null;
     downloaded = info.version;
     log(`update ${info.version} downloaded`);
     set({ state: "ready", next: info.version });
@@ -113,11 +144,14 @@ export function startUpdater(options: UpdaterOptions): Updater {
   });
   source.on("error", (error) => {
     log(`update check failed: ${error.message}`);
+    const cannotInstall = installFailure(error.message);
+    if (cannotInstall) return installFailed(cannotInstall);
     if (downloaded === null) set({ state: "failed", reason: error.message, checkedAt: now() });
   });
 
+  // Checks go on after a build is downloaded: one published since is downloaded too, and offered instead (a rep was
+  // offered 0.4.395 for an hour after 0.4.396 was out, 2026-11-20).
   const check = () => {
-    if (downloaded !== null) return;
     source
       .checkForUpdates()
       .then((result) => log(`checked: newest published build is ${result?.updateInfo?.version ?? "unknown"}`))

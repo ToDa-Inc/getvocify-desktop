@@ -12,7 +12,7 @@ import { existsSync, mkdtempSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { crmUrlsOf, encodePowerShell, parsePageOutput, READ_PAGES_SCRIPT } from "../main/src/windows/browser-pages.ts";
+import { crmUrlsOf, encodePowerShell, parsePageOutput, READ_PAGES_SCRIPT, READER_LOOP_SCRIPT } from "../main/src/windows/browser-pages.ts";
 import { MIC_CONSENT_KEY, parseMicConsent, pickCaller } from "../main/src/windows/mic-use.ts";
 import { AUDIO_SESSIONS_SCRIPT, CAPTURE_SESSIONS_SCRIPT } from "../main/src/windows/audio-sessions.ts";
 import { parseCaptureLine, parseConsentLine } from "../main/src/windows/capture-sessions.ts";
@@ -102,6 +102,41 @@ if (!browserPath) {
     execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(READ_PAGES_SCRIPT)], { encoding: "utf8", windowsHide: true, timeout: 30000 });
     console.log(`      one read takes ${Date.now() - timed} ms`);
     check(crmUrlsOf([{ browser: "chrome", url: "https://app.hubspot.com/contacts/1/contact/2" }]).length === 1, "a HubSpot contact link is a CRM link");
+
+    // The long-lived reader the app runs keeps each window's address bar once found: later reads must still say the page
+    // shown, also after the window's tab changes (a cached bar that kept the old address would give calls the wrong record).
+    const loop = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(READER_LOOP_SCRIPT)], { windowsHide: true });
+    let loopOut = "";
+    loop.stdout.on("data", (chunk) => (loopOut += chunk));
+    const ask = async (command) => {
+      loopOut = "";
+      const asked = Date.now();
+      loop.stdin.write(`${command}\n`);
+      while (!loopOut.includes("<<END>>") && Date.now() - asked < 30000) await sleep(20);
+      return { pages: parsePageOutput(loopOut.split("<<END>>")[0]), ms: Date.now() - asked };
+    };
+    try {
+      const first = await ask("read");
+      const second = await ask("read");
+      const third = await ask("read");
+      console.log(`      reader loop: first read ${first.ms} ms, then ${second.ms} ms and ${third.ms} ms`);
+      check([first, second, third].every((r) => r.pages.some((p) => p.url.includes(`127.0.0.1:${port}${path}`))), "the reader loop reads the same address on every read");
+      const otherPath = "/contacts/123/contact/789";
+      spawn(browserPath, [`--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--disable-extensions", `http://127.0.0.1:${port}${otherPath}`], { stdio: "ignore" });
+      let changed = null;
+      for (let i = 0; i < 20 && !changed; i += 1) {
+        await sleep(500);
+        const next = await ask("read");
+        if (next.pages.some((p) => p.url.includes(`127.0.0.1:${port}${otherPath}`))) changed = next;
+      }
+      check(changed !== null, "after the window's tab changes, the reader loop reads the new address");
+    } finally {
+      try {
+        execFileSync("taskkill", ["/PID", String(loop.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+      } catch {
+        // Already closed.
+      }
+    }
   } finally {
     try {
       execFileSync("taskkill", ["/PID", String(browser.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });

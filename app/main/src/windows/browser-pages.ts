@@ -14,7 +14,11 @@ import { CrmPages } from "../../../core/crmPages.ts";
  */
 /** Shared by both scripts: UI Automation set-up, and the address bar of one browser window (the walk skips the page).
  * A window that has stopped answering (IsHungAppWindow) is skipped: UI Automation would wait on it for its whole timeout,
- * and that wait is what restarted the reader. */
+ * and that wait is what restarted the reader.
+ * Each window's address bar, once found, is kept (by window handle) and read directly: the long-lived reader asks every
+ * 1.5 s, and walking the browser's interface each time is dozens of calls answered on the browser's own UI thread, on
+ * the reps' 8 GB PCs among the work the rep is waiting on (2026-11-19). A bar that has gone, or reads empty, is looked for
+ * again by the walk, so what is read is the same as before. */
 const UIA_SETUP = String.raw`
 $ErrorActionPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -32,30 +36,45 @@ public static class VocifyWindows {
 $AE = [System.Windows.Automation.AutomationElement]
 $CT = [System.Windows.Automation.ControlType]
 $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
-function Find-Address($w) {
+$addressBars = @{}
+function Read-Bar($bar) {
+  try {
+    $pattern = $null
+    if ($bar.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) { return $pattern.Current.Value }
+  } catch { }
+  return $null
+}
+function Find-AddressBar($w) {
   $top = $w.Current.BoundingRectangle.Top
   $stack = New-Object System.Collections.Stack
   $stack.Push(@($w, 0))
-  $found = $null
-  while ($stack.Count -gt 0 -and -not $found) {
+  while ($stack.Count -gt 0) {
     $item = $stack.Pop(); $el = $item[0]; $depth = $item[1]
     if ($depth -gt 9) { continue }
     $type = $el.Current.ControlType
     if ($type -eq $CT::Document) { continue }
     if ($type -eq $CT::Edit) {
-      if (($el.Current.BoundingRectangle.Top - $top) -lt 170) {
-        $pattern = $null
-        if ($el.TryGetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern, [ref]$pattern)) {
-          $value = $pattern.Current.Value
-          if ($value) { $found = $value }
-        }
-      }
+      if ((($el.Current.BoundingRectangle.Top - $top) -lt 170) -and (Read-Bar $el)) { return $el }
       continue
     }
     $child = $walker.GetFirstChild($el)
     while ($child) { $stack.Push(@($child, ($depth + 1))); $child = $walker.GetNextSibling($child) }
   }
-  return $found
+  return $null
+}
+function Find-Address($w) {
+  $handle = $w.Current.NativeWindowHandle
+  $bar = $addressBars[$handle]
+  if ($bar) {
+    $value = Read-Bar $bar
+    if ($value) { return $value }
+    $addressBars.Remove($handle)
+  }
+  $bar = Find-AddressBar $w
+  if (-not $bar) { return $null }
+  if ($addressBars.Count -ge 50) { $addressBars.Clear() }
+  $addressBars[$handle] = $bar
+  return (Read-Bar $bar)
 }
 `;
 

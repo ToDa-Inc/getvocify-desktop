@@ -28,6 +28,7 @@ import { startsPageAtLaunch } from "./calendar-watch.ts";
 import { createBrowserCallWatch } from "./windows/browser-call.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
 import { createCrmScreenWatcher } from "./crm-screen-watcher.ts";
+import { createStallWatch } from "./stall-watch.ts";
 import { CrmPages } from "../../core/crmPages.ts";
 import { runQuiet } from "./platform/exec.ts";
 import { createPlatform } from "./platform/index.ts";
@@ -578,7 +579,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     const reach = sideHits.hold || sideHits.boxes.some((box) => x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height);
     if (reach === sideReaching) return;
     sideReaching = reach;
-    island.setIgnoreMouseEvents(!reach, { forward: true });
+    // No `forward` here: on Windows forwarding is a low-level mouse hook on this process's main thread, through which every
+    // mouse move on the computer then passes; with the main thread slow (an 8 GB PC paging), the whole computer's pointer
+    // stalls with it. The cursor read above is what decides here, so nothing needs the forwarded moves.
+    island.setIgnoreMouseEvents(!reach);
     // Once the window is click-through the page gets no pointer leave: the cursor leaving is told to it from here.
     if (!reach) island.webContents.send("island:cursor-left");
     // A rep's pill that takes no clicks: where the cursor and the pill were each time the window started or stopped
@@ -608,7 +612,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
         clipped = false;
       }
       place(sideFrame());
-      island.setIgnoreMouseEvents(true, { forward: true });
+      // The Mac follows the forwarded moves; Windows reads the cursor (reachFromCursor) and so never installs the hook.
+      if (platform === "win32") island.setIgnoreMouseEvents(true);
+      else island.setIgnoreMouseEvents(true, { forward: true });
       if (platform === "win32") {
         sideReach = setInterval(reachFromCursor, 75);
         sideReach.unref();
@@ -1341,6 +1347,17 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       launches: launchCounts(),
     };
   };
+  // The main thread not running for half a second or more, in the log with what the island was doing (stall-watch.ts).
+  createStallWatch({
+    now: () => performance.now(),
+    every: (ms, fn) => {
+      const timer = setInterval(fn, ms);
+      timer.unref();
+      return () => clearInterval(timer);
+    },
+    log,
+    mode: () => controller.state.mode.kind,
+  }).start();
   const sampleResources = async () => log(resourceLine(await measureResources()));
   setTimeout(() => void sampleResources().catch((error) => log(`resources: not measured (${String(error)})`)), 60_000).unref();
   // Every ten minutes, and every minute while recording: a call that grows the app's memory shows minute by minute

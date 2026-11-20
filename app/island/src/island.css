@@ -348,6 +348,7 @@ button.type-tag:hover { color: var(--text); }
 .small-action:hover { background: rgba(255, 255, 255, 0.17); }
 .task-add { flex: none; display: flex; flex-direction: column; padding: 2px 0 0; }
 .task-open { align-self: flex-start; padding-left: 6px; }
+.task-actions { display: flex; align-items: center; gap: 10px; }
 .task-row { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 2px 0 6px; font-size: 12px; color: var(--text); }
 .task-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .task-row .when-text { margin: 0; flex: none; }

@@ -332,6 +332,10 @@ export const fixtures = [
   { name: "background-recording-badge", state: { ...inCall, background: [{ id: "d1", name: "Marta Ruiz", state: "needs" }] }, expect: { width: 460, height: 400 } },
   { name: "background-recording-list", state: { ...inCall, background: [{ id: "d1", name: "Marta Ruiz", state: "needs" }, { id: "d2", name: "Ana Ruiz", state: "failed" }] }, expect: { width: 460, height: 400 } },
   { name: "postcall-open-noanswer", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { noAnswer: true, canApprove: true, changes: [leadStatusToPick] }) }, expect: { width: 420 }, fit: true },
+  // no answer and nothing to pick (Pipedrive): the card stays for a follow-up task on the day the rep picks
+  { name: "postcall-open-noanswer-task", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { noAnswer: true, canApprove: true, changes: [] }) }, expect: { width: 420 }, fit: true, steps: [".task-open"] },
+  // "Add note" beside "Add task" opens the call's note
+  { name: "postcall-open-add-note", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallTasks, canApprove: true, summary: "Quiere precio para 5 vehículos.", notes: true }) }, expect: { width: 420 }, fit: true, steps: [".task-actions .task-open + .task-open"] },
   { name: "postcall-open-tasks-date-open", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallTasks, canApprove: true }) }, expect: { width: 420 }, fit: true, steps: [".task-when"] },
   { name: "postcall-open-add-task", state: { mode: { kind: "postCall" }, expanded: true, postCall: postCall("ready", { changes: postCallTasks, canApprove: true }) }, expect: { width: 420 }, fit: true, steps: [".task-open"] },
   // where the call is saved: deal, company and contact as chips; the group labels name their record

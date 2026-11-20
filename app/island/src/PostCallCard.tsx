@@ -104,6 +104,8 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
   const nothingSure = groups.length === 0;
   const noteEditable = postCall.stage === "ready" && postCall.canApprove;
   const noteText = noteDraft ?? postCall.summary ?? "";
+  // "Add note" beside "Add task" (a rep asked for it, 2026-11-19): the call's note, on its own tab, where it is written.
+  const addNote = noteEditable && !postCall.noAnswer ? () => setActiveTab("notes") : undefined;
   const tabs: Tab[] = ["crm"];
   if (postCall.email) tabs.push("email");
   if (!postCall.noAnswer && (postCall.notes || postCall.summary !== null || noteEditable)) tabs.push("notes");
@@ -354,7 +356,8 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
               <Line icon={<PhoneDown size={11} />}><span className="dim">No answer. Logged in {crm} as no answer</span></Line>
             )}
             {postCall.stage === "writing" && <Line busy><span className="dim">Writing the update…</span></Line>}
-            {postCall.stage === "ready" && nothingSure && postCall.canApprove && (
+            {/* A call nobody answered says so above: there is no field to miss. */}
+            {postCall.stage === "ready" && nothingSure && postCall.canApprove && !postCall.noAnswer && (
               <Line icon={<ExclamationCircle />}>
                 {/* With a note to save, nothing is wrong: there are simply no fields to change. */}
                 <span className={noteToSave ? "dim" : undefined}>{noteToSave ? "No fields to change" : "Nothing clear enough to write from here"}</span>
@@ -375,7 +378,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
             {postCall.stage === "ready" && nothingSure && postCall.canApprove && (
               <>
                 {savedOnRow}
-                <AddTask tasks={tasks} onChange={setTasks} onPopupExtent={onPopupExtent} />
+                <AddTask tasks={tasks} onChange={setTasks} onPopupExtent={onPopupExtent} onAddNote={addNote} />
                 <div className="postcall-actions" style={{ height: L.actions }}>
                   {saveButton}
                   <div className="grow" />
@@ -423,7 +426,7 @@ export function PostCallCard({ postCall, act, onPopupExtent }: { postCall: PostC
                     </div>
                   ))}
                 </ChangesList>
-                {postCall.canApprove && <AddTask tasks={tasks} onChange={setTasks} onPopupExtent={onPopupExtent} />}
+                {postCall.canApprove && <AddTask tasks={tasks} onChange={setTasks} onPopupExtent={onPopupExtent} onAddNote={addNote} />}
                 <div className="postcall-actions" style={{ height: L.actions }}>
                   {postCall.canApprove ? (
                     <>
@@ -823,7 +826,7 @@ function ContactPicker({ chosen, contacts, search, onSearch, onPick }: {
 }
 
 /** Tasks the rep adds by hand: a title, a day and an hour. Listed under the changes and written to the CRM with Save; each can still be re-worded and moved. */
-function AddTask({ tasks, onChange, onPopupExtent }: { tasks: NewTask[]; onChange: (tasks: NewTask[]) => void; onPopupExtent: (bottom: number | null) => void }) {
+function AddTask({ tasks, onChange, onPopupExtent, onAddNote }: { tasks: NewTask[]; onChange: (tasks: NewTask[]) => void; onPopupExtent: (bottom: number | null) => void; /** Shown next to Add task when the call's note can be written: opens it. */ onAddNote?: () => void }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [when, setWhen] = useState<TaskDue>(() => ({ due: dayAfter(1), time: null }));
@@ -908,10 +911,18 @@ function AddTask({ tasks, onChange, onPopupExtent }: { tasks: NewTask[]; onChang
           </div>
         </div>
       ) : (
-        <button type="button" className="text-action task-open" onClick={() => setOpen(true)}>
-          <Plus size={9} />
-          <span>Add task</span>
-        </button>
+        <div className="task-actions">
+          <button type="button" className="text-action task-open" onClick={() => setOpen(true)}>
+            <Plus size={9} />
+            <span>Add task</span>
+          </button>
+          {onAddNote && (
+            <button type="button" className="text-action task-open" onClick={onAddNote}>
+              <Plus size={9} />
+              <span>Add note</span>
+            </button>
+          )}
+        </div>
       )}
       {picker && pickerValue && (
         <TaskDatePicker

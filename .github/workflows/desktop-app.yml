@@ -128,6 +128,12 @@ jobs:
           Get-Process -Name Vocify -ErrorAction SilentlyContinue | Stop-Process -Force   # the installer starts the app; start it ourselves below
           $exe = Join-Path $env:LOCALAPPDATA 'Programs\Vocify\Vocify.exe'
           if (-not (Test-Path $exe)) { throw "not installed at $exe" }
+          # The native helper is installed with the app and runs from there.
+          $helper = Join-Path (Split-Path $exe) 'resources\win-helper\vocify-win-helper.exe'
+          if (-not (Test-Path $helper)) { throw "the native helper is not installed at $helper" }
+          $said = & $helper version | Out-String
+          if ($said -notmatch 'vocify-win-helper') { throw "the installed helper did not answer: $said" }
+          "the installed helper answers: $($said.Trim())"
           $installed = (Get-ChildItem (Split-Path $exe) -Recurse | Measure-Object Length -Sum).Sum
           "installed size: $([math]::Round($installed / 1MB, 1)) MB"
           $p = Start-Process -FilePath $exe -ArgumentList '--demo', '--smoke-test' -Wait -PassThru

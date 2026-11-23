@@ -23,7 +23,7 @@ import { ShortcutManager } from "./shortcut.ts";
 import type { UpdateState, UpdateStatus } from "./updater.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { micChoices, trayItems } from "./tray-menu.ts";
-import { launchCounts, parsePs, parseTasklist, processName, resourceLine, trackedChildren, type ResourceSample } from "./resources.ts";
+import { heaviestPrograms, launchCounts, LOW_MEMORY_SHARE, parsePs, parseTasklist, processName, resourceLine, trackedChildren, type HeavyProgram, type ResourceSample } from "./resources.ts";
 import { startsPageAtLaunch } from "./calendar-watch.ts";
 import { createBrowserCallWatch } from "./windows/browser-call.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
@@ -1344,6 +1344,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     const children = trackedChildren();
     let kbByPid = helpersRead.kbByPid;
     let powershells = helpersRead.powershells;
+    let heaviest: HeavyProgram[] | undefined;
     if (platform === "win32") {
       if (withHelpers) {
         const output = await runQuiet("tasklist.exe", ["/FO", "CSV", "/NH"], 10_000).catch(() => "");
@@ -1352,6 +1353,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
           kbByPid = listed.kbByPid;
           powershells = listed.countByName.get("powershell.exe") ?? 0;
           helpersRead = { kbByPid, powershells };
+          // The same listing says what holds the computer's memory: written only while little of it is free.
+          if (freemem() < totalmem() * LOW_MEMORY_SHARE) heaviest = heaviestPrograms(listed);
         }
       }
     } else if (children.length) {
@@ -1367,6 +1370,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       children: children.map((c) => ({ name: c.name, kb: kbByPid.get(c.pid) ?? null })),
       powershells,
       launches: launchCounts(),
+      ...(heaviest ? { heaviest } : {}),
     };
   };
   // The main thread not running for half a second or more, in the log with what the island was doing (stall-watch.ts).

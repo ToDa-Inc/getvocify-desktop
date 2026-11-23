@@ -330,6 +330,18 @@ export const sayFixtures = [
   { name: "say-steps-no-answer", state: recording(sayView()), steps: [PASOS, ".say-row[data-done=\"false\"][data-now=\"false\"] .say-row-main"], next: recording(sayView([], sayAsks({ step: { seq: 1, kind: "step", id: "preguntar_tiempo_y_proceso", status: "ready", question: null } }))), expect: { ...SAY, say: { tab: "Pasos", stepQ: null } } },
   { name: "say-transcript-tab", state: recording(sayView()), steps: [".say-tabs-row .live-tab:nth-child(2)"], expect: { ...SAY, say: { tab: "Transcripción", rows: 0 } } },
   { name: "say-brief", state: recording(sayView()), steps: [".say-contact"], expect: { ...SAY, say: { peek: "brief", title: "Marta Ruiz · Acme Logistics", briefLines: 2 } } },
+  // 2026-11-23: with nothing open the last card rests as its first line with the clock; the place never goes empty.
+  { name: "say-resting", state: recording(sayView([S_TIMING, { ...S_QUOTE, outcome: "answered" }, { ...S_READ, outcome: "answered" }])), expect: { ...SAY, say: { history: "3", quiet: null } } },
+  // Who the recording is with, changed during the call: nobody yet (a chip to choose), and a wrong one (Change in its panel).
+  { name: "say-contact-none", state: recording(sayView([], { contact: null }), { recordingContact: { id: null, contacts: [{ id: "42", name: "Alexander Schlacher", detail: "Wegrow" }], search: null } }), expect: { ...SAY, say: { contact: "Contacto", peek: null } } },
+  { name: "say-contact-choose", state: recording(sayView([], { contact: null }), { recordingContact: { id: null, contacts: [{ id: "42", name: "Alexander Schlacher", detail: "Wegrow" }], search: null } }), steps: [".say-contact"], expect: { ...SAY, say: { peek: "brief", title: "¿Con quién es?" } } },
+  { name: "say-contact-change", state: recording(sayView([], { contact: { ...CONTACT, name: "José Quesada", company: "Quipu" } }), { recordingContact: { id: "934", contacts: [{ id: "934", name: "José Quesada", detail: "Quipu" }], search: { query: "alex", results: [{ id: "42", name: "Alexander Schlacher", detail: "Wegrow" }], busy: false } } }), steps: [".say-contact", ".say-panel-action"], expect: { ...SAY, say: { peek: "brief", title: "¿Con quién es?" } } },
+  // A colleague in the meeting (Toni) is heard with the other side but drawn on the rep's side, with his name.
+  { name: "say-transcript-team", state: recording(sayView(), { voices: [{ id: 1, label: "Alexander Schlacher" }, { id: 2, label: "Toni" }], people: ["Alexander Schlacher", "Toni Mora"], team: ["Toni Mora", "Dani"], turns: [
+    { id: "t1", you: false, label: "Alexander Schlacher", text: "Normalmente el outreach lo hacemos por LinkedIn.", pending: "", voice: 1 },
+    { id: "t2", you: false, team: true, label: "Toni", text: "Te lo pregunto a ti, ¿crees que esta es la llamada con más peso?", pending: "", voice: 2 },
+    { id: "t3", you: true, label: null, text: "Y ahí es donde entra el playbook.", pending: "" },
+  ] }), steps: [".say-tabs-row .live-tab:nth-child(2)"], expect: { ...SAY, say: { tab: "Transcripción" } } },
   { name: "say-brief-first", state: recording(sayView([], { contact: { ...CONTACT, first: true, lines: [] } })), steps: [".say-contact"], expect: { ...SAY, say: { peek: "brief", briefLines: 1 } } },
   { name: "say-no-contact", state: recording(sayView([], { contact: null })), expect: { ...SAY, say: { contact: null } } },
   { name: "say-offline", state: recording(sayView([S_HUBSPOT], { offlineSince: NOW - 12_000 })), expect: { ...SAY, say: { offline: "Sin conexión con Vocify", cards: 1 } } },

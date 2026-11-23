@@ -8,7 +8,7 @@ import { WaveSide } from "../../core/waveSide.ts";
 import { DEFAULT_SPOT, type PillSpot } from "../../core/pill.ts";
 import type { Assist, Geometry, IslandAction, IslandState, Levels, LiveAction, Mode, PostCallData, Turn, VoiceAction } from "../../island/src/types.ts";
 import { postCallPending } from "../../island/src/types.ts";
-import { parseAssist, parseBackground, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parseMic, parsePostCall, parsePeople, parseTurnChanges, parseTurns, parseVoices, type LiveChannelKind, type LiveType } from "./parse.ts";
+import { parseAssist, parseBackground, parseClock, parseContact, parseFinish, parseLiveBrain, parseLiveType, parseMic, parsePostCall, parsePeople, parseRecordingContact, parseTeam, parseTurnChanges, parseTurns, parseVoices, type LiveChannelKind, type LiveType } from "./parse.ts";
 
 /**
  * The island's brain: what it shows and what each click does. A port of `MeetingPillController` and
@@ -408,6 +408,12 @@ export class IslandController {
       if (JSON.stringify(voices) !== JSON.stringify(this.current.voices ?? [])) patch.voices = voices;
       const people = parsePeople(update.overlay);
       if (JSON.stringify(people) !== JSON.stringify(this.current.people ?? [])) patch.people = people;
+      const team = parseTeam(update.overlay);
+      if (JSON.stringify(team) !== JSON.stringify(this.current.team ?? [])) patch.team = team;
+    }
+    if (has("recordingContact")) {
+      const next = parseRecordingContact(update.recordingContact);
+      if (JSON.stringify(next) !== JSON.stringify(this.current.recordingContact ?? null)) patch.recordingContact = next;
     }
 
     if (Object.keys(patch).length === 0) return;
@@ -532,6 +538,10 @@ export class IslandController {
       case "voice":
         // The dashboard holds the transcript: it renames, merges and moves, and tells the call's backend.
         return this.effects.emit("shell:command", `voice:${JSON.stringify(voiceCommand(action))}`);
+      case "recordingContact":
+        // Who the recording is with: the dashboard holds the recording, searches the CRM and keeps the one picked.
+        if (this.mode !== "recording") return;
+        return this.effects.emit("shell:command", `contact:${JSON.stringify(action.op === "search" ? { op: "search", query: action.query.slice(0, 100) } : { op: "set", contactId: action.contactId })}`);
       case "postCall":
         return this.postCallAction(action.type, action.details ?? {});
       case "liveTab":

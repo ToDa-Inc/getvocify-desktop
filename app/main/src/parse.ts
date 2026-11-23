@@ -1,6 +1,6 @@
 import type {
   Assist, Clock, Finish, LiveContact, LiveData, LiveDecision, LiveGoal, LiveNext, LiveNow, LiveOutcome, LivePart, LivePoint, LiveProgress, LiveRecap, LiveResponder, LiveRewrite, LiveStep, LiveStepAsk, LiveView,
-  BackgroundJob, MicDevice, MicView, PostCallChange, PostCallContact, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn, VoiceChoice,
+  BackgroundJob, ContactSearch, MicDevice, MicView, PostCallChange, PostCallContact, RecordingContact, PostCallData, PostCallEmail, PostCallMeeting, PostCallType, Turn, VoiceChoice,
 } from "../../island/src/types.ts";
 
 /**
@@ -114,10 +114,18 @@ export function parsePostCall(raw: unknown): PostCallData | null {
     dealCreatable: bool(raw.dealCreatable) ?? false,
     contactId: nonBlank(raw.contactId)?.trim() ?? null,
     contacts: contactsOf(raw.contacts),
-    contactSearch: isRaw(raw.contactSearch) && nonBlank(raw.contactSearch.query)
-      ? { query: nonBlank(raw.contactSearch.query)!, results: contactsOf(raw.contactSearch.results), busy: bool(raw.contactSearch.busy) ?? false }
-      : null,
+    contactSearch: contactSearchOf(raw.contactSearch),
   };
+}
+
+function contactSearchOf(raw: unknown): ContactSearch | null {
+  return isRaw(raw) && nonBlank(raw.query) ? { query: nonBlank(raw.query)!, results: contactsOf(raw.results), busy: bool(raw.busy) ?? false } : null;
+}
+
+/** `shell:state` recordingContact: who the recording is with and the picker's people and search; null drops it. */
+export function parseRecordingContact(raw: unknown): RecordingContact | null {
+  if (!isRaw(raw)) return null;
+  return { id: nonBlank(raw.id)?.trim() ?? null, contacts: contactsOf(raw.contacts), search: contactSearchOf(raw.search) };
 }
 
 /** People the card can save the call on: an id and a name each, at most 20. */
@@ -240,6 +248,7 @@ function parseTurn(raw: Raw, index: number): Turn {
     // Only when the dashboard tells voices apart: a turn without them is as it always was.
     ...(voice !== undefined && Number.isInteger(voice) && voice >= 1 ? { voice } : {}),
     ...(starts.length ? { starts } : {}),
+    ...(bool(raw.team) ? { team: true } : {}),
   };
 }
 
@@ -258,6 +267,13 @@ export function parsePeople(overlay: unknown): string[] {
   if (!isRaw(overlay)) return [];
   const names = (Array.isArray(overlay.people) ? overlay.people : []).flatMap((raw: unknown) => (typeof raw === "string" && raw.trim() ? [raw.trim().slice(0, 60)] : []));
   return [...new Set(names)].slice(0, 12);
+}
+
+/** The rep's own team as the dashboard names it: a voice named as one of them is on the rep's side. */
+export function parseTeam(overlay: unknown): string[] {
+  if (!isRaw(overlay)) return [];
+  const names = (Array.isArray(overlay.team) ? overlay.team : []).flatMap((raw: unknown) => (typeof raw === "string" && raw.trim() ? [raw.trim().slice(0, 60)] : []));
+  return [...new Set(names)].slice(0, 30);
 }
 
 export function parseClock(raw: unknown): Clock | null {

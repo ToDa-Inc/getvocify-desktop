@@ -33,6 +33,9 @@ export type Turn = {
   pending: string;
   /** The voice on the other side that said it, when the dashboard tells voices apart, and where its lines began. */
   voice?: number;
+  /** Heard on the other side's audio but one of the rep's own team (a colleague in the meeting): shown on the rep's side,
+   * and the brain never answers it. */
+  team?: boolean;
   starts?: number[];
 };
 
@@ -266,10 +269,14 @@ export type PostCallData = {
   /** Who it may have been with, the chosen one first: the contact picker lists them before any search. */
   contacts: PostCallContact[];
   /** The rep's search in the contact picker and what the CRM found; null when nothing is searched. */
-  contactSearch: { query: string; results: PostCallContact[]; busy: boolean } | null;
+  contactSearch: ContactSearch | null;
 };
 /** A person the call can be saved on: their name, and what tells two apart (the company, else the email). */
 export type PostCallContact = { id: string; name: string; detail: string | null };
+/** The rep's search in a contact picker and what the CRM found for it. */
+export type ContactSearch = { query: string; results: PostCallContact[]; busy: boolean };
+/** Who the recording is with (`id` null: nobody yet), the people to offer before any search, and the rep's search. */
+export type RecordingContact = { id: string | null; contacts: PostCallContact[]; search: ContactSearch | null };
 export type PostCallSavedOn = { kind: "deal" | "company" | "contact"; name: string };
 
 /** What a finished call still needs. Working: Vocify is writing it up. Needs: an update waits for the rep. Failed: it could not be written, and stays until retried. Followup: logged as no answer, with an optional follow-up. Done: saved, for a moment. */
@@ -340,6 +347,12 @@ export type IslandState = {
   voices?: VoiceChoice[];
   /** Who the calendar says is in the meeting, besides the rep: a voice is named by picking one. */
   people?: string[];
+  /** The rep's own team (company members and colleagues invited to the meeting): a voice named as one of them is on the
+   * rep's side. Empty when the dashboard does not say. */
+  team?: string[];
+  /** While recording, who the call is with can be changed from the island: the people found for it and the rep's search.
+   * Null or absent when the dashboard does not offer it (an older one, or no CRM). */
+  recordingContact?: RecordingContact | null;
   /** The finished calls the dashboard is still on; null when it does not report them (then the island waits on a spinner after a recording, as before). */
   background?: BackgroundJob[] | null;
   /** The recording that just ended, until its memo is being written; null when the dashboard says nothing. */
@@ -365,7 +378,13 @@ export type VoiceAction =
   | { name: "voice"; op: "merge"; keep: number; drop: number }
   | { name: "voice"; op: "move"; starts: number[]; voice: number | null };
 
+/** Who the recording is with, from the island: a search in the CRM, or the one picked (null: nobody). */
+export type RecordingContactAction =
+  | { name: "recordingContact"; op: "search"; query: string }
+  | { name: "recordingContact"; op: "set"; contactId: string | null };
+
 export type IslandAction =
+  | RecordingContactAction
   | { name: "toggle" }
   | { name: "record" }
   | { name: "dismissCall" }

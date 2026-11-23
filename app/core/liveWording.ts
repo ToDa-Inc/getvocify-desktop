@@ -92,6 +92,14 @@ type SayStrings = {
   recap: { label: string; help: string };
   steps: { label: string; help: string };
   contactHelp: string;
+  /** Who the recording is with, changed from the island: the button with nobody chosen, the one beside a name, "nobody". */
+  addContact: string;
+  addContactHelp: string;
+  changeContact: string;
+  noContact: string;
+  /** The panel's title while choosing. */
+  chooseContact: string;
+  contactPicker: { placeholder: string; searching: string; none: string; typeToSearch: string };
   recapTitle: (at: string) => string;
   recapReading: string;
   known: string;
@@ -189,6 +197,12 @@ const ES: Strings = {
     recap: { label: "Resumen", help: "Lo que sabes y lo que ha pasado" },
     steps: { label: "Pasos", help: "Los pasos del playbook" },
     contactHelp: "Quién es, antes de esta llamada",
+    addContact: "Contacto",
+    addContactHelp: "Elige con quién es la llamada",
+    changeContact: "Cambiar",
+    noContact: "Sin contacto",
+    chooseContact: "¿Con quién es?",
+    contactPicker: { placeholder: "Busca nombre, email o teléfono", searching: "Buscando…", none: "No hay nadie con eso", typeToSearch: "Escribe para buscar en el CRM" },
     recapTitle: (at) => `Resumen · hasta el ${at}`,
     recapReading: "Resumiendo",
     known: "Lo que sabes",
@@ -287,6 +301,12 @@ const EN: Strings = {
     recap: { label: "Recap", help: "What you know and what happened" },
     steps: { label: "Steps", help: "The playbook's steps" },
     contactHelp: "Who they are, before this call",
+    addContact: "Contact",
+    addContactHelp: "Choose who the call is with",
+    changeContact: "Change",
+    noContact: "No contact",
+    chooseContact: "Who is it with?",
+    contactPicker: { placeholder: "Search name, email or phone", searching: "Searching…", none: "No one found", typeToSearch: "Type to search the CRM" },
     recapTitle: (at) => `Recap · up to ${at}`,
     recapReading: "Summing up",
     known: "What you know",

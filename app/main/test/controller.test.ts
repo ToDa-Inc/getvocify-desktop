@@ -1054,6 +1054,40 @@ test("the rep's rename, merge and move of a voice go to the dashboard as one com
   assert.deepEqual(sent(), { op: "move", starts: [3, 4], voice: null });
 });
 
+test("a colleague's line keeps its team mark, and the rep's team reaches the island once each", () => {
+  const t = recording();
+  t.controller.applyShellState({ overlay: { turns: [{ key: "a", you: false, team: true, label: "Toni", text: "¿Y vosotros?", pending: "", voice: 2 }], team: ["Toni Mora", " Toni Mora", "", 4, "Dani"] } });
+  assert.equal(t.controller.state.turns[0].team, true);
+  assert.deepEqual(t.controller.state.team, ["Toni Mora", "Dani"]);
+  t.controller.applyShellState({ overlay: { turns: [{ key: "a", you: false, team: "yes", label: "Toni", text: "Hola", pending: "" }] } });
+  assert.equal(t.controller.state.turns[0].team, undefined);
+  assert.deepEqual(t.controller.state.team, []);
+});
+
+test("who the recording is with: the dashboard's people and search reach the island, and null drops them", () => {
+  const t = recording();
+  t.controller.applyShellState({ recordingContact: { id: " 42 ", contacts: [{ id: "42", name: "Alexander Schlacher", detail: "Wegrow" }, { id: "", name: "x" }], search: { query: "alex", results: [], busy: true } } });
+  assert.deepEqual(t.controller.state.recordingContact, { id: "42", contacts: [{ id: "42", name: "Alexander Schlacher", detail: "Wegrow" }], search: { query: "alex", results: [], busy: true } });
+  t.controller.applyShellState({ recordingContact: { id: null, contacts: [], search: { query: "  ", results: [] } } });
+  assert.deepEqual(t.controller.state.recordingContact, { id: null, contacts: [], search: null });
+  t.controller.applyShellState({ recordingContact: null });
+  assert.equal(t.controller.state.recordingContact, null);
+});
+
+test("the rep's search and pick of who the recording is with go to the dashboard, and only while recording", () => {
+  const t = recording();
+  const sent = () => JSON.parse(String(t.last("shell:command")).slice("contact:".length));
+  t.controller.act({ name: "recordingContact", op: "search", query: "Alexander" });
+  assert.deepEqual(sent(), { op: "search", query: "Alexander" });
+  t.controller.act({ name: "recordingContact", op: "set", contactId: "42" });
+  assert.deepEqual(sent(), { op: "set", contactId: "42" });
+  t.controller.act({ name: "recordingContact", op: "set", contactId: null });
+  assert.deepEqual(sent(), { op: "set", contactId: null });
+  const idle = setup();
+  idle.controller.act({ name: "recordingContact", op: "set", contactId: "42" });
+  assert.equal(idle.last("shell:command"), undefined);
+});
+
 test("the contact name is trimmed, and blank means none", () => {
   const t = setup();
   t.controller.applyShellState({ callContact: { name: "  Marta Ruiz  " } });

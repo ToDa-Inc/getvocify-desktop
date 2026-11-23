@@ -912,8 +912,8 @@ export function OpenIsland({ state, act, compact = false, onPopupExtent }: { sta
   const hasBrief = Boolean(state.dial?.brief?.length || state.dial?.companyBrief);
   // The other side's voices, when the dashboard tells them apart: a name above a line then opens the list to fix it.
   const voiceMenu = useMemo<VoiceMenu | undefined>(
-    () => (state.voices?.length ? { voices: state.voices, people: state.people ?? [], act, language: state.language } : undefined),
-    [state.voices, state.people, state.language, act],
+    () => (state.voices?.length ? { voices: state.voices, people: state.people ?? [], team: state.team ?? [], act, language: state.language } : undefined),
+    [state.voices, state.people, state.team, state.language, act],
   );
   const callControls = state.dial ? (
     <CallBar dial={state.dial} keypadOpen={state.keypadOpen} keypadButton={keypadButton} act={act} />
@@ -1300,7 +1300,7 @@ function TranscriptScroll({ turns, reduceMotion, marks, voices }: { turns: Turn[
                 turn={turn}
                 arrives={opened.current && !reduceMotion}
                 source={marks?.sources.has(turn.id) ?? false}
-                onTap={marks?.onTap && !turn.you ? tap : null}
+                onTap={marks?.onTap && !turn.you && !turn.team ? tap : null}
                 tapHelp={marks?.tapHelp ?? null}
                 voices={voices}
               />
@@ -1383,15 +1383,18 @@ function TurnBubble({ turn, arrives, source = false, onTap = null, tapHelp = nul
     el.style.minWidth = `${floor.current.width}px`;
     el.style.minHeight = `${floor.current.height}px`;
   }, [parts.text, parts.tail, parts.dots]);
+  // A colleague in the meeting is heard with the other side but is the rep's own side: drawn there, with their name (a tap
+  // on it still names the voice, e.g. to put someone back on the other side).
+  const ours = turn.you || turn.team === true;
   return (
-    <div className="turn" data-you={turn.you} data-entering={entering} data-turn-id={turn.id}>
-      {!turn.you && turn.label && (voices && turn.voice !== undefined ? <VoiceLabel turn={turn} menu={voices} /> : <div className="turn-label">{turn.label}</div>)}
-      <div className="bubble-row" data-you={turn.you}>
+    <div className="turn" data-you={ours} data-team={turn.team || undefined} data-entering={entering} data-turn-id={turn.id}>
+      {(!turn.you || turn.team) && turn.label && (voices && turn.voice !== undefined ? <VoiceLabel turn={turn} menu={voices} /> : <div className="turn-label">{turn.label}</div>)}
+      <div className="bubble-row" data-you={ours}>
         {/* Live help: the line a card came from carries a thin beige outline; a tap on one of theirs asks about it. */}
         <div
           className="bubble"
           ref={bubble}
-          data-you={turn.you}
+          data-you={ours}
           data-source={source || undefined}
           data-tappable={onTap ? true : undefined}
           title={onTap ? tapHelp ?? undefined : undefined}

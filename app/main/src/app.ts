@@ -224,6 +224,9 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   // The CRM record last on screen in a browser and when it was last seen there. A call app in front (Zoom, Teams) hides
   // the browser, but the record the rep came from is still the call's contact.
   const CRM_SEEN_FOR_MS = 10 * 60_000;
+  // A video meeting (Meet, Zoom, Teams…) is with whoever was invited, not with the last contact the rep looked at: only a
+  // record opened right before joining counts. 2026-11-23: a Meet got the contact a rep had open 3.5 minutes before.
+  const MEETING_CRM_SEEN_FOR_MS = 90_000;
   let lastCrm: { urls: string[]; at: number } | null = null;
   /** CRM pages for the log: site and path (record ids, no query string), the first three. */
   const pagePaths = (urls: string[]) =>
@@ -238,13 +241,14 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
         }
       })
       .join(", ");
-  const freshCrm = () => (lastCrm && Date.now() - lastCrm.at < CRM_SEEN_FOR_MS ? lastCrm.urls : []);
+  const freshCrm = (meeting = false) => (lastCrm && Date.now() - lastCrm.at < (meeting ? MEETING_CRM_SEEN_FOR_MS : CRM_SEEN_FOR_MS) ? lastCrm.urls : []);
   /** Windows: the call's record is the CRM page last in front (a dialer such as Ringover may be in front now, and another
-   * window may show a list); only when none was seen lately, every browser window's CRM pages. */
-  const callPagesOf = (pages: BrowserPage[]) => {
-    const fresh = freshCrm();
-    const urls = fresh.length > 0 ? fresh : crmUrlsOf(pages);
-    log(`call record: ${fresh.length > 0 ? "last in front" : "browser windows"}: ${pagePaths(urls) || "no CRM page"}`);
+   * window may show a list); only when none was seen lately, every browser window's CRM pages. A meeting takes only a
+   * record in front right before it: a CRM window left open somewhere is not who the meeting is with. */
+  const callPagesOf = (pages: BrowserPage[], meeting = false) => {
+    const fresh = freshCrm(meeting);
+    const urls = fresh.length > 0 || meeting ? fresh : crmUrlsOf(pages);
+    log(`call record${meeting ? " (meeting)" : ""}: ${fresh.length > 0 ? "last in front" : meeting ? "none" : "browser windows"}: ${pagePaths(urls) || "no CRM page"}`);
     return urls;
   };
 
@@ -363,19 +367,24 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
           void pageReader.read().then((pages) => {
             // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
             if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
-            dashboard.emit("call:source", (sourceOf(caller, pages) ?? null)?.json ?? null);
-            const urls = callPagesOf(pages);
+            const source = sourceOf(caller, pages);
+            dashboard.emit("call:source", source?.json ?? null);
+            const urls = callPagesOf(pages, source?.kind === "meeting");
             if (urls.length > 0) dashboard.emit("call:pages", { urls });
           });
         } else if (platform === "darwin") {
-          // The browser in front is read now; with a call app in front, the record last seen in a browser is the contact.
+          // The browser in front is read now; with a call app in front, the record last seen in a browser is the contact
+          // (for a meeting, only one seen right before it).
           void os.crmScreenReader.front().then(async (app) => {
             const read = app && os.crmScreenReader.isBrowser(app) ? await os.crmScreenReader.read(app) : null;
-            const urls = read && read.length > 0 ? read : freshCrm();
+            const callSource = CallSource.app(caller?.appId ?? undefined) ?? (await macCallPage(caller?.appId));
+            const meeting = callSource?.kind === "meeting";
+            const urls = read && read.length > 0 ? read : freshCrm(meeting);
+            log(`call record${meeting ? " (meeting)" : ""}: ${read && read.length > 0 ? "in front" : urls.length > 0 ? "last in front" : "none"}: ${pagePaths(urls) || "no CRM page"}`);
             // A read that outlasts the click on Record still counts: the dashboard attaches it to the recording.
             if (!["call", "starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
             const pageSource = urls.length > 0 ? CallSource.page(urls) : null;
-            const source = CallSource.app(caller?.appId ?? undefined) ?? (await macCallPage(caller?.appId)) ?? pageSource;
+            const source = callSource ?? pageSource;
             dashboard.emit("call:source", source?.json ?? null);
             if (urls.length > 0) dashboard.emit("call:pages", { urls });
           });
@@ -390,15 +399,18 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
           if (native) dashboard.emit("call:source", native.json);
           void pageReader.read().then((pages) => {
             if (!["starting", "recording", "stopped"].includes(controller.state.mode.kind)) return;
-            if (!native && caller) dashboard.emit("call:source", (CallSource.page(pages.map((p) => p.url)) ?? null)?.json ?? null);
-            const urls = callPagesOf(pages);
+            const page = native ? null : CallSource.page(pages.map((p) => p.url));
+            if (!native && caller) dashboard.emit("call:source", page?.json ?? null);
+            const urls = callPagesOf(pages, (native ?? page)?.kind === "meeting");
             if (urls.length > 0) dashboard.emit("call:pages", { urls });
           });
         } else if (platform === "darwin") {
-          // The CRM record in front, else the last one seen in a browser: the recording's contact and deal.
+          // The CRM record in front, else the last one seen in a browser (for a meeting, only right before it): the
+          // recording's contact and deal.
           void os.crmScreenReader.front().then(async (app) => {
             const read = app && os.crmScreenReader.isBrowser(app) ? await os.crmScreenReader.read(app) : null;
-            const urls = read && read.length > 0 ? read : freshCrm();
+            const meeting = (CallSource.app(caller?.appId ?? undefined) ?? (caller ? await macCallPage(caller.appId) : null))?.kind === "meeting";
+            const urls = read && read.length > 0 ? read : freshCrm(meeting);
             if (urls.length > 0 && ["starting", "recording", "stopped"].includes(controller.state.mode.kind)) {
               dashboard.emit("call:pages", { urls });
             }

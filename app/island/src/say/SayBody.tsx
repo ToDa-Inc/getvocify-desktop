@@ -267,7 +267,7 @@ function SayTabs({ hasSteps }: { hasSteps: boolean }) {
 /** Asking, at the foot: Responder, Resumen, and who the call is with. Resumen and the contact open over the tabs; a second
  * tap closes them. */
 function SayBar({ onRespond, controls }: { onRespond: () => void; controls: ReactNode }) {
-  const { live, ui, update, act, words, liveHelp } = useSay();
+  const { state, live, ui, update, act, words, liveHelp } = useSay();
   const progress = live.progress;
   const learned = progress.data.filter((d) => d.done && d.value).length;
   const learnPulse = useGrowPulse(learned);
@@ -293,13 +293,20 @@ function SayBar({ onRespond, controls }: { onRespond: () => void; controls: Reac
         <span>{say.recap.label}</span>
       </button>
       <div className="grow" />
-      {live.contact && (
+      {live.contact ? (
         <button type="button" className="say-contact" data-on={ui.peek === "brief"} title={say.contactHelp} onClick={() => toggle("brief")}>
           <PersonIcon />
           <span>{live.contact.name}</span>
           <ChevronRight size={8} />
         </button>
-      )}
+      ) : state.recordingContact ? (
+        // Nobody yet, and the dashboard can search the CRM: who the call is with is one tap away.
+        <button type="button" className="say-contact" data-empty="true" data-on={ui.peek === "brief"} title={say.addContactHelp} onClick={() => toggle("brief")}>
+          <PersonIcon />
+          <span>{say.addContact}</span>
+          <ChevronRight size={8} />
+        </button>
+      ) : null}
       {controls && <div className="say-controls">{controls}</div>}
     </div>
   );

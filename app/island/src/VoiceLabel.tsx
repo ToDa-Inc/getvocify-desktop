@@ -9,15 +9,16 @@ import { pickName, voiceNames } from "./voiceNames.ts";
  * The name above a line from the other side, when the dashboard tells that side's voices apart. One tap opens the people
  * in the meeting (from the calendar, and the names already given): picking one names this voice, and picking a name
  * another voice already has makes them one person. "Someone else" types a name. The dashboard holds the transcript, so
- * the island only asks; the lines change at once.
+ * the island only asks; the lines change at once. The rep's own team is listed apart: a voice named as a colleague moves to
+ * the rep's side, and the live help never answers it (2026-11-23).
  */
 
 type Act = (action: IslandAction) => void;
-export type VoiceMenu = { voices: VoiceChoice[]; people: string[]; act: Act; language: Language };
+export type VoiceMenu = { voices: VoiceChoice[]; people: string[]; /** The rep's own team; empty when the dashboard does not say. */ team?: string[]; act: Act; language: Language };
 
 const WORDS = {
-  en: { fix: "Who is this?", menu: "Who is this?", someone: "Someone else…", name: "Name", nameIt: "Name this voice" },
-  es: { fix: "¿Quién es?", menu: "¿Quién es?", someone: "Otra persona…", name: "Nombre", nameIt: "Nombra esta voz" },
+  en: { fix: "Who is this?", menu: "Who is this?", someone: "Someone else…", name: "Name", nameIt: "Name this voice", team: "Your team" },
+  es: { fix: "¿Quién es?", menu: "¿Quién es?", someone: "Otra persona…", name: "Nombre", nameIt: "Nombra esta voz", team: "Tu equipo" },
 };
 
 export function VoiceLabel({ turn, menu }: { turn: Turn; menu: VoiceMenu }) {
@@ -25,7 +26,10 @@ export function VoiceLabel({ turn, menu }: { turn: Turn; menu: VoiceMenu }) {
   const [typing, setTyping] = useState(false);
   const words = WORDS[menu.language === "es" ? "es" : "en"];
   const voice = turn.voice as number;
-  const names = voiceNames(menu);
+  const team = menu.team ?? [];
+  const teamKeys = new Set(team.map((name) => name.trim().toLowerCase()));
+  // The meeting's guests (and names already given) first; the rep's colleagues under their own heading.
+  const names = voiceNames(menu).filter((name) => !teamKeys.has(name.trim().toLowerCase()));
   const current = (turn.label ?? "").trim().toLowerCase();
   const close = () => {
     setAnchor(null);
@@ -62,7 +66,16 @@ export function VoiceLabel({ turn, menu }: { turn: Turn; menu: VoiceMenu }) {
               {names.map((name) => (
                 <MenuRow key={name} label={name} selected={name.trim().toLowerCase() === current} onPick={() => choose(name)} />
               ))}
-              {names.length > 0 && <div className="hairline menu-divider" />}
+              {team.length > 0 && (
+                <>
+                  {names.length > 0 && <div className="hairline menu-divider" />}
+                  <div className="menu-heading">{words.team}</div>
+                  {team.map((name) => (
+                    <MenuRow key={`team:${name}`} label={name} selected={name.trim().toLowerCase() === current} onPick={() => choose(name)} />
+                  ))}
+                </>
+              )}
+              {(names.length > 0 || team.length > 0) && <div className="hairline menu-divider" />}
               <MenuRow label={words.someone} selected={false} onPick={() => (keyboardNow(), setTyping(true))} />
             </>
           )}

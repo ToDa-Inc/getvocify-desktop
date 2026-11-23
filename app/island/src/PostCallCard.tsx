@@ -4,6 +4,7 @@ import { ArrowUpRight, Briefcase, Building, Calendar, Check, ChevronDown, Close,
 import { dayAfter, dueLabel, dueOfMoment, type TaskDue } from "../../core/taskDates.ts";
 import { keyboardNow, keyboardOver, releaseKeyboardSoon } from "./keyboard.ts";
 import { TaskDatePicker } from "./TaskDatePicker.tsx";
+import { ContactPicker } from "./ContactPicker.tsx";
 import { postCallCrmName, type IslandAction, type PostCallChange, type PostCallContact, type PostCallData, type PostCallMeeting, type PostCallSavedOn } from "./types.ts";
 
 /**
@@ -765,65 +766,6 @@ function ValueEditor({ text, onDone }: { text: string; onDone: (text: string | n
 
 /** The search line and up to six people under it. */
 const CONTACT_MENU_HEIGHT = 4 * 2 + 30 + 6 * 34;
-
-/**
- * Who the call is saved on: the people Vocify found for it (the chosen one ticked), and anyone the CRM finds once the rep
- * types a name, an email or a phone. Picking one keeps it on the call; the dashboard reads the update again for them.
- */
-function ContactPicker({ chosen, contacts, search, onSearch, onPick }: {
-  chosen: string | null;
-  contacts: PostCallContact[];
-  search: { query: string; results: PostCallContact[]; busy: boolean } | null;
-  onSearch: (query: string) => void;
-  onPick: (contact: PostCallContact) => void;
-}) {
-  const input = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState(search?.query ?? "");
-  useEffect(() => {
-    input.current?.focus();
-    return () => releaseKeyboardSoon();
-  }, []);
-  // Asked once the rep stops typing; under two letters the people Vocify found are listed again.
-  useEffect(() => {
-    const trimmed = query.trim();
-    const timer = setTimeout(() => onSearch(trimmed.length >= 2 ? trimmed : ""), trimmed.length >= 2 ? 300 : 0);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only the text decides when to ask
-  }, [query]);
-  const searching = query.trim().length >= 2;
-  const answered = searching && search?.query === query.trim();
-  const rows = searching ? (answered ? search!.results : []) : contacts;
-  const busy = searching && (!answered || search!.busy);
-  return (
-    <>
-      <div className="contact-search">
-        <input
-          ref={input}
-          className="task-input contact-search-input"
-          value={query}
-          placeholder="Search name, email or phone"
-          spellCheck={false}
-          autoComplete="off"
-          maxLength={100}
-          onMouseEnter={keyboardOver}
-          onMouseDown={keyboardNow}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && rows.length > 0) {
-              event.preventDefault();
-              onPick(rows[0]);
-            }
-          }}
-        />
-      </div>
-      {rows.map((contact) => (
-        <MenuRow key={contact.id} label={contact.name} detail={contact.detail} selected={contact.id === chosen} onPick={() => onPick(contact)} />
-      ))}
-      {busy && rows.length === 0 && <div className="menu-heading">Searching…</div>}
-      {!busy && rows.length === 0 && <div className="menu-heading">{searching ? "No one found" : "Type to search the CRM"}</div>}
-    </>
-  );
-}
 
 /** Tasks the rep adds by hand: a title, a day and an hour. Listed under the changes and written to the CRM with Save; each can still be re-worded and moved. */
 function AddTask({ tasks, onChange, onPopupExtent, onAddNote }: { tasks: NewTask[]; onChange: (tasks: NewTask[]) => void; onPopupExtent: (bottom: number | null) => void; /** Shown next to Add task when the call's note can be written: opens it. */ onAddNote?: () => void }) {

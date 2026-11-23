@@ -1,6 +1,7 @@
-// "Qué decir", one answer at a time (2026-11-10): the open answer is whole; the one it takes the place of shrinks to a
-// line and leaves (say.css); the ones before come back from the small icon on the answer's first line, as the list they
-// are underneath (everything said that needed an answer, in order, the dealt-with ones faded). At the foot, always in the
+// "Qué decir", one answer at a time (2026-11-10): the open answer is whole; a new one takes the place of the one before at
+// once. With nothing open, the last one rests as its first line, quiet, so the place is never empty (2026-11-23); the
+// ones before come back from the clock on that first line, as the list they are (everything said that needed an answer,
+// in order, the dealt-with ones faded). At the foot, always in the
 // same place, the brain working: the dots and «Pensando» while a reading is really in flight. It promises no text: when
 // the reading ends with nothing it just stops.
 //
@@ -208,7 +209,10 @@ export function Feed() {
   const fit = () => {
     const feed = ref.current;
     if (!feed) return;
-    const open = liveIds.length ? feed.querySelector<HTMLElement>(`[data-id="${CSS.escape(target.current ?? "")}"]`) : null;
+    // Nothing open: the last card resting as its first line is what the zone holds (the island sizes itself to it).
+    const open = liveIds.length
+      ? feed.querySelector<HTMLElement>(`[data-id="${CSS.escape(target.current ?? "")}"]`)
+      : feed.querySelector<HTMLElement>('.say-list > .say-card[data-live="false"]:last-child');
     const room = Math.round((feed.parentElement?.clientHeight ?? 0) * FEED_MAX_SHARE);
     // With the earlier answers brought back, the whole list counts: it gets the room, and scrolls inside past it.
     const list = older ? feed.querySelector<HTMLElement>(".say-list") : null;

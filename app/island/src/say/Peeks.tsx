@@ -1,6 +1,6 @@
 // What was asked for, rising from the bottom over the tabs, one at a time, never over Qué decir:
 // - Resumen: this call only. What you know (each with the prospect's words), what is still missing, and what happened.
-// - The contact: who they are before this call.
+// - The contact: who they are before this call, and who the call is with changed here (a search in the CRM, or nobody).
 // Pasos is a tab now (Steps.tsx); the question it asks for a step is prepared here (StepQuestion).
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { TypingDots } from "../TypingDots.tsx";
@@ -8,6 +8,8 @@ import { nowMs, useNow } from "../useNow.ts";
 import { CloseSmall } from "../live/icons.tsx";
 import { clockLabel, markKey, type Todo } from "../live/model.ts";
 import { useSay } from "./context.ts";
+import { ContactPicker } from "../ContactPicker.tsx";
+import { MenuRow } from "../FloatMenu.tsx";
 
 /** A question asked for from Pasos is prepared from the call before it shows. When the dashboard has none (or no answer
  * comes in this long), a data item gets the question written from its good answer; a step gets nothing: its playbook
@@ -15,10 +17,13 @@ import { useSay } from "./context.ts";
 const STEP_FALLBACK_MS = 4000;
 const CHAR_MS = 16;
 
-function Panel({ title, children }: { title: string; children: ReactNode }) {
+function Panel({ title, action, children }: { title: string; /** At the right of the title (the contact's Change). */ action?: ReactNode; children: ReactNode }) {
   return (
     <div className="say-panel">
-      <div className="say-panel-head"><span className="live-tag" data-kind="ask">{title}</span></div>
+      <div className="say-panel-head">
+        <span className="live-tag" data-kind="ask">{title}</span>
+        {action}
+      </div>
       {children}
     </div>
   );
@@ -62,11 +67,50 @@ function Resumen() {
 }
 
 function Brief() {
-  const { live, words } = useSay();
+  const { state, live, words, act, update } = useSay();
+  const say = words.say;
   const contact = live.contact;
+  // The dashboard offers to change who the recording is with: a wrong contact (a CRM page left open before a meeting) is
+  // fixed here, during the call, and the brain reads the right person from then on (Dani, 2026-11-23).
+  const pick = state.recordingContact ?? null;
+  const [choosing, setChoosing] = useState(false);
+  if (pick && (choosing || !contact)) {
+    // Picked, or nobody: the panel closes and the chip at the foot says who it is now.
+    const choose = (contactId: string | null) => {
+      setChoosing(false);
+      update({ peek: null });
+      if (contactId !== pick.id) act({ name: "recordingContact", op: "set", contactId });
+    };
+    return (
+      <Panel
+        title={say.chooseContact}
+      >
+        <div className="say-contact-pick">
+          <ContactPicker
+            chosen={pick.id}
+            contacts={pick.contacts}
+            search={pick.search}
+            words={say.contactPicker}
+            takeKeys
+            onSearch={(query) => act({ name: "recordingContact", op: "search", query })}
+            onPick={(person) => choose(person.id)}
+            footer={pick.id ? (
+              <>
+                <div className="hairline menu-divider" />
+                <MenuRow label={say.noContact} selected={false} dim onPick={() => choose(null)} />
+              </>
+            ) : null}
+          />
+        </div>
+      </Panel>
+    );
+  }
   if (!contact) return null;
   return (
-    <Panel title={words.say.briefTitle(contact.name, contact.company)}>
+    <Panel
+      title={say.briefTitle(contact.name, contact.company)}
+      action={pick ? <button type="button" className="small-action say-panel-action" title={say.addContactHelp} onClick={() => setChoosing(true)}>{say.changeContact}</button> : null}
+    >
       <div className="say-resumen">
         <div className="say-section">{words.say.before}</div>
         {contact.first || contact.lines.length === 0 ? (

@@ -69,8 +69,9 @@ if (!app.requestSingleInstanceLock()) {
         // Trying the permission flow on a machine that already allowed everything.
         testPermissions: process.argv.includes("--test-permissions") || process.env.VOCIFY_TEST_PERMISSIONS === "1",
       });
-      // Opening the app opens its window, like any app; the island alone is for starts nobody asked for (an update restart, `--hidden`).
-      if (!smoke && !handle.startedAfterUpdate && !process.argv.includes("--hidden")) handle.dashboard.show();
+      // Opening the app opens its window, like any app; the island alone is for starts nobody asked for (`--hidden`) and
+      // for the restart into an update taken while the window was out of sight.
+      if (!smoke && !handle.startsOutOfSight && !process.argv.includes("--hidden")) handle.dashboard.show();
       // Only an installed build updates itself; the demo, the smoke test and a developer's checkout never do.
       if (app.isPackaged && !demo && !smoke && process.env.VOCIFY_NO_UPDATE !== "1") {
         const { default: updater } = await import("electron-updater");

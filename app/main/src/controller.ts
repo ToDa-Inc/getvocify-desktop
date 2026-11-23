@@ -42,6 +42,10 @@ const PHONE_CONNECT_TIMEOUT = 45;
 /** How long the island says a call on the phone didn't connect, or that an ended recording was not kept. */
 const PHONE_FAILED_LINGER = 10;
 const SKIPPED_LINGER = 4;
+/** How long the island says an ended recording could not be finished before it goes back to rest by itself: long enough
+ * to read the line, and never a card the rep has to close before the next call (Movertis, 2026-11-23: one stayed up 13
+ * minutes and three calls were not offered under it). */
+const FINISH_FAILED_LINGER = 10;
 /** Both sides silent this long ends the recording, in any app (a call, a meeting, a softphone that keeps the mic open). Ten
  * seconds is past a conversation's normal gaps and a thinking pause, and short enough that a call which is over stops soon
  * after the last word. Hold music is sound, so it never counts. Only once the far side has been heard (see `farSideHeard`). */
@@ -723,8 +727,12 @@ export class IslandController {
       case "stopped":
         return this.resumeRecording();
       case "starting":
-      case "finishing":
         return;
+      case "finishing":
+        // A recording still being handed over is not interrupted; a line about the ended one is no reason to wait.
+        if (!this.noticeUp) return;
+        this.endNotice();
+        return this.shortcutPressed();
       case "postCall":
         // A new call: the last one's card stays in Vocify.
         this.transition({ kind: "idle" }, false);
@@ -749,8 +757,8 @@ export class IslandController {
         if (this.current.expanded) this.postCallCountdown();
         return;
       case "finishing":
-        // Closing a failure ends the wait; otherwise it just peeks at where the call is.
-        if (this.current.finish?.step === "failed" && expanded) return this.dismissFinish();
+        // Closing what it says about the ended recording ends it; otherwise it just peeks at where the call is.
+        if (this.noticeUp && expanded) return this.endNotice();
         return this.transition(mode, !expanded);
       case "dialConfirm":
         return this.leaveDialConfirm();
@@ -770,6 +778,7 @@ export class IslandController {
     // The confirm row is only ever open: closing it is going back to rest.
     if (this.mode === "dialConfirm") this.leaveDialConfirm();
     else if (this.current.mode.kind === "phoneCall" && this.current.mode.failed) this.endPhoneCall(false);
+    else if (this.noticeUp) this.endNotice();
     else if (this.current.expanded) this.transition(this.current.mode, false);
   }
 
@@ -1023,8 +1032,7 @@ export class IslandController {
       this.stopTimer("autoClose");
       this.set({ finish: null, countdown: null });
       this.transition({ kind: "idle" }, false);
-      // A call app that took the mic meanwhile is offered now, as when the wait ends.
-      if (this.currentCaller && !this.callHandled && !this.isListening && !this.isQuiet(this.currentCaller)) this.callChanged(this.currentCaller);
+      this.offerWaitingCall();
       return;
     }
     this.finishingAfter = this.current.postCall?.memoId ?? null;
@@ -1034,40 +1042,50 @@ export class IslandController {
     this.start("finishTimeout", FINISH_GIVE_UP, () => {
       if (this.mode !== "finishing") return;
       this.rest();
-      // A call app that took the mic while the island waited for the memo was ignored then, and nothing reports it again.
-      if ((this.mode as string) === "idle" && this.currentCaller && !this.callHandled && !this.isListening && !this.isQuiet(this.currentCaller)) this.callChanged(this.currentCaller);
+      this.offerWaitingCall();
     });
   }
 
-  /** The rep closes the card that says the ended recording failed (the dashboard has already kept what it could). */
-  private dismissFinish(): void {
-    if (this.mode !== "finishing" || this.current.finish?.step !== "failed") return;
-    this.stopTimer("finishTimeout");
-    this.rest();
+  /** A call app that took the mic while the island was held (waiting for a memo, or saying what happened to the ended
+   * recording) was ignored then, and nothing reports it again: back at rest, it is offered. */
+  private offerWaitingCall(): void {
+    if (this.mode === "idle" && this.currentCaller && !this.callHandled && !this.isListening && !this.isQuiet(this.currentCaller)) this.callChanged(this.currentCaller);
   }
 
-  /** The dashboard says how the ended recording is going: a failure opens the island and stays; a recording it did not
-   * keep (an unanswered call) says why for a moment. */
+  /** The island is saying what happened to the ended recording (not kept, or not finished) rather than waiting for it. */
+  private get noticeUp(): boolean {
+    const step = this.current.finish?.step;
+    return this.mode === "finishing" && (step === "failed" || step === "skipped");
+  }
+
+  /** That line goes (its time ran out, the rep closed it, or a call came): back to rest, free for the next call. */
+  private endNotice(): void {
+    if (!this.noticeUp) return;
+    this.stopTimer("finishTimeout");
+    this.set({ finish: null });
+    this.rest();
+    this.offerWaitingCall();
+  }
+
+  /** The rep closes the line about the ended recording (the dashboard has already kept what it could). */
+  private dismissFinish(): void {
+    this.endNotice();
+  }
+
+  /** The dashboard says how the ended recording is going. One it did not keep (an unanswered call, nothing transcribed) or
+   * could not finish opens the island to say so, for a moment: it goes by itself (the pointer over it holds it, a click
+   * closes it) and never holds the next call back. */
   private finishChanged(): void {
     const step = this.current.finish?.step;
-    // A dashboard that keeps the finished calls leaves the island at rest after a recording; what it says about one that was not
-    // kept (no answer, nothing transcribed) still opens the island for it. A call that could not be written is its job's line.
+    if (step !== "skipped" && step !== "failed") return;
+    // A dashboard that keeps the finished calls leaves the island at rest after a recording; what it says about one that was
+    // not kept still opens the island for it. A call that could not be written is its job's line, which stays.
     const background = this.current.background;
-    const atRest = background != null && this.mode === "idle" && (step === "skipped" || (step === "failed" && !background.some((job) => job.state === "failed")));
-    if ((this.mode === "finishing" || atRest) && step === "skipped") {
-      this.stopTimer("finishTimeout");
-      this.transition({ kind: "finishing" }, true);
-      this.start("finishTimeout", SKIPPED_LINGER, () => {
-        if (this.mode === "finishing" && this.current.finish?.step === "skipped") {
-          this.set({ finish: null });
-          this.rest();
-        }
-      });
-      return;
-    }
-    if (!(this.mode === "finishing" || atRest) || step !== "failed") return;
+    const atRest = background != null && this.mode === "idle" && (step === "skipped" || !background.some((job) => job.state === "failed"));
+    if (this.mode !== "finishing" && !atRest) return;
     this.stopTimer("finishTimeout");
     this.transition({ kind: "finishing" }, true);
+    this.startCountdown(step === "skipped" ? SKIPPED_LINGER : FINISH_FAILED_LINGER);
   }
 
   private rest(): void {
@@ -1193,6 +1211,12 @@ export class IslandController {
     if (this.vocifyCallUp) {
       if (caller) this.effects.log?.("call offer: not offered (a Vocify call is up)");
       return;
+    }
+    // What the island says about the ended recording never holds the next call back: the line goes and the call is offered.
+    if (caller !== null && this.noticeUp) {
+      this.stopTimer("finishTimeout");
+      this.set({ finish: null });
+      this.rest();
     }
     if (caller !== null && this.mode !== "idle" && this.mode !== "call" && this.mode !== "postCall") this.effects.log?.(`call offer: not offered (island is ${this.mode})`);
     if (caller === null) {

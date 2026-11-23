@@ -307,7 +307,7 @@ test("while finishing the island ignores the dashboard hiding it, the shortcut a
   assert.equal(t.mode(), "postCall");
 });
 
-test("the dashboard's account of the ended recording: sending shows a line, a failure opens the island and stays until closed", () => {
+test("the dashboard's account of the ended recording: sending shows a line, a failure opens the island, says so and goes by itself", () => {
   const t = recording();
   t.controller.act({ name: "stop" });
   t.controller.act({ name: "finish" });
@@ -319,10 +319,79 @@ test("the dashboard's account of the ended recording: sending shows a line, a fa
   t.controller.applyShellState({ finish: { step: "failed", message: "No audio was heard" } });
   assert.equal(t.controller.state.expanded, true);
   assert.equal(t.controller.state.finish?.message, "No audio was heard");
-  t.advance(120);
-  assert.equal(t.mode(), "finishing", "a failure is not given up on");
+  assert.equal(t.controller.state.countdown?.total, 10, "the bar shows it will go");
+  t.advance(9);
+  assert.equal(t.mode(), "finishing", "long enough to read");
+  t.advance(2);
+  assert.equal(t.mode(), "idle", "nothing here waits for the rep");
+  assert.equal(t.controller.state.finish, null);
+});
+
+test("the pointer over that line holds it, and a click closes it", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  t.controller.applyShellState({ finish: { step: "failed", message: "Nothing was transcribed." } });
+  t.advance(5);
+  t.controller.pointer(true);
+  t.advance(12);
+  assert.equal(t.mode(), "finishing", "being read");
+  t.controller.pointer(false);
+  t.advance(9);
+  assert.equal(t.mode(), "finishing", "the whole time again once the pointer leaves");
   t.controller.act({ name: "toggle" });
-  assert.equal(t.mode(), "idle", "closing the failure ends the wait");
+  assert.equal(t.mode(), "idle", "a click closes it");
+});
+
+test("a call that comes while the island says the last recording failed is offered at once (Movertis, 2026-11-23)", () => {
+  const t = recording();
+  t.controller.applyShellState({ background: [] });
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  assert.equal(t.mode(), "idle");
+  t.controller.callChanged(null);
+  t.controller.applyShellState({ finish: { step: "failed", message: "Nothing was transcribed. Check the meeting isn't muted." } });
+  assert.equal(t.mode(), "finishing");
+  t.advance(4);
+  t.controller.callChanged(zoom);
+  assert.equal(t.mode(), "call", "the next call is offered, not held back by the line");
+  assert.equal(t.controller.state.finish, null);
+});
+
+test("the same line again for the next recording opens the island again", () => {
+  const t = recording();
+  t.controller.applyShellState({ background: [] });
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  const failed = { finish: { step: "failed", message: "Nothing was transcribed." } };
+  t.controller.applyShellState(failed);
+  t.advance(11);
+  assert.equal(t.mode(), "idle");
+  t.controller.applyShellState(failed);
+  assert.equal(t.mode(), "finishing", "said again for the next one");
+});
+
+test("a recording that was not kept says so for 4 s; a call already holding the mic is offered when the line goes", () => {
+  const t = recording();
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  t.controller.callChanged(null);
+  t.controller.callChanged(zoom);
+  assert.equal(t.mode(), "finishing", "the recording is still being handed over: not interrupted");
+  t.controller.applyShellState({ finish: { step: "skipped", message: "No answer. Nothing was saved." } });
+  assert.equal(t.controller.state.expanded, true);
+  t.advance(5);
+  assert.equal(t.mode(), "call", "the call that was waiting is offered");
+});
+
+test("the shortcut starts a recording over that line", () => {
+  const t = recording();
+  t.controller.applyShellState({ background: [] });
+  t.controller.act({ name: "stop" });
+  t.controller.act({ name: "finish" });
+  t.controller.applyShellState({ finish: { step: "failed", message: "Nothing was transcribed." } });
+  t.controller.shortcutPressed();
+  assert.equal(t.mode(), "starting");
 });
 
 test("the failure card's Dismiss closes it and frees the island for the next call", () => {

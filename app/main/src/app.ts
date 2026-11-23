@@ -80,8 +80,9 @@ export type AppHandle = {
   canInstallUpdate(): boolean;
   /** Restart now: the same, except an open window does not hold it back (the rep asked). */
   canRestartForUpdate(): boolean;
-  /** True when this start is the restart into an update the rep chose. */
-  startedAfterUpdate: boolean;
+  /** True when this start is the restart into an update and Vocify's window was out of sight when the rep chose it: the
+   * island alone comes back. With the window in view (Restart pressed in it), it opens again as it was. */
+  startsOutOfSight: boolean;
   /** Called just before an update restarts the app. */
   markUpdateRestart(): void;
   /** The updater, which starts after the app: "Check for updates" in the tray and the dashboard's Settings use it. */
@@ -184,9 +185,12 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   process.on("uncaughtException", (error) => log(`uncaught exception: ${error.stack ?? String(error)}`));
   process.on("unhandledRejection", (reason) => log(`unhandled rejection: ${reason instanceof Error ? reason.stack ?? reason.message : String(reason)}`));
   const settings = new JsonSettings(join(options.userDataDir, "settings.json"));
-  // An update restarts the app by itself: it must not throw the dashboard window up as if the rep had just launched it.
-  const startedAfterUpdate = settings.get("restartedForUpdate") === true;
+  // The restart into an update brings back what was there: the island alone when Vocify's window was out of sight (it
+  // must not throw the window up as if the rep had just launched it), the window too when the rep pressed Restart in it
+  // (a rep who saw it close and not come back took Vocify for not reopening, 2026-11-23).
+  const startsOutOfSight = settings.get("restartedForUpdate") === true && settings.get("windowInViewAtUpdate") !== true;
   settings.set("restartedForUpdate", false);
+  settings.set("windowInViewAtUpdate", false);
   const drafts = new Drafts(join(options.userDataDir, "meetings"));
   const platform = process.platform;
   // The Mac's native helper: shipped in the app's Resources, or built next to the sources in development.
@@ -1466,9 +1470,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     canRestartForUpdate,
     // On its own the app never restarts under the rep's eyes: an open window waits until it is closed (or Restart now).
     canInstallUpdate: () => !dashboard.visible && canRestartForUpdate() && quietForUpdate(),
-    startedAfterUpdate,
+    startsOutOfSight,
     markUpdateRestart: () => {
       settings.set("restartedForUpdate", true);
+      settings.set("windowInViewAtUpdate", dashboard.visible);
       // The update closes the windows before the app quits: the island must let it.
       quitting = true;
       updateRestart = true;

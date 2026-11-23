@@ -222,6 +222,11 @@ test("Windows reads the record through its reader, asks the registry only while 
   const zoom = `CONSENT [{"k":"NonPackaged\\\\C#Program Files#Zoom#bin#Zoom.exe","s":"${(BigInt(START - 60_000) + 11644473600000n) * 10000n}","e":"0"}]`;
   detector.start((caller) => callers.push(caller));
   await settle();
+  assert.equal(registryReads, 0, "no registry query while the reader is still starting");
+  now += 20_000;
+  tick?.();
+  await settle();
+  assert.equal(registryReads, 0, "still none 20 s in: a slow PC's reader takes that long");
   const asked = registryReads;
   report?.(zoom);
   await settle();
@@ -233,5 +238,44 @@ test("Windows reads the record through its reader, asks the registry only while 
   report?.("CONSENT_ERROR access denied");
   report?.("CONSENT_ERROR access denied");
   assert.deepEqual(errors, ["CONSENT_ERROR access denied"], "the same error is logged once");
+  detector.stop();
+});
+
+test("Windows: a reader that never reports is replaced by the registry after 45 s, asked every 10 s, not at every look", async () => {
+  let now = START;
+  let registryReads = 0;
+  const notes: string[] = [];
+  let tick: (() => void) | null = null;
+  const callers: (DetectedCaller | null)[] = [];
+  const detector = createWindowsCallDetector({
+    read: async () => {
+      registryReads += 1;
+      return entry(ZOOM, now - 5000, 0);
+    },
+    now: () => now,
+    every: (_ms, fn) => {
+      tick = fn;
+      return () => void (tick = null);
+    },
+    ownExePath: VOCIFY,
+    captureReader: { start() {}, stop() {} },
+    onCaptureError: (line) => notes.push(line),
+  });
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+  const look = async (ms: number) => {
+    now += ms;
+    tick?.();
+    await settle();
+    await settle();
+  };
+  detector.start((caller) => callers.push(caller));
+  await settle();
+  for (let i = 0; i < 20; i += 1) await look(2000);
+  assert.equal(registryReads, 0, "40 s in, the reader may still be starting");
+  for (let i = 0; i < 15; i += 1) await look(2000);
+  // 30 s of looks every 2 s past the grace: the registry is asked about every 10 s, not 15 times.
+  assert.ok(registryReads >= 2 && registryReads <= 4, `asked ${registryReads} times`);
+  assert.equal(callers.at(-1)?.name, "Zoom", "the call is still seen, through the registry");
+  assert.equal(notes.filter((n) => n.includes("asking the registry")).length, 1, "said once");
   detector.stop();
 });

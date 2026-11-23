@@ -57,6 +57,11 @@ app.whenReady().then(async () => {
     // A rep whose calendar is connected: the hidden dashboard page stays for the meeting heads-up.
     writeFileSync(join(userDataDir, "settings.json"), JSON.stringify({ recorderReady: true, calendarWatch: true }));
     const { startApp } = await import(pathToFileURL(join(here, "../main/dist-shell-test/app.mjs")).href);
+    // VOCIFY_IDLE_PLACEMENT=side measures the pill (its window covers the screen's work area) instead of the notch island.
+    if (process.env.VOCIFY_IDLE_PLACEMENT === "side") {
+      writeFileSync(join(userDataDir, "settings.json"), JSON.stringify({ islandPlacement: "side" }));
+      console.log("idle: measuring with the island as a side pill");
+    }
     const handle = await startApp({
       dashboardUrl: pathToFileURL(join(here, "../main/demo/fake-dashboard.html")).href,
       trustFiles: true,
@@ -106,7 +111,7 @@ app.whenReady().then(async () => {
     const launchRows = perMinute.length ? perMinute.map(([name, rate]) => `| ${name} | ${rate} |`) : ["| (none) | 0 |"];
 
     const report = [
-      `## Idle cost on Windows (${(WINDOW_MS / 60_000).toFixed(0)} min, ${samples.length} samples, free ${(end.freeBytes / 1024 ** 3).toFixed(1)} GB of ${(end.totalBytes / 1024 ** 3).toFixed(1)} GB)`,
+      `## Idle cost on Windows${process.env.VOCIFY_IDLE_PLACEMENT === "side" ? ", side pill" : ""} (${(WINDOW_MS / 60_000).toFixed(0)} min, ${samples.length} samples, free ${(end.freeBytes / 1024 ** 3).toFixed(1)} GB of ${(end.totalBytes / 1024 ** 3).toFixed(1)} GB)`,
       "",
       "| process | working set mean MB | working set max MB | own (private) mean MB | CPU mean % |",
       "| --- | ---: | ---: | ---: | ---: |",

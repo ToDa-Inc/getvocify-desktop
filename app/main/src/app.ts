@@ -1316,7 +1316,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   periodicRedraw.unref();
 
   // What the app costs the computer, in the log a rep sends: a minute after launch, then every 10 minutes (resources.ts).
-  const measureResources = async (): Promise<ResourceSample> => {
+  // The helpers' memory needs a program launched to read it (tasklist), so it is read every ten minutes only and the last
+  // reading is shown in between: the minute-by-minute line of a recording costs nothing (measuring must not load the PC).
+  let helpersRead: { kbByPid: Map<number, number>; powershells: number | null } = { kbByPid: new Map(), powershells: null };
+  const measureResources = async (withHelpers = true): Promise<ResourceSample> => {
     const pages = new Map<number, string>();
     for (const contents of webContents.getAllWebContents()) {
       const url = contents.getURL();
@@ -1331,14 +1334,17 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     }
     const own = app.getAppMetrics().map((m) => ({ name: processName(m.type, m.serviceName, pages.get(m.pid)), kb: m.memory.workingSetSize, cpu: m.cpu.percentCPUUsage, privateKb: m.memory.privateBytes }));
     const children = trackedChildren();
-    let kbByPid = new Map<number, number>();
-    let powershells: number | null = null;
+    let kbByPid = helpersRead.kbByPid;
+    let powershells = helpersRead.powershells;
     if (platform === "win32") {
-      const output = await runQuiet("tasklist.exe", ["/FO", "CSV", "/NH"], 10_000).catch(() => "");
-      if (output) {
-        const listed = parseTasklist(output);
-        kbByPid = listed.kbByPid;
-        powershells = listed.countByName.get("powershell.exe") ?? 0;
+      if (withHelpers) {
+        const output = await runQuiet("tasklist.exe", ["/FO", "CSV", "/NH"], 10_000).catch(() => "");
+        if (output) {
+          const listed = parseTasklist(output);
+          kbByPid = listed.kbByPid;
+          powershells = listed.countByName.get("powershell.exe") ?? 0;
+          helpersRead = { kbByPid, powershells };
+        }
       }
     } else if (children.length) {
       kbByPid = parsePs(await runQuiet("ps", ["-o", "pid=,rss=", "-p", children.map((c) => c.pid).join(",")], 10_000).catch(() => ""));
@@ -1366,7 +1372,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     log,
     mode: () => controller.state.mode.kind,
   }).start();
-  const sampleResources = async () => log(resourceLine(await measureResources()));
+  const sampleResources = async (withHelpers = true) => log(resourceLine(await measureResources(withHelpers)));
   setTimeout(() => void sampleResources().catch((error) => log(`resources: not measured (${String(error)})`)), 60_000).unref();
   // Every ten minutes, and every minute while recording: a call that grows the app's memory shows minute by minute
   // which process grows (a 40-minute meeting froze a rep's computer, 2026-11-17).
@@ -1374,7 +1380,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   setInterval(() => {
     resourceMinutes += 1;
     if (resourceMinutes % 10 !== 0 && !recordingOrFinishing()) return;
-    void sampleResources().catch((error) => log(`resources: not measured (${String(error)})`));
+    void sampleResources(resourceMinutes % 10 === 0).catch((error) => log(`resources: not measured (${String(error)})`));
   }, 60_000).unref();
 
   // A quit the rep asked for always ends the app. On a rep's Windows PC a close took the island down and left the app

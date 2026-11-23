@@ -28,6 +28,7 @@
     "dist:win": "npm run build && electron-builder --win nsis --x64 --publish never",
     "release:win": "npm run build && electron-builder --win nsis --x64 --publish always",
     "build:mac-native": "bash native/mac-helper/build.sh && bash native/mac-panel/build.sh",
+    "build:win-helper": "node native/win-helper/build.mjs",
     "dist:mac": "npm run build && electron-builder --mac --universal --publish never",
     "dist:mac:local": "npm run build && electron-builder --mac --universal --publish never -c.mac.hardenedRuntime=false -c.mac.notarize=false -c.mac.target=dir",
     "dist:mac:self-signed": "npm run build && electron-builder --mac --universal --publish never -c.mac.hardenedRuntime=false -c.mac.notarize=false -c.mac.sign=build/sign-vocify-dev.cjs",

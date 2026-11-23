@@ -192,6 +192,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   // The Mac's native helper: shipped in the app's Resources, or built next to the sources in development.
   const macHelper = platform === "darwin" ? (app.isPackaged ? join(process.resourcesPath, "mac-helper", "vocify-mac-helper") : join(here, "../../native/mac-helper/dist/vocify-mac-helper")) : null;
   const macPanel = platform === "darwin" ? (app.isPackaged ? join(process.resourcesPath, "mac-panel", "mac_panel.node") : join(here, "../../native/mac-panel/dist/mac_panel.node")) : null;
+  // Windows' native helper (native/win-helper): shipped in the app's Resources, or built next to the sources. Absent
+  // (a build without it, development on another system), the PowerShell readers are used.
+  const winHelperFile = platform === "win32" ? (app.isPackaged ? join(process.resourcesPath, "win-helper", "vocify-win-helper.exe") : join(here, "../../native/win-helper/dist/vocify-win-helper.exe")) : null;
+  const winHelper = winHelperFile && existsSync(winHelperFile) ? winHelperFile : null;
   const placement = (macHelper ? await measureMac(macHelper) : null) ?? measureElectron();
   // The Mac's own screen, with its notch, as the helper measured it: where the island sits unless the rep moved it.
   const macOwn: Placement | null = platform === "darwin" ? { ...placement, geometry: { ...placement.geometry } } : null;
@@ -255,7 +259,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       set: (value) => settings.set("crmTabs", value),
     },
     log,
-    nativeHelperPath: macHelper,
+    nativeHelperPath: macHelper ?? winHelper,
     nativePanelPath: macPanel,
   });
 

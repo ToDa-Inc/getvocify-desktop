@@ -23,6 +23,12 @@ win:
   icon: build/icon.png
   # No signing yet: Windows shows its "unknown publisher" screen on first run (More info, then Run anyway).
   signAndEditExecutable: true
+  # The native helper (native/win-helper), outside the asar so it can be started as a program.
+  extraResources:
+    - from: native/win-helper/dist
+      to: win-helper
+      filter:
+        - vocify-win-helper.exe
 nsis:
   # A per-user install in %LOCALAPPDATA%: no administrator rights, no prompt.
   oneClick: true

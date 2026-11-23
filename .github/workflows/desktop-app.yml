@@ -53,6 +53,9 @@ jobs:
         run: npm version "0.4.$(git rev-list --count HEAD)" --no-git-tag-version
 
       - run: npm run build
+      # The native helper, built with the C# compiler Windows already has; the installer ships it, the checks below run it.
+      - name: Build the Windows helper
+        run: npm run build:win-helper
       - run: npm run typecheck
 
       # What can be checked without a screen: the ported logic, the shell's modules, call detection, the controller.

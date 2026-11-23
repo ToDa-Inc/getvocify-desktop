@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { test } from "node:test";
 import { createWindowsCallDetector } from "../src/platform/windows/call-detector.ts";
+import { createReaderSource } from "../src/windows/reader-source.ts";
 import { createWindowsCrmScreenReader } from "../src/platform/windows/crm-screen-reader.ts";
 import { createWindowsPermissions } from "../src/platform/windows/permissions.ts";
 import type { ReaderChild } from "../src/windows/page-reader-process.ts";
@@ -278,4 +279,66 @@ test("Windows: a reader that never reports is replaced by the registry after 45 
   assert.equal(callers.at(-1)?.name, "Zoom", "the call is still seen, through the registry");
   assert.equal(notes.filter((n) => n.includes("asking the registry")).length, 1, "said once");
   detector.stop();
+});
+
+/* ---------- the native helper, with PowerShell behind it ---------- */
+
+function fakeSpawn() {
+  const started: { file: string; args: string[]; child: EventEmitter }[] = [];
+  const spawnProcess = ((file: string, args: string[]) => {
+    const child = new EventEmitter();
+    started.push({ file, args, child });
+    return child;
+  }) as unknown as Parameters<typeof createReaderSource>[0]["spawnProcess"];
+  return { started, spawnProcess };
+}
+const KIND = { command: "capture" as const, script: "Write-Output 1" };
+
+test("Windows readers: the native helper is started with its command and the app's pid; without one, PowerShell runs the script", () => {
+  const withHelper = fakeSpawn();
+  const source = createReaderSource({ helperPath: "C:\\app\\vocify-win-helper.exe", log: () => {}, now: () => 0, spawnProcess: withHelper.spawnProcess });
+  source.start(KIND, ["ignore", "pipe", "pipe"]);
+  assert.equal(withHelper.started[0].file, "C:\\app\\vocify-win-helper.exe");
+  assert.deepEqual(withHelper.started[0].args, ["capture", "--parent", String(process.pid)]);
+
+  const without = fakeSpawn();
+  createReaderSource({ helperPath: null, log: () => {}, now: () => 0, spawnProcess: without.spawnProcess }).start(KIND, ["ignore", "pipe", "pipe"]);
+  assert.equal(without.started[0].file, "powershell.exe");
+  assert.ok(without.started[0].args.includes("-EncodedCommand"));
+});
+
+test("Windows readers: a helper that cannot start is given up, said once, and PowerShell takes over at once", () => {
+  const fake = fakeSpawn();
+  const logs: string[] = [];
+  let restarted = 0;
+  const source = createReaderSource({ helperPath: "helper.exe", log: (line) => logs.push(line), now: () => 0, spawnProcess: fake.spawnProcess });
+  source.start(KIND, ["ignore", "pipe", "pipe"], () => {
+    restarted += 1;
+    source.start(KIND, ["ignore", "pipe", "pipe"]);
+  });
+  fake.started[0].child.emit("error", new Error("spawn EPERM"));
+  assert.equal(restarted, 1);
+  assert.equal(source.usesHelper(), false);
+  assert.equal(fake.started[1].file, "powershell.exe", "the same reader again, through PowerShell");
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /could not start \(spawn EPERM\); the PowerShell readers are used instead/);
+});
+
+test("Windows readers: a helper that ends at once with an error is given up; one stopped by the app, or ending later, is not", () => {
+  let now = 0;
+  const fake = fakeSpawn();
+  const logs: string[] = [];
+  const source = createReaderSource({ helperPath: "helper.exe", log: (line) => logs.push(line), now: () => now, spawnProcess: fake.spawnProcess });
+  source.start(KIND, ["ignore", "pipe", "pipe"]);
+  fake.started[0].child.emit("exit", null); // killed by the app (no exit code)
+  assert.equal(source.usesHelper(), true);
+  source.start(KIND, ["ignore", "pipe", "pipe"]);
+  now = 60_000;
+  fake.started[1].child.emit("exit", 1); // a crash a minute in: not a helper that cannot run here
+  assert.equal(source.usesHelper(), true);
+  source.start(KIND, ["ignore", "pipe", "pipe"]);
+  now = 61_000;
+  fake.started[2].child.emit("exit", 2);
+  assert.equal(source.usesHelper(), false);
+  assert.match(logs[0], /ended at start with code 2/);
 });

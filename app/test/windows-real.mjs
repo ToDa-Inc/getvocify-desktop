@@ -8,6 +8,8 @@
 //      The process is closed afterwards and must be gone from the list.
 // Run on a Windows machine: node test/windows-real.mjs   (skips on other systems)
 import { execFileSync, spawn } from "node:child_process";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { existsSync, mkdtempSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -30,6 +32,33 @@ const check = (ok, message) => {
   console.log(`${ok ? "ok  " : "FAIL"} ${message}`);
 };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// The native helper (native/win-helper), built before this test runs in CI. Its checks are skipped where it was not built.
+const HELPER = join(dirname(fileURLToPath(import.meta.url)), "../native/win-helper/dist/vocify-win-helper.exe");
+const helperBuilt = existsSync(HELPER);
+/** Working set (KB) of a process, by pid, from the real tasklist. */
+const workingSetKb = (pid) => parseTasklist(execFileSync("tasklist.exe", ["/FO", "CSV", "/NH"], { encoding: "utf8", windowsHide: true })).kbByPid.get(pid) ?? null;
+/** Starts a long-lived program and collects its lines. */
+function lineReader(file, args) {
+  const child = spawn(file, args, { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+  const lines = [];
+  let pending = "";
+  let err = "";
+  child.stdout.on("data", (chunk) => {
+    pending += chunk.toString("utf8");
+    const parts = pending.split(/\r?\n/);
+    pending = parts.pop() ?? "";
+    for (const line of parts) if (line.trim()) lines.push(line.trim());
+  });
+  child.stderr.on("data", (chunk) => (err += chunk));
+  const kill = () => {
+    try {
+      execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    } catch {
+      // Already closed.
+    }
+  };
+  return { child, lines, stderr: () => err, kill };
+}
 const reg = (...args) => execFileSync("reg.exe", args, { encoding: "utf8", windowsHide: true });
 const ticks = (ms) => ((BigInt(ms) + 11644473600000n) * 10000n).toString();
 
@@ -137,6 +166,49 @@ if (!browserPath) {
         // Already closed.
       }
     }
+
+    // The native helper answers the same questions the same way, without PowerShell.
+    if (!helperBuilt) {
+      console.log("SKIP the native helper's address-bar checks: it is not built here");
+    } else {
+      const pagesHelper = spawn(HELPER, ["pages", "--parent", String(process.pid)], { windowsHide: true });
+      let helperOut = "";
+      pagesHelper.stdout.on("data", (chunk) => (helperOut += chunk));
+      const askHelper = async (command) => {
+        helperOut = "";
+        const asked = Date.now();
+        pagesHelper.stdin.write(`${command}\n`);
+        while (!helperOut.includes("<<END>>") && Date.now() - asked < 30000) await sleep(20);
+        return { raw: helperOut, answered: helperOut.includes("<<END>>"), pages: parsePageOutput(helperOut.split("<<END>>")[0]), ms: Date.now() - asked };
+      };
+      try {
+        const current = "/contacts/123/contact/789";
+        const first = await askHelper("read");
+        const second = await askHelper("read");
+        console.log(`      native helper: first read ${first.ms} ms, then ${second.ms} ms; working set ${Math.round((workingSetKb(pagesHelper.pid) ?? 0) / 1024)} MB (the PowerShell reader loop: ${Math.round((workingSetKb(loop.pid) ?? 0) / 1024)} MB before it was closed)`);
+        check(first.answered && second.answered, "the native helper answers 'read'");
+        check([first, second].every((r) => r.pages.some((p) => p.url.includes(`127.0.0.1:${port}${current}`))), `the native helper reads the browser's address bar (${JSON.stringify(first.raw.trim().slice(0, 200))})`);
+        const front = await askHelper("front");
+        check(front.answered, `the native helper answers 'front' (${JSON.stringify(front.raw.trim().slice(0, 80))})`);
+        const page = await askHelper("page");
+        check(page.answered, "the native helper answers 'page'");
+        const third = "/contacts/123/contact/321";
+        spawn(browserPath, [`--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--disable-extensions", `http://127.0.0.1:${port}${third}`], { stdio: "ignore" });
+        let moved = null;
+        for (let i = 0; i < 20 && !moved; i += 1) {
+          await sleep(500);
+          const next = await askHelper("read");
+          if (next.pages.some((p) => p.url.includes(`127.0.0.1:${port}${third}`))) moved = next;
+        }
+        check(moved !== null, "after the window's tab changes, the native helper reads the new address");
+      } finally {
+        try {
+          execFileSync("taskkill", ["/PID", String(pagesHelper.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+        } catch {
+          // Already closed.
+        }
+      }
+    }
   } finally {
     try {
       execFileSync("taskkill", ["/PID", String(browser.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
@@ -145,6 +217,41 @@ if (!browserPath) {
     }
     server.close();
   }
+}
+
+/* ---------- 2b. the native helper: the same lines as the PowerShell readers, from one small program ---------- */
+if (!helperBuilt) {
+  console.log("SKIP the native helper: it is not built here (npm run build:win-helper)");
+} else {
+  const version = execFileSync(HELPER, ["version"], { encoding: "utf8", windowsHide: true }).trim();
+  check(/^vocify-win-helper \d+$/.test(version), `the native helper runs on this Windows (${version})`);
+
+  const capture = lineReader(HELPER, ["capture", "--parent", String(process.pid)]);
+  const started = Date.now();
+  while (Date.now() - started < 15000 && !(capture.lines.some((l) => l.startsWith("CAPTURE ")) && capture.lines.some((l) => l.startsWith("CONSENT")))) await sleep(100);
+  const firstMs = Date.now() - started;
+  const captureLine = capture.lines.find((l) => l.startsWith("CAPTURE ")) ?? "";
+  const consentLine = capture.lines.find((l) => l.startsWith("CONSENT")) ?? "";
+  console.log(`      native helper capture: ${JSON.stringify(captureLine.slice(0, 120))}, ${JSON.stringify(consentLine.slice(0, 120))} in ${firstMs} ms; working set ${Math.round((workingSetKb(capture.child.pid) ?? 0) / 1024)} MB${capture.stderr() ? `, stderr ${JSON.stringify(capture.stderr().slice(0, 300))}` : ""}`);
+  check(parseCaptureLine(captureLine) !== null, "the native helper lists the apps holding the microphone, as the PowerShell reader does");
+  check(consentLine.startsWith("CONSENT_ERROR") || parseConsentLine(consentLine) !== null, "the native helper reads the microphone-use record");
+  capture.kill();
+
+  const sessions = lineReader(HELPER, ["sessions", "--parent", String(process.pid)]);
+  const sessionsStarted = Date.now();
+  while (Date.now() - sessionsStarted < 15000 && sessions.lines.length === 0) await sleep(100);
+  check(parseSessionsLine(sessions.lines[0] ?? "") !== null, `the native helper lists the sessions playing sound (${JSON.stringify((sessions.lines[0] ?? "").slice(0, 120))})`);
+  sessions.kill();
+
+  // It never outlives the app: with its parent gone, it ends by itself.
+  const parent = spawn("cmd.exe", ["/c", "ping -n 3 127.0.0.1 >nul"], { windowsHide: true, stdio: "ignore" });
+  const orphan = lineReader(HELPER, ["sessions", "--parent", String(parent.pid)]);
+  let ended = false;
+  orphan.child.on("exit", () => (ended = true));
+  const orphanStarted = Date.now();
+  while (!ended && Date.now() - orphanStarted < 20000) await sleep(250);
+  check(ended, `the native helper ends when its parent is gone (${Math.round((Date.now() - orphanStarted) / 1000)} s)`);
+  if (!ended) orphan.kill();
 }
 
 /* ---------- 3. the audio sessions playing sound, through Core Audio ---------- */

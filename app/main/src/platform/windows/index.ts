@@ -7,6 +7,7 @@ import type { ReaderChild } from "../../windows/page-reader-process.ts";
 import type { PlatformEnv } from "../env.ts";
 import { every, runQuiet } from "../exec.ts";
 import { countLaunch, trackChild } from "../../resources.ts";
+import { createReaderSource, type ReaderKind, type ReaderSource } from "../../windows/reader-source.ts";
 import type { AudioSessionReader, Platform } from "../types.ts";
 import { createWindowsCallDetector } from "./call-detector.ts";
 import { createWindowsCrmScreenReader } from "./crm-screen-reader.ts";
@@ -47,36 +48,41 @@ async function telAppIsPhoneLink(name: string): Promise<boolean> {
   return /phone link|enlace m[oó]vil|yourphone/i.test(name);
 }
 
-/** One PowerShell reading Core Audio's sessions (audio-sessions.ts); its output split into lines. `label` names it in the log. */
-function createSessionsReader(script: string, label: string, log: (line: string) => void): AudioSessionReader {
+/** One reader of Core Audio's sessions (audio-sessions.ts); its output split into lines. `label` names it in the log. */
+function createSessionsReader(source: ReaderSource, kind: ReaderKind, label: string, log: (line: string) => void): AudioSessionReader {
   let child: ReturnType<typeof spawn> | null = null;
   const tracked = `${label.replace(/ /g, "-")} reader`;
+  const launch = (onLine: (line: string) => void) => {
+    const started = source.start(kind, ["ignore", "pipe", "pipe"], () => {
+      // The helper did not work: the same reader again, now through PowerShell.
+      if (child === started) {
+        child = null;
+        launch(onLine);
+      }
+    });
+    child = started;
+    trackChild(tracked, started);
+    let pending = "";
+    started.stdout?.on("data", (chunk: Buffer) => {
+      pending += chunk.toString("utf8");
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop() ?? "";
+      for (const line of lines) if (line.trim()) onLine(line.trim());
+    });
+    started.stderr?.on("data", (chunk: Buffer) => {
+      // PowerShell's own "#< CLIXML" header on its error stream is not an error.
+      const text = chunk.toString("utf8").replace(/#< CLIXML/g, "").trim();
+      if (text) log(`${label}: ${text.slice(0, 300)}`);
+    });
+    started.on("exit", (code) => {
+      if (child === started) child = null;
+      if (code) log(`${label}: reader exited ${code}`);
+    });
+  };
   return {
     start(onLine) {
       if (child) return;
-      const started = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(script)], {
-        windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      child = started;
-      countLaunch("powershell.exe");
-      trackChild(tracked, started);
-      let pending = "";
-      started.stdout?.on("data", (chunk: Buffer) => {
-        pending += chunk.toString("utf8");
-        const lines = pending.split(/\r?\n/);
-        pending = lines.pop() ?? "";
-        for (const line of lines) if (line.trim()) onLine(line.trim());
-      });
-      started.stderr?.on("data", (chunk: Buffer) => {
-        // PowerShell's own "#< CLIXML" header on its error stream is not an error.
-        const text = chunk.toString("utf8").replace(/#< CLIXML/g, "").trim();
-        if (text) log(`${label}: ${text.slice(0, 300)}`);
-      });
-      started.on("exit", (code) => {
-        if (child === started) child = null;
-        if (code) log(`${label}: reader exited ${code}`);
-      });
+      launch(onLine);
     },
     stop() {
       const running = child;
@@ -88,6 +94,9 @@ function createSessionsReader(script: string, label: string, log: (line: string)
 
 /** Windows: Chromium's loopback, the microphone-use record in the registry, one long-lived PowerShell reader. */
 export function createWindowsPlatform(env: PlatformEnv): Platform {
+  // VOCIFY_WIN_HELPER=off keeps the PowerShell readers (to compare, or if the helper misbehaves on a PC).
+  const readers = createReaderSource({ helperPath: process.env.VOCIFY_WIN_HELPER === "off" ? null : env.nativeHelperPath, log: env.log, now: () => Date.now() });
+  env.log(`windows readers: ${readers.usesHelper() ? "the native helper" : "PowerShell"}`);
   /** The Phone Link Call press still waiting, if any. */
   let pressing: ReturnType<typeof spawn> | null = null;
   /** Bumped by each press and each stop: a press still asking Windows whether Phone Link is the app does nothing once
@@ -128,17 +137,14 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
       onError: (error) => env.log(`call detection read failed: ${String(error)}`),
       onActive: (apps) => env.log(`mic in use (Windows record): ${apps.length ? apps.join(", ") : "none"}`),
       // The apps holding the mic through capture sessions: a second source, read by the same kind of reader.
-      captureReader: createSessionsReader(CAPTURE_SESSIONS_SCRIPT, "capture sessions", env.log),
+      captureReader: createSessionsReader(readers, { command: "capture", script: CAPTURE_SESSIONS_SCRIPT }, "capture sessions", env.log),
       onCaptureActive: (apps) => env.log(`mic in use (capture sessions): ${apps.length ? apps.join(", ") : "none"}`),
       onCaptureError: (line) => env.log(`capture sessions: ${line.slice(0, 300)}`),
     }),
     crmScreenReader: createWindowsCrmScreenReader({
       spawn: () => {
-        const reader = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encodePowerShell(READER_LOOP_SCRIPT)], {
-          windowsHide: true,
-          stdio: ["pipe", "pipe", "ignore"],
-        });
-        countLaunch("powershell.exe");
+        // A helper that fails here is replaced by PowerShell the next time the reader is started (page-reader-process.ts).
+        const reader = readers.start({ command: "pages", script: READER_LOOP_SCRIPT }, ["pipe", "pipe", "ignore"]);
         trackChild("browser reader", reader);
         return reader as unknown as ReaderChild;
       },
@@ -150,7 +156,7 @@ export function createWindowsPlatform(env: PlatformEnv): Platform {
     }),
     // A window that cannot take focus (focusable: false) is created WS_EX_NOACTIVATE: a click never activates the app.
     island: { prepare: () => "non-activating (Windows: not focusable)" },
-    audioSessions: createSessionsReader(AUDIO_SESSIONS_SCRIPT, "audio sessions", env.log),
+    audioSessions: createSessionsReader(readers, { command: "sessions", script: AUDIO_SESSIONS_SCRIPT }, "audio sessions", env.log),
     phone: createWindowsPhone({
       telApp: () => {
         if (Date.now() - telAppAskedAt > 10 * 60_000) askTelApp();

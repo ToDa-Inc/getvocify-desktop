@@ -94,6 +94,12 @@ test("CrmPages isCrmURL", async (t) => {
   await t.test("hubspot eu record", () => assert.ok(CrmPages.isCrmURL("https://app-eu1.hubspot.com/contacts/147506535/record/0-1/879829962968")));
   await t.test("hubspot list", () => assert.ok(CrmPages.isCrmURL("https://app.hubspot.com/contacts/1/objects/0-1/views/all/list")));
   await t.test("pipedrive person", () => assert.ok(CrmPages.isCrmURL("https://acme.pipedrive.com/person/42")));
+  await t.test("hubspot sign-in page", () => {
+    assert.ok(!CrmPages.isCrmURL("https://app-eu1.hubspot.com/login/"));
+    assert.ok(!CrmPages.isCrmURL("https://app-eu1.hubspot.com/login?loginRedirectUrl=https%3A%2F%2Fapp-eu1.hubspot.com%2Fcontacts%2F1%2Frecord%2F0-1%2F2"));
+    assert.ok(!CrmPages.isCrmURL("https://app.hubspot.com/logout"));
+    assert.ok(CrmPages.isCrmURL("https://app-eu1.hubspot.com/contacts/147506535/record/0-1/936660629718?eschref=%2Flogin%2Fx"));
+  });
   await t.test("hubspot marketing site", () => assert.ok(!CrmPages.isCrmURL("https://www.hubspot.com/pricing")));
   await t.test("hubspot docs", () => assert.ok(!CrmPages.isCrmURL("https://knowledge.hubspot.com/a")));
   await t.test("lookalike host", () => assert.ok(!CrmPages.isCrmURL("https://evil.app.hubspot.com.example.com/x")));
@@ -119,6 +125,8 @@ missing value
 });
 
 test("CrmPages frontRecordURLs", async (t) => {
+  // A record that sent the browser to HubSpot's sign-in page: the front tab is no CRM page, so the record seen before stays.
+  await t.test("sign-in page in front", () => assert.deepStrictEqual(CrmPages.frontRecordURLs("https://app-eu1.hubspot.com/login/"), []));
   await t.test("a record in front is the page", () => {
     assert.deepStrictEqual(CrmPages.frontRecordURLs("https://acme.pipedrive.com/deal/7\nhttps://mail.google.com/"), ["https://acme.pipedrive.com/deal/7"]);
   });

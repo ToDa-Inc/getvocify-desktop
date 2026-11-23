@@ -27,6 +27,9 @@ function chromium(name: string, bundleID: string): Browser {
   };
 }
 
+/** HubSpot's sign-in and sign-out pages (`/login/`, `/logout`): the browser is not on a record. */
+const HUBSPOT_SIGN_IN = /^\/(?:login|logout)(?:\/|$)/i;
+
 function isCrmURL(url: string): boolean {
   let components: URL;
   try {
@@ -39,6 +42,9 @@ function isCrmURL(url: string): boolean {
   if (!host) return false;
 
   if (host.endsWith(".hubspot.com")) {
+    // The sign-in page is where HubSpot sends a browser whose session ended: no record, so no contact. It must not count
+    // as "the CRM page in front" (2026-11-23: a record that redirected to /login/ replaced the contact the call was with).
+    if (HUBSPOT_SIGN_IN.test(components.pathname)) return false;
     const sub = host.slice(0, -(12)); // ".hubspot.com".length
     return sub === "app" || (sub.startsWith("app-") && !sub.includes("."));
   }

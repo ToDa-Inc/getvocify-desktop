@@ -18,6 +18,9 @@ const MEASURE_MS = 30_000;
 const here = dirname(fileURLToPath(import.meta.url));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const placement = process.env.VOCIFY_PLACEMENT === "notch" ? "notch" : "side";
+// As the installed app on Windows (main.ts): the windows are drawn by the processor. Without this the measurement runs in
+// a drawing mode no rep has.
+app.disableHardwareAcceleration();
 
 app.whenReady().then(async () => {
   setTimeout(() => {
@@ -33,6 +36,7 @@ app.whenReady().then(async () => {
     await sleep(20_000);
     const { screen } = await import("electron");
     const display = screen.getPrimaryDisplay();
+    console.log(`island-cpu: hardware acceleration ${app.isHardwareAccelerationEnabled() ? "ON (not as the installed app)" : "off, as the installed app"}`);
     console.log(`island-cpu: drawing ${controller.state.softwareDrawn ? "in steps (software-drawn mode)" : "at full rate"}`);
     console.log(`island-cpu: ${placement}, screen ${display.size.width}x${display.size.height} at scale ${display.scaleFactor}, island window ${JSON.stringify(handle.islandBounds())}`);
 

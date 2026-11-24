@@ -14,8 +14,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        placement: [side]
-        draw: [steps, smooth]
+        include:
+          - { placement: side, draw: steps }
+          - { placement: side, draw: smooth }
+          - { placement: notch, draw: smooth }
     defaults:
       run:
         working-directory: app

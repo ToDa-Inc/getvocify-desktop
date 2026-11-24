@@ -23,7 +23,7 @@ import { ShortcutManager } from "./shortcut.ts";
 import type { UpdateState, UpdateStatus } from "./updater.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { micChoices, trayItems } from "./tray-menu.ts";
-import { heaviestPrograms, launchCounts, LOW_MEMORY_SHARE, parsePs, parseTasklist, processName, resourceLine, trackedChildren, type HeavyProgram, type ResourceSample } from "./resources.ts";
+import { countTraffic, drainTraffic, heaviestPrograms, launchCounts, LOW_MEMORY_SHARE, parsePs, parseTasklist, processName, resourceLine, trackedChildren, type HeavyProgram, type ResourceSample } from "./resources.ts";
 import { startsPageAtLaunch } from "./calendar-watch.ts";
 import { createBrowserCallWatch } from "./windows/browser-call.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
@@ -331,6 +331,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       showMainWindow: () => dashboardHolder.host?.show(),
       onState: (state) => pushState(state),
       onLevels: (levels) => {
+        countTraffic("to island: levels");
         if (!island.isDestroyed()) island.webContents.send("island:levels", levels);
       },
       saveRecorderReady: (ready) => settings.set("recorderReady", ready),
@@ -603,6 +604,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     // No `forward` here: on Windows forwarding is a low-level mouse hook on this process's main thread, through which every
     // mouse move on the computer then passes; with the main thread slow (an 8 GB PC paging), the whole computer's pointer
     // stalls with it. The cursor read above is what decides here, so nothing needs the forwarded moves.
+    countTraffic("pill: cursor in or out");
     island.setIgnoreMouseEvents(!reach);
     // Once the window is click-through the page gets no pointer leave: the cursor leaving is told to it from here.
     if (!reach) island.webContents.send("island:cursor-left");
@@ -784,7 +786,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   const fit = (target: { width: number; height: number }, force: boolean) => {
     // At the side the window is the column: it is placed again only when the screen changes.
     if (sideActive) {
-      if (force && !island.isDestroyed()) place(sideFrame());
+      if (force && !island.isDestroyed()) {
+        countTraffic("window: placed again");
+        place(sideFrame());
+      }
       return;
     }
     const key = `${target.width}x${target.height}`;
@@ -872,6 +877,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (!followPlacement(state)) fit(targetSize(state), false);
     const change = controller.takeTurnsChange();
     if (change) island.webContents.send("island:turns", change);
+    countTraffic("to island: state");
     island.webContents.send("island:state", forIsland(state));
     refreshTray(state);
     dashboard.releaseIfIdle();
@@ -1074,11 +1080,13 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     if (!dashboard.isFrom(event.sender)) return null;
     dashboard.markReady();
     touch();
+    countTraffic(`dashboard asks: ${String(op)}`);
     return bridge(String(op), typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {});
   });
   ipcMain.on("vocify:state", (event, state: unknown) => {
     if (!dashboard.isFrom(event.sender)) return;
     dashboard.markReady();
+    if (typeof state === "object" && state !== null) for (const key of Object.keys(state)) countTraffic(`dashboard sets: ${key}`);
     // Voice levels alone say nothing about the page's work; anything else does.
     if (typeof state === "object" && state !== null && Object.keys(state).some((key) => key !== "levels")) touch();
     // A call on the phone ends on silence: the log keeps what each second measured, to tell why one did or did not end.
@@ -1089,6 +1097,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   // A message can still arrive from the island while the app quits and its window is already gone.
   const fromIsland = (sender: Electron.WebContents) => !island.isDestroyed() && sender === island.webContents;
   ipcMain.on("island:act", (event, action: IslandAction) => {
+    countTraffic(`island does: ${typeof action === "object" && action !== null && typeof action.name === "string" ? action.name : "?"}`);
     if (fromIsland(event.sender)) controller.act(action);
   });
   /**
@@ -1167,6 +1176,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   });
   ipcMain.on("island:side-hits", (event, raw: unknown) => {
     if (platform !== "win32" || !fromIsland(event.sender) || !sideActive || typeof raw !== "object" || raw === null) return;
+    countTraffic("island reports: its areas");
     const { boxes, hold } = raw as { boxes?: unknown; hold?: unknown };
     const finite = (box: { x: number; y: number; width: number; height: number }) => [box.x, box.y, box.width, box.height].every(Number.isFinite);
     const before = sideHits.boxes.length;
@@ -1192,6 +1202,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   });
   ipcMain.on("island:resize", (event, size: { width: number; height: number }) => {
     if (!fromIsland(event.sender) || !size || !(size.width > 0) || !(size.height > 0)) return;
+    countTraffic("island reports: its size");
     reportedSize = { width: Math.round(size.width), height: Math.round(size.height) };
     reportedKind = controller.state.mode.kind;
     fit(targetSize(controller.state), true);
@@ -1352,6 +1363,18 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
         if (host) pages.set(frame.osProcessId, `${name} frame ${host}`);
       }
     }
+    // What the island's page is animating right now, by the animation's name and the element it runs on: an island that
+    // uses the processor at rest is animating something, and this names it. One read per line; never waits on a busy page.
+    const moving = await Promise.race([
+      island.isDestroyed()
+        ? Promise.resolve([] as [string, number][])
+        : (island.webContents
+            .executeJavaScript(
+              `(() => { const n = new Map(); for (const a of document.getAnimations()) { if (a.playState !== "running") continue; const t = a.effect && a.effect.target; const what = (a.animationName || a.transitionProperty || "animation") + " on ." + (t && t.className && typeof t.className === "string" ? t.className.split(" ")[0] : t ? t.tagName.toLowerCase() : "?"); n.set(what, (n.get(what) || 0) + 1); } return [...n].sort((a, b) => b[1] - a[1]); })()`,
+            )
+            .catch(() => []) as Promise<[string, number][]>),
+      new Promise<[string, number][]>((resolve) => setTimeout(() => resolve([]), 1000).unref()),
+    ]);
     const own = app.getAppMetrics().map((m) => ({ name: processName(m.type, m.serviceName, pages.get(m.pid)), kb: m.memory.workingSetSize, cpu: m.cpu.percentCPUUsage, privateKb: m.memory.privateBytes }));
     const children = trackedChildren();
     let kbByPid = helpersRead.kbByPid;
@@ -1383,6 +1406,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       powershells,
       launches: launchCounts(),
       ...(heaviest ? { heaviest } : {}),
+      traffic: drainTraffic(),
+      moving,
     };
   };
   // The main thread not running for half a second or more, in the log with what the island was doing (stall-watch.ts).

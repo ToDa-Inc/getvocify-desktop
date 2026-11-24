@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { countLaunch, heaviestPrograms, launchCounts, parsePs, parseTasklist, processName, resourceLine } from "../src/resources.ts";
+import { countLaunch, countTraffic, drainTraffic, heaviestPrograms, launchCounts, parsePs, parseTasklist, processName, resourceLine } from "../src/resources.ts";
 
 test("Electron's processes are named as the log shows them; a page by its window", () => {
   assert.equal(processName("Browser", undefined, undefined), "main");
@@ -95,4 +95,28 @@ test("a computer short of memory has its heaviest programs in the line", () => {
     heaviest: [{ name: "chrome.exe", kb: 3120 * 1024, count: 38 }, { name: "vocify.exe", kb: 400 * 1024, count: 8 }, { name: "memcompression", kb: 900 * 1024, count: 1 }],
   });
   assert.match(line, /heaviest on the computer: chrome\.exe 3120 MB in 38, vocify\.exe 400 MB in 8, memcompression 900 MB/);
+});
+
+test("what passed between the app's parts is counted by name, read largest first, and starts again once read", () => {
+  drainTraffic();
+  countTraffic("to island: state");
+  countTraffic("dashboard sets: mic");
+  countTraffic("dashboard sets: mic");
+  assert.deepEqual(drainTraffic(), [["dashboard sets: mic", 2], ["to island: state", 1]]);
+  assert.deepEqual(drainTraffic(), []);
+});
+
+test("the line says what passed since the last one", () => {
+  const line = resourceLine({
+    mode: "idle", uptimeMs: 60_000, freeBytes: null, totalBytes: 8 * 1024 ** 3, children: [], powershells: null, launches: [],
+    own: [{ name: "main", kb: 1024, cpu: 0 }],
+    traffic: [["dashboard sets: mic", 340], ["to island: state", 338]],
+  });
+  assert.match(line, /since the last line: dashboard sets: mic 340, to island: state 338/);
+});
+
+test("the line names what is moving in the island's page, and says nothing when nothing is", () => {
+  const base = { mode: "idle", uptimeMs: 60_000, freeBytes: null, totalBytes: 8 * 1024 ** 3, children: [], powershells: null, launches: [], own: [{ name: "main", kb: 1024, cpu: 0 }] };
+  assert.match(resourceLine({ ...base, moving: [["spin on .spinner", 1], ["pulse on .rec-dot", 2]] }), /moving in the island: spin on \.spinner, pulse on \.rec-dot x2/);
+  assert.doesNotMatch(resourceLine({ ...base, moving: [] }), /moving in the island/);
 });

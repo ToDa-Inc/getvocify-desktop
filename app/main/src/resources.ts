@@ -25,6 +25,22 @@ export function trackChild(name: string, child: { pid?: number; on(event: "exit"
   child.on("exit", () => running.delete(pid));
 }
 
+/** What passed between the app's parts since the last line, by name ("to island: state", "dashboard: mic"). */
+const traffic = new Map<string, number>();
+
+/** One message, call or window move, counted for the next line: a busy main process or island with nothing else in the
+ * log (a rep's PC: each at 10% of a core at rest, 2026-11-24) is then seen by what it was sent or made to do. */
+export function countTraffic(name: string): void {
+  traffic.set(name, (traffic.get(name) ?? 0) + 1);
+}
+
+/** The counts since the last call, largest first, and starts them again. */
+export function drainTraffic(): [string, number][] {
+  const counts = [...traffic].sort((a, b) => b[1] - a[1]);
+  traffic.clear();
+  return counts;
+}
+
 export const trackedChildren = (): { pid: number; name: string }[] => [...running].map(([pid, name]) => ({ pid, name }));
 export const launchCounts = (): [string, number][] => [...launched].sort((a, b) => b[1] - a[1]);
 
@@ -101,6 +117,10 @@ export type ResourceSample = {
   launches: [string, number][];
   /** The programs holding the most memory, read only while the computer is short of it (Windows). */
   heaviest?: HeavyProgram[];
+  /** Messages, calls and window moves since the last line, largest first. */
+  traffic?: [string, number][];
+  /** What is moving in the island's page right now ("spin on .spinner"), each with how many; empty when nothing is. */
+  moving?: [string, number][];
 };
 
 const mb = (kb: number) => Math.round(kb / 1024);
@@ -126,6 +146,8 @@ export function resourceLine(sample: ResourceSample): string {
   const busy = own.filter((p) => p.cpu >= 0.05).sort((a, b) => b.cpu - a.cpu);
   if (busy.length) parts.push(`cpu by process: ${busy.map((p) => `${p.name} ${p.cpu.toFixed(1)}`).join(", ")}`);
   if (sample.heaviest?.length) parts.push(`heaviest on the computer: ${sample.heaviest.map((p) => `${p.name} ${mb(p.kb)} MB${p.count > 1 ? ` in ${p.count}` : ""}`).join(", ")}`);
+  if (sample.traffic?.length) parts.push(`since the last line: ${sample.traffic.slice(0, 16).map(([name, n]) => `${name} ${n}`).join(", ")}`);
+  if (sample.moving?.length) parts.push(`moving in the island: ${sample.moving.slice(0, 8).map(([name, n]) => `${name}${n > 1 ? ` x${n}` : ""}`).join(", ")}`);
   if (sample.children.length) parts.push(`running: ${sample.children.map((c) => `${c.name} ${c.kb === null ? "?" : `${mb(c.kb)} MB`}`).join(", ")}`);
   if (sample.powershells !== null) parts.push(`powershell.exe on the computer: ${sample.powershells}`);
   if (sample.launches.length) parts.push(`launched since start: ${sample.launches.map(([name, n]) => `${name} ${n}`).join(", ")}`);

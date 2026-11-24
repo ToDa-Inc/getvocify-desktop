@@ -1,0 +1,38 @@
+name: Island CPU measurement
+
+# What each thing the island shows costs in CPU on a real Windows, per process, as a side pill and as a notch island.
+# It measures only; nothing is built for release.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["exp/**"]
+
+jobs:
+  measure:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        placement: [side, notch]
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: A full-HD screen, as the reps' laptops
+        shell: pwsh
+        run: |
+          Set-DisplayResolution -Width 1920 -Height 1080 -Force
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+      - name: Island CPU by what it shows
+        env:
+          VOCIFY_PLACEMENT: ${{ matrix.placement }}
+        run: node test/build-shell-test.mjs && node island/build.mjs && npx electron test/island-cpu.mjs

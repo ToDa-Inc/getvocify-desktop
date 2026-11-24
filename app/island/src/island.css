@@ -506,3 +506,10 @@ button.postcall-contact[data-empty="true"] { color: var(--beige); }
 .mic-card { display: flex; flex-direction: column; min-width: 0; }
 .mic-card .option-row { min-width: 0; }
 .mic-card .option-row span { min-width: 0; white-space: nowrap; }
+
+/* Drawn by the processor (Windows, no graphics card behind the window): what turns or pulses without end does it in a
+   few steps, not in every frame. A spinner at rest cost the processor all day (measured: 1.2% of a core against 0). */
+.island[data-drawn="software"] :is(.spinner, .job-spin) { animation-timing-function: steps(8, end); }
+.island[data-drawn="software"] .recent-bar { animation-timing-function: steps(3, end); }
+.island[data-drawn="software"] .dots span { animation-timing-function: steps(2, end); }
+.island[data-drawn="software"] .live-dots i { animation-timing-function: steps(2, end); }

@@ -220,6 +220,14 @@ test("Discard throws the stopped recording away: the dashboard is told to drop i
   assert.deepEqual(t.commands().slice(-2), ["pause", "discard"], "a second press does nothing");
 });
 
+test("a window drawn by the processor is told to the island, which then moves what never stops in a few steps", () => {
+  const plain = setup();
+  assert.equal(plain.controller.state.softwareDrawn, false, "drawn by the graphics card unless said otherwise");
+  const effects = { now: () => 0, after: () => () => undefined, emit: () => undefined, showMainWindow: () => undefined, onState: () => undefined, onLevels: () => undefined, saveRecorderReady: () => undefined } as unknown as Effects;
+  const software = new IslandController(effects, { notchWidth: 185, barHeight: 32, screenHeight: 982 }, { material: "opaque", reduceMotion: false, softwareDrawn: true });
+  assert.equal(software.state.softwareDrawn, true);
+});
+
 /* ---------- the finished calls the dashboard is still on ---------- */
 
 test("the card's contact picker gets who the call may be with and what a search found; a person without an id or a name is left out", () => {

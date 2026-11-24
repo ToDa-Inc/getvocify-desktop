@@ -377,3 +377,7 @@ html:has(.side-stage), body:has(.side-stage) { overflow: hidden; }
 .say-find[data-open="true"] .say-find-chevron { transform: rotate(90deg); }
 .say-find .say-chips { padding: 4px 0 6px 21px; }
 .say-find .say-now-q { margin: 0 0 6px 21px; }
+
+/* Drawn by the processor (Windows): the step that is now and the light on the rim move in steps (see island.css). */
+.island[data-drawn="software"] .say-progress i[data-s="now"] { animation-timing-function: steps(3, end); }
+.island[data-drawn="software"] .rim-light::before, .island[data-drawn="software"] .rim-light::after { animation-timing-function: steps(96, end); }

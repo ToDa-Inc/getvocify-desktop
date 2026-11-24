@@ -33,6 +33,7 @@ app.whenReady().then(async () => {
     await sleep(20_000);
     const { screen } = await import("electron");
     const display = screen.getPrimaryDisplay();
+    console.log(`island-cpu: drawing ${controller.state.softwareDrawn ? "in steps (software-drawn mode)" : "at full rate"}`);
     console.log(`island-cpu: ${placement}, screen ${display.size.width}x${display.size.height} at scale ${display.scaleFactor}, island window ${JSON.stringify(handle.islandBounds())}`);
 
     const mode = () => controller.state.mode.kind;
@@ -118,6 +119,13 @@ app.whenReady().then(async () => {
       await measure(`${label}recording, open, transcript moving`);
       await open(false);
       await measure(`${label}recording, closed, transcript moving`);
+      // Someone speaking the whole time, as on a real call: the dashboard sends the levels ten times a second.
+      const speaking = setInterval(() => handle.shellState({ levels: { you: 0.25 + 0.2 * Math.random(), them: 0 } }), 100);
+      await measure(`${label}recording, closed, someone speaking`);
+      await open(true);
+      await measure(`${label}recording, open, someone speaking, transcript moving`);
+      clearInterval(speaking);
+      handle.shellState({ levels: { you: 0, them: 0 } });
       await endRecording();
       handle.detectCall(null);
       await sleep(1000);
@@ -129,7 +137,7 @@ app.whenReady().then(async () => {
     await pass("no animations · ");
 
     const report = [
-      `## Island CPU on Windows, ${placement === "side" ? "side pill" : "notch island"} (screen ${display.size.width}x${display.size.height} at scale ${display.scaleFactor}, 30 s each)`,
+      `## Island CPU on Windows, ${placement === "side" ? "side pill" : "notch island"}, ${controller.state.softwareDrawn ? "in steps" : "at full rate"} (screen ${display.size.width}x${display.size.height} at scale ${display.scaleFactor}, 30 s each)`,
       "",
       "| what the island shows | island % | gpu % | main % | all Vocify % |",
       "| --- | ---: | ---: | ---: | ---: |",

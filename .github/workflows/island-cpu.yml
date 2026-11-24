@@ -14,7 +14,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        placement: [side, notch]
+        placement: [side]
+        draw: [steps, smooth]
     defaults:
       run:
         working-directory: app
@@ -35,4 +36,5 @@ jobs:
       - name: Island CPU by what it shows
         env:
           VOCIFY_PLACEMENT: ${{ matrix.placement }}
+          VOCIFY_DRAW: ${{ matrix.draw }}
         run: node test/build-shell-test.mjs && node island/build.mjs && npx electron test/island-cpu.mjs

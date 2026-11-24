@@ -9,15 +9,17 @@ on:
 
 jobs:
   measure:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
+        # Server 2022 is Windows 10 underneath, Server 2025 is Windows 11: one rep's PC is on Windows 10.
         include:
-          - { placement: side, draw: steps }
-          - { placement: side, draw: smooth }
-          - { placement: notch, draw: smooth }
+          - { os: windows-2022, placement: side, draw: smooth }
+          - { os: windows-2022, placement: notch, draw: smooth }
+          - { os: windows-2025, placement: side, draw: smooth }
+          - { os: windows-2025, placement: notch, draw: smooth }
     defaults:
       run:
         working-directory: app

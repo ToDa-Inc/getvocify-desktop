@@ -36,6 +36,8 @@ app.whenReady().then(async () => {
     await sleep(20_000);
     const { screen } = await import("electron");
     const display = screen.getPrimaryDisplay();
+    const os = await import("node:os");
+    console.log(`island-cpu: Windows ${os.release()} (${os.version()}), ${os.cpus().length} processors`);
     console.log(`island-cpu: hardware acceleration ${app.isHardwareAccelerationEnabled() ? "ON (not as the installed app)" : "off, as the installed app"}`);
     console.log(`island-cpu: drawing ${controller.state.softwareDrawn ? "in steps (software-drawn mode)" : "at full rate"}`);
     console.log(`island-cpu: ${placement}, screen ${display.size.width}x${display.size.height} at scale ${display.scaleFactor}, island window ${JSON.stringify(handle.islandBounds())}`);

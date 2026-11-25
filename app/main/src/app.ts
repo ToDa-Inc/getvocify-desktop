@@ -438,7 +438,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     },
     placement.geometry,
     {
-      recorderReady: settings.get("recorderReady") === true, material: "opaque", reduceMotion: systemPreferences.getAnimationSettings().prefersReducedMotion, language: ProposalWording.language(app.getLocale()),
+      recorderReady: settings.get("recorderReady") === true, material: "opaque", reduceMotion: systemPreferences.getAnimationSettings().prefersReducedMotion,
+      // VOCIFY_DRAW=smooth keeps every animation at full rate where the window is drawn in software, to compare.
+      softwareDrawn: !app.isHardwareAccelerationEnabled() && process.env.VOCIFY_DRAW !== "smooth",
+      language: ProposalWording.language(app.getLocale()),
       placement: settings.get("islandPlacement") === "side" ? "side" : "notch",
       pill: readSpot(settings.get("islandPill")),
       finishOnStop: settings.get("islandFinishOnStop") === true,

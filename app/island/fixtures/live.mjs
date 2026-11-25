@@ -50,6 +50,7 @@ const base = {
   keypadOpen: false,
   material: "vibrancy",
   reduceMotion: true,
+  softwareDrawn: false,
   language: "es",
   liveTab: "transcript",
 };

@@ -377,3 +377,11 @@ html:has(.side-stage), body:has(.side-stage) { overflow: hidden; }
 .say-find[data-open="true"] .say-find-chevron { transform: rotate(90deg); }
 .say-find .say-chips { padding: 4px 0 6px 21px; }
 .say-find .say-now-q { margin: 0 0 6px 21px; }
+
+/* Drawn by the processor (Windows): the step that is now and the light on the rim move in steps (see island.css). */
+.island[data-drawn="software"] .say-progress i[data-s="now"] { animation-timing-function: steps(3, end); }
+/* The light on the rim stands still there. Travelling around the pill, it was two lights redrawn in every frame for as
+   long as the pill showed, which is all day: on a rep's PC the island used 3% of a core and the graphics process 1.2%
+   at rest, with nothing else moving and nothing arriving (2026-11-25). */
+.island[data-drawn="software"] .rim-light::before, .island[data-drawn="software"] .rim-light::after { animation: none; offset-distance: 12%; }
+.island[data-drawn="software"] .rim-light::after { offset-distance: 62%; }

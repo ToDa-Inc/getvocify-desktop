@@ -87,6 +87,7 @@ export function NotchIsland({ state, act }: { state: IslandState; act: Act }) {
       data-mode={kind}
       data-material={state.material}
       data-reduce-motion={state.reduceMotion}
+      data-drawn={state.softwareDrawn ? "software" : undefined}
       data-natural={natural}
       data-self-sized={selfSized}
       onMouseEnter={() => {
@@ -1451,11 +1452,15 @@ export function Elapsed({ state }: { state: IslandState }) {
 
 const REST = [3, 4.5, 6, 4.5, 3];
 const WAVE_FRAME_MS = 42;
+/** Drawn by the processor (Windows), the wave moves nine times a second instead of twenty-four: it runs for as long as
+ * anyone speaks, which is the whole call (two reps' PCs: drawing the island was over half of a recording's CPU, 2026-11-24). */
+const WAVE_FRAME_SOFTWARE_MS = 110;
 const SILENT = 0.002;
 
 export function VoiceWave({ state, title = "Beige is you speaking, white is them" }: { state: IslandState; title?: string }) {
   const root = useRef<HTMLDivElement>(null);
   const { reduceMotion } = state;
+  const frameMs = state.softwareDrawn ? WAVE_FRAME_SOFTWARE_MS : WAVE_FRAME_MS;
 
   // Redraw on each new level, then keep going only while the fade-out has something left to show.
   useEffect(() => {
@@ -1478,7 +1483,7 @@ export function VoiceWave({ state, title = "Beige is you speaking, white is them
         const wave = reduceMotion ? 1 : 0.55 + 0.45 * Math.sin(t * 9 + index * 1.2);
         (bars[index] as HTMLElement).style.height = `${REST[index] + 10 * level * wave}px`;
       }
-      if (level > SILENT && !reduceMotion && fixed === undefined) timer = setTimeout(draw, WAVE_FRAME_MS);
+      if (level > SILENT && !reduceMotion && fixed === undefined) timer = setTimeout(draw, frameMs);
     };
     draw();
     const unsubscribe = levelsStore.subscribe(draw);
@@ -1486,7 +1491,7 @@ export function VoiceWave({ state, title = "Beige is you speaking, white is them
       unsubscribe();
       clearTimeout(timer);
     };
-  }, [reduceMotion]);
+  }, [reduceMotion, frameMs]);
 
   return (
     <div className="wave" ref={root} title={title} aria-label="Voice activity">

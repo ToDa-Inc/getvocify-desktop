@@ -369,6 +369,9 @@ export type IslandState = {
   /** "vibrancy": the window blurs what is behind it (macOS). "opaque": no blur available, so the glass is denser. */
   material: "vibrancy" | "opaque";
   reduceMotion: boolean;
+  /** The window is drawn by the processor, not the graphics card (Windows, see main.ts): what moves without end is drawn
+   * in a few steps a second there, because every frame of it is the processor's work for as long as it shows. */
+  softwareDrawn: boolean;
   /** The rep's language, for the words the island writes itself (the rest comes from the dashboard). */
   language: Language;
 };

@@ -175,7 +175,7 @@ export class IslandController {
     return change;
   }
 
-  constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean; language?: Language; placement?: "notch" | "side"; pill?: PillSpot; finishOnStop?: boolean; hangUpGrace?: number }) {
+  constructor(effects: Effects, geometry: Geometry, options: { recorderReady?: boolean; material: IslandState["material"]; reduceMotion: boolean; softwareDrawn?: boolean; language?: Language; placement?: "notch" | "side"; pill?: PillSpot; finishOnStop?: boolean; hangUpGrace?: number }) {
     this.effects = effects;
     this.hangUpGrace = options.hangUpGrace ?? HANG_UP_GRACE;
     this.finishOnStop = options.finishOnStop ?? false;
@@ -212,6 +212,7 @@ export class IslandController {
       keypadOpen: false,
       material: options.material,
       reduceMotion: options.reduceMotion,
+      softwareDrawn: options.softwareDrawn ?? false,
       language: options.language ?? "en",
     };
   }

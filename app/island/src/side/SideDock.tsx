@@ -196,7 +196,7 @@ export function SideDock({ state, act }: { state: IslandState; act: Act }) {
   // The open island is the notch's own, with no notch to sit around and rounded on every corner.
   const panelState: IslandState = { ...state, geometry: { ...state.geometry, notchWidth: 0 } };
   return (
-    <div ref={stage} className="side-stage island" data-open={open} data-mode={kind} data-reduce-motion={state.reduceMotion}>
+    <div ref={stage} className="side-stage island" data-open={open} data-mode={kind} data-reduce-motion={state.reduceMotion} data-drawn={state.softwareDrawn ? "software" : undefined}>
       {area && centre && (
         <div className="side-dock" data-open={open} data-dragging={drag !== null} data-edge={edge} style={{ left: `${centre.x}px`, top: `${centre.y}px` }}>
           <div

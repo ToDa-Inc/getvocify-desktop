@@ -13,6 +13,8 @@ export type StallWatchDeps = {
   log(line: string): void;
   /** What the island is doing, for the line ("recording", "idle"…). */
   mode(): string;
+  /** What the computer was like just before (free memory, how busy), added to the line; absent, nothing is added. */
+  context?(): string;
 };
 
 export const STALL_CHECK_MS = 250;
@@ -44,7 +46,8 @@ export function createStallWatch(deps: StallWatchDeps): { start(): void; stop():
     if (late < STALL_LOG_MS || late >= ASLEEP_MS) return;
     if (lines < LINES_PER_HOUR) {
       lines += 1;
-      deps.log(`main thread: stalled ${Math.round(late)} ms (${deps.mode()})`);
+      const context = deps.context?.() ?? "";
+      deps.log(`main thread: stalled ${Math.round(late)} ms (${deps.mode()})${context ? ` · ${context}` : ""}`);
     } else {
       unlogged += 1;
       unloggedLongest = Math.max(unloggedLongest, late);

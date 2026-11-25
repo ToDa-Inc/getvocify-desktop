@@ -67,3 +67,22 @@ test("stopped, it writes nothing", () => {
   w.fire(STALL_CHECK_MS + 2000);
   assert.deepEqual(w.lines, []);
 });
+
+test("a stall's line says what the computer was like just before, when the app can tell", () => {
+  let now = 1_000;
+  let fn: (() => void) | null = null;
+  const lines: string[] = [];
+  createStallWatch({
+    now: () => now,
+    every: (_ms, f) => {
+      fn = f;
+      return () => void (fn = null);
+    },
+    log: (line) => lines.push(line),
+    mode: () => "idle",
+    context: () => "free 0.3 GB, computer CPU 97% just before",
+  }).start();
+  now += STALL_CHECK_MS + 2600;
+  (fn as (() => void) | null)?.();
+  assert.deepEqual(lines, ["main thread: stalled 2600 ms (idle) · free 0.3 GB, computer CPU 97% just before"]);
+});

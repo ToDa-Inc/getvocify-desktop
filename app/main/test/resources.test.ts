@@ -120,3 +120,9 @@ test("the line names what is moving in the island's page, and says nothing when 
   assert.match(resourceLine({ ...base, moving: [["spin on .spinner", 1], ["pulse on .rec-dot", 2]] }), /moving in the island: spin on \.spinner, pulse on \.rec-dot x2/);
   assert.doesNotMatch(resourceLine({ ...base, moving: [] }), /moving in the island/);
 });
+
+test("the line says how busy the whole computer was and how full its page file is, when known", () => {
+  const base = { mode: "idle", uptimeMs: 60_000, totalBytes: 7.8 * 1024 ** 3, children: [], powershells: null, launches: [], own: [{ name: "main", kb: 1024, cpu: 0 }] };
+  assert.match(resourceLine({ ...base, freeBytes: 0.3 * 1024 ** 3, computerBusy: 97, pageFile: { usedBytes: 9.1 * 1024 ** 3, totalBytes: 11 * 1024 ** 3 } }), /free 0\.3 of 7\.8 GB, page file 9\.1 of 11\.0 GB, computer CPU 97% · Vocify/);
+  assert.match(resourceLine({ ...base, freeBytes: 0.3 * 1024 ** 3, computerBusy: null, pageFile: null }), /free 0\.3 of 7\.8 GB · Vocify/);
+});

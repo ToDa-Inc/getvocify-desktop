@@ -110,12 +110,16 @@ export type ResourceSample = {
   /** Memory programs can still get (Windows); null where the system does not say it usefully (Mac). */
   freeBytes: number | null;
   totalBytes: number;
+  /** How busy the whole computer was since the last line, 0-100 across all its processors; null when not known. */
+  computerBusy?: number | null;
+  /** The page file (Windows): how much of it is in use. A computer out of memory lives in it. */
+  pageFile?: { usedBytes: number; totalBytes: number } | null;
   own: OwnProcess[];
   children: { name: string; kb: number | null }[];
   /** How many PowerShells run on the computer (Windows), the app's and others'; null where not read. */
   powershells: number | null;
   launches: [string, number][];
-  /** The programs holding the most memory, read only while the computer is short of it (Windows). */
+  /** The programs holding the most memory, each time the programs are listed (Windows, every ten minutes). */
   heaviest?: HeavyProgram[];
   /** Messages, calls and window moves since the last line, largest first. */
   traffic?: [string, number][];
@@ -136,7 +140,9 @@ export function resourceLine(sample: ResourceSample): string {
   const total = own.reduce((sum, p) => sum + p.kb, 0);
   const cpu = own.reduce((sum, p) => sum + p.cpu, 0);
   const parts = [
-    sample.freeBytes === null ? `${gb(sample.totalBytes)} GB memory` : `free ${gb(sample.freeBytes)} of ${gb(sample.totalBytes)} GB`,
+    (sample.freeBytes === null ? `${gb(sample.totalBytes)} GB memory` : `free ${gb(sample.freeBytes)} of ${gb(sample.totalBytes)} GB`) +
+      (sample.pageFile ? `, page file ${gb(sample.pageFile.usedBytes)} of ${gb(sample.pageFile.totalBytes)} GB` : "") +
+      (typeof sample.computerBusy === "number" ? `, computer CPU ${sample.computerBusy}%` : ""),
     `Vocify ${mb(total)} MB${own.every((p) => p.privateKb !== undefined) ? ` (its own ${mb(own.reduce((sum, p) => sum + (p.privateKb ?? 0), 0))} MB)` : ""} [${own.map((p) => `${p.name} ${mb(p.kb)}`).join(", ")}] cpu ${cpu.toFixed(1)}%`,
   ];
   // Each process's own memory and CPU: the totals above do not say which one holds or burns them.

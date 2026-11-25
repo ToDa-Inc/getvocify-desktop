@@ -1,5 +1,5 @@
 import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, Notification, nativeImage, net, powerMonitor, screen, shell, systemPreferences, Tray, webContents } from "electron";
-import { freemem, totalmem } from "node:os";
+import { cpus, freemem, release as osRelease, totalmem, version as osVersion } from "node:os";
 import { existsSync } from "node:fs";
 import { open as openFile } from "node:fs/promises";
 import { CallSource } from "../../core/callSource.ts";
@@ -23,7 +23,8 @@ import { ShortcutManager } from "./shortcut.ts";
 import type { UpdateState, UpdateStatus } from "./updater.ts";
 import { microphoneLabel, microphoneSettingsUrl } from "./permissions.ts";
 import { micChoices, trayItems } from "./tray-menu.ts";
-import { countTraffic, drainTraffic, heaviestPrograms, launchCounts, LOW_MEMORY_SHARE, parsePs, parseTasklist, processName, resourceLine, trackedChildren, type HeavyProgram, type ResourceSample } from "./resources.ts";
+import { computerLine, cpuTimes, createLoadMeter } from "./computer-load.ts";
+import { countTraffic, drainTraffic, heaviestPrograms, launchCounts, parsePs, parseTasklist, processName, resourceLine, trackedChildren, type HeavyProgram, type ResourceSample } from "./resources.ts";
 import { startsPageAtLaunch } from "./calendar-watch.ts";
 import { createBrowserCallWatch } from "./windows/browser-call.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
@@ -1392,7 +1393,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
           powershells = listed.countByName.get("powershell.exe") ?? 0;
           helpersRead = { kbByPid, powershells };
           // The same listing says what holds the computer's memory: written only while little of it is free.
-          if (freemem() < totalmem() * LOW_MEMORY_SHARE) heaviest = heaviestPrograms(listed);
+          heaviest = heaviestPrograms(listed);
         }
       }
     } else if (children.length) {
@@ -1404,6 +1405,8 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       // Windows reports the memory programs can still get; macOS counts only pages nobody uses, which says little.
       freeBytes: platform === "win32" ? freemem() : null,
       totalBytes: totalmem(),
+      computerBusy: loadSinceLastLine(),
+      pageFile: pageFile(),
       own,
       children: children.map((c) => ({ name: c.name, kb: kbByPid.get(c.pid) ?? null })),
       powershells,
@@ -1412,6 +1415,26 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       traffic: drainTraffic(),
       moving,
     };
+  };
+  // How loaded the computer is: since the last resources line, and over the last few seconds for a stall's line (a
+  // stall on a computer with no memory left or every processor busy is the computer's, not the app's).
+  const loadSinceLastLine = createLoadMeter(() => cpuTimes(cpus()));
+  const loadLately = createLoadMeter(() => cpuTimes(cpus()));
+  let busyLately: number | null = null;
+  loadLately();
+  setInterval(() => {
+    busyLately = loadLately();
+  }, 5000).unref();
+  // Windows keeps what does not fit in memory in the page file: how full it is says whether the computer is living there.
+  const pageFile = (): { usedBytes: number; totalBytes: number } | null => {
+    if (platform !== "win32") return null;
+    try {
+      const memory = process.getSystemMemoryInfo() as { swapTotal?: number; swapFree?: number };
+      if (!(typeof memory.swapTotal === "number" && memory.swapTotal > 0) || typeof memory.swapFree !== "number") return null;
+      return { usedBytes: (memory.swapTotal - memory.swapFree) * 1024, totalBytes: memory.swapTotal * 1024 };
+    } catch {
+      return null;
+    }
   };
   // The main thread not running for half a second or more, in the log with what the island was doing (stall-watch.ts).
   createStallWatch({
@@ -1423,9 +1446,16 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     },
     log,
     mode: () => controller.state.mode.kind,
+    context: () => `${platform === "win32" ? `free ${(freemem() / 1024 ** 3).toFixed(1)} GB, ` : ""}computer CPU ${busyLately === null ? "?" : `${busyLately}%`} just before`,
   }).start();
   const sampleResources = async (withHelpers = true) => log(resourceLine(await measureResources(withHelpers)));
+  // The first reading only starts the count: the line a minute after start then says what starting cost.
+  app.getAppMetrics();
+  loadSinceLastLine();
   setTimeout(() => void sampleResources().catch((error) => log(`resources: not measured (${String(error)})`)), 60_000).unref();
+  // And at minutes 2, 3 and 5: a rep who has the app open a few minutes at a time left one line per session, the one
+  // above (2026-11-25). These read nothing but what the app already knows of itself.
+  for (const minute of [2, 3, 5]) setTimeout(() => void sampleResources(false).catch(() => undefined), minute * 60_000).unref();
   // Every ten minutes, and every minute while recording: a call that grows the app's memory shows minute by minute
   // which process grows (a 40-minute meeting froze a rep's computer, 2026-11-17).
   let resourceMinutes = 0;
@@ -1495,6 +1525,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   }
 
   log(`app ${app.getVersion()}, dashboard ${options.dashboardUrl}`);
+  log(computerLine({ platform, release: osRelease(), version: osVersion(), cpuModel: cpus()[0]?.model ?? "", processors: cpus().length, totalBytes: totalmem(), onBattery: (() => { try { return powerMonitor.isOnBatteryPower(); } catch { return null; } })() }));
   log(`dashboard told the platform is ${options.reportedPlatform ?? platform}`);
   log(`screens: ${screen.getAllDisplays().map((d) => `${d.bounds.width}x${d.bounds.height} at ${d.bounds.x},${d.bounds.y} scale ${d.scaleFactor}${d.id === screen.getPrimaryDisplay().id ? " (main)" : ""}`).join("; ")}`);
   log(`started: island ${Math.round(initial.width)}x${initial.height}, notch ${Math.round(placement.geometry.notchWidth)}px, bar ${placement.geometry.barHeight}px`);

@@ -29,6 +29,7 @@ import { startsPageAtLaunch } from "./calendar-watch.ts";
 import { createBrowserCallWatch } from "./windows/browser-call.ts";
 import { callSourceForExe } from "./windows/call-sources.ts";
 import { createCrmScreenWatcher } from "./crm-screen-watcher.ts";
+import { createSlowSteps } from "./slow-step.ts";
 import { createStallWatch } from "./stall-watch.ts";
 import { createPageHeartbeat } from "./page-heartbeat.ts";
 import { CrmPages } from "../../core/crmPages.ts";
@@ -154,6 +155,8 @@ const CRASH_WINDOW_MS = 5 * 60_000;
 
 export async function startApp(options: AppOptions): Promise<AppHandle> {
   const log = createLogger(join(options.userDataDir, "logs", "vocify.log"));
+  // The app's own steps on the main thread, timed: one that takes long is in the log by name (slow-step.ts).
+  const timed = createSlowSteps({ now: () => performance.now(), log });
   // A page that dies is loaded again where it is handled (the island, the dashboard). When that keeps happening, a reload
   // is not enough: the rep is offered a restart, once per window of time, and the app stays up meanwhile.
   const pageCrashes: number[] = [];
@@ -330,7 +333,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       },
       emit: (channel, payload) => dashboardHolder.host?.emit(channel, payload),
       showMainWindow: () => dashboardHolder.host?.show(),
-      onState: (state) => pushState(state),
+      onState: (state) => timed("sending the island its state", () => pushState(state)),
       onLevels: (levels) => {
         countTraffic("to island: levels");
         if (!island.isDestroyed()) island.webContents.send("island:levels", levels);
@@ -643,7 +646,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       if (platform === "win32") island.setIgnoreMouseEvents(true);
       else island.setIgnoreMouseEvents(true, { forward: true });
       if (platform === "win32") {
-        sideReach = setInterval(reachFromCursor, 75);
+        sideReach = setInterval(() => timed("reading the cursor for the pill", reachFromCursor), 75);
         sideReach.unref();
       }
       log(`island: a pill on the ${controller.state.pill.edge} edge of screen ${pillDisplay().id}`);
@@ -825,7 +828,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   /** What the menu shows, as last given to the tray: the menu is built again only when this changes. */
   let trayShown = "";
   // The microphone can be switched in the system's settings while the app runs: keep the tray's line current.
-  const trayRefresh = tray ? setInterval(() => refreshTray(controller.state), 5000) : null;
+  const trayRefresh = tray ? setInterval(() => timed("refreshing the tray", () => refreshTray(controller.state)), 5000) : null;
   trayRefresh?.unref();
   if (platform === "darwin") {
     // Keeping the island over full-screen windows turns the app into one without a Dock icon; give it back.
@@ -1085,7 +1088,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     dashboard.markReady();
     touch();
     countTraffic(`dashboard asks: ${String(op)}`);
-    return bridge(String(op), typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {});
+    return timed(() => `what the dashboard asked (${String(op)})`, () => bridge(String(op), typeof args === "object" && args !== null ? (args as Record<string, unknown>) : {}));
   });
   ipcMain.on("vocify:state", (event, state: unknown) => {
     if (!dashboard.isFrom(event.sender)) return;
@@ -1096,13 +1099,13 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     // A call on the phone ends on silence: the log keeps what each second measured, to tell why one did or did not end.
     const activity = typeof state === "object" && state !== null ? (state as { callActivity?: Record<string, unknown> }).callActivity : undefined;
     if (activity && controller.endsOnSilence) log(`call activity: them=${activity.them} (peak ${activity.themPeak ?? "?"}) you=${activity.you} (peak ${activity.youPeak ?? "?"})`);
-    void bridge("shell:state", { state });
+    timed(() => `what the dashboard sent (${typeof state === "object" && state !== null ? Object.keys(state).join(", ") : "state"})`, () => void bridge("shell:state", { state }));
   });
   // A message can still arrive from the island while the app quits and its window is already gone.
   const fromIsland = (sender: Electron.WebContents) => !island.isDestroyed() && sender === island.webContents;
   ipcMain.on("island:act", (event, action: IslandAction) => {
     countTraffic(`island does: ${typeof action === "object" && action !== null && typeof action.name === "string" ? action.name : "?"}`);
-    if (fromIsland(event.sender)) controller.act(action);
+    if (fromIsland(event.sender)) timed(() => `what the island did (${typeof action === "object" && action !== null ? String(action.name) : "?"})`, () => controller.act(action));
   });
   /**
    * Typing in the card needs the keyboard, which the island otherwise never takes. Windows: the window becomes able to take
@@ -1321,7 +1324,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
   // Windows can lose the island without telling anyone: another always-on-top window takes its place in the stack, a
   // "show the desktop" hides or minimises it, a screen is unplugged with the window on it. Every 15 s it is shown again,
   // raised again, and put back when it is no longer on any screen.
-  const keepOnScreen = setInterval(() => {
+  const keepOnScreen = setInterval(() => timed("keeping the island on top and on a screen", () => {
     if (island.isDestroyed()) return;
     if (island.isMinimized()) island.restore();
     if (!island.isVisible()) {
@@ -1339,7 +1342,7 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       log(`island: the window at ${bounds.x},${bounds.y} is on no screen, placing it again`);
       reposition();
     }
-  }, 15_000);
+  }), 15_000);
   keepOnScreen.unref();
   island.on("minimize", () => island.restore());
   island.on("hide", () => {
@@ -1436,6 +1439,10 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
       return null;
     }
   };
+  // When the computer last slept, woke, or was locked or unlocked: its timers come late around those, with no fault of
+  // the app's.
+  let powerEventAt = -Infinity;
+  for (const event of ["suspend", "resume", "lock-screen", "unlock-screen"] as const) powerMonitor.on(event as "suspend", () => void (powerEventAt = performance.now()));
   // The main thread not running for half a second or more, in the log with what the island was doing (stall-watch.ts).
   createStallWatch({
     now: () => performance.now(),
@@ -1446,6 +1453,13 @@ export async function startApp(options: AppOptions): Promise<AppHandle> {
     },
     log,
     mode: () => controller.state.mode.kind,
+    usage: () => {
+      const used = process.resourceUsage();
+      return { cpuMs: (used.userCPUTime + used.systemCPUTime) / 1000, faults: used.majorPageFault, writes: used.fsWrite };
+    },
+    after: (ms, fn) => void setTimeout(fn, ms).unref(),
+    // A computer going to sleep, waking or being locked, and the app closing, stop the timers too: those are not stalls.
+    notAStall: () => (quitting ? "the app was closing" : performance.now() - powerEventAt < 90_000 ? "the computer was asleep, waking or locked" : null),
     context: () => `${platform === "win32" ? `free ${(freemem() / 1024 ** 3).toFixed(1)} GB, ` : ""}computer CPU ${busyLately === null ? "?" : `${busyLately}%`} just before`,
   }).start();
   const sampleResources = async (withHelpers = true) => log(resourceLine(await measureResources(withHelpers)));

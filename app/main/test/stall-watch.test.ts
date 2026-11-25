@@ -86,3 +86,53 @@ test("a stall's line says what the computer was like just before, when the app c
   (fn as (() => void) | null)?.();
   assert.deepEqual(lines, ["main thread: stalled 2600 ms (idle) · free 0.3 GB, computer CPU 97% just before"]);
 });
+
+test("a stall's line says what the process did meanwhile: processor used, page faults, disk writes", () => {
+  let now = 1_000;
+  let fn: (() => void) | null = null;
+  const lines: string[] = [];
+  const readings = [{ cpuMs: 100, faults: 10, writes: 1 }, { cpuMs: 112, faults: 3410, writes: 3 }];
+  createStallWatch({
+    now: () => now,
+    every: (_ms, f) => {
+      fn = f;
+      return () => void (fn = null);
+    },
+    log: (line) => lines.push(line),
+    mode: () => "recording",
+    usage: () => readings.shift() ?? { cpuMs: 112, faults: 3410, writes: 3 },
+  }).start();
+  now += STALL_CHECK_MS + 900;
+  (fn as (() => void) | null)?.();
+  assert.deepEqual(lines, ["main thread: stalled 900 ms (recording) · used 12 ms of processor, 3400 page faults, 2 disk writes"]);
+});
+
+test("a gap next to the computer sleeping or the app closing is a pause, not a stall, once the reason is known", () => {
+  let now = 1_000;
+  let fn: (() => void) | null = null;
+  let reason: string | null = null;
+  const lines: string[] = [];
+  const later: (() => void)[] = [];
+  createStallWatch({
+    now: () => now,
+    every: (_ms, f) => {
+      fn = f;
+      return () => void (fn = null);
+    },
+    log: (line) => lines.push(line),
+    mode: () => "idle",
+    after: (_ms, f) => void later.push(f),
+    notAStall: () => reason,
+  }).start();
+  now += STALL_CHECK_MS + 7000;
+  (fn as (() => void) | null)?.();
+  assert.deepEqual(lines, [], "nothing is written until the reason can be known");
+  reason = "the computer was asleep";
+  later.shift()?.();
+  assert.deepEqual(lines, ["main thread: paused 7000 ms, the computer was asleep"]);
+  reason = null;
+  now += STALL_CHECK_MS + 800;
+  (fn as (() => void) | null)?.();
+  later.shift()?.();
+  assert.equal(lines[1], "main thread: stalled 800 ms (idle)");
+});

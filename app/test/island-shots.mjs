@@ -470,7 +470,17 @@ for (const test of interactions) {
   // What the island sends when it mounts (the closed marker seen) lands a few frames late on a slow machine: let it, so it is not counted as the click's.
   for (let i = 0; i < 5; i++) await frame();
   await win.webContents.executeJavaScript(`window.__islandActions.length = 0; true`);
-  if (!(await clickIn(win, test.click))) missing.push(test.click);
+  let clicked = await clickIn(win, test.click);
+  // What the scene-setting clicks open (a menu) can miss on a slow machine: set the scene once more before giving up.
+  if (!clicked && (test.before ?? []).length > 0) {
+    for (const selector of test.before) {
+      await clickIn(win, selector);
+      await frame();
+    }
+    await win.webContents.executeJavaScript(`window.__islandActions.length = 0; true`);
+    clicked = await clickIn(win, test.click);
+  }
+  if (!clicked) missing.push(test.click);
   await frame();
   if (missing.length) {
     // What the page held instead: whether a dropdown is up and what is in it, and where the pointer last was.

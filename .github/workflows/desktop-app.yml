@@ -124,9 +124,13 @@ jobs:
           $setup = Get-ChildItem release\Vocify-Setup-*.exe | Select-Object -First 1
           "installer: $($setup.Name), $([math]::Round($setup.Length / 1MB, 1)) MB"
           Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\Vocify\Vocify.exe'
+          # The installer can hand over to a copy of itself and come back before the files are in place (this step failed
+          # at random with "not installed"): wait until no installer is left running and the app is there.
+          for ($i = 0; $i -lt 120 -and ((Get-Process -Name 'Vocify-Setup*' -ErrorAction SilentlyContinue) -or -not (Test-Path $exe)); $i++) { Start-Sleep -Seconds 1 }
+          "waited $i s for the installer to finish"
           Start-Sleep -Seconds 3
           Get-Process -Name Vocify -ErrorAction SilentlyContinue | Stop-Process -Force   # the installer starts the app; start it ourselves below
-          $exe = Join-Path $env:LOCALAPPDATA 'Programs\Vocify\Vocify.exe'
           if (-not (Test-Path $exe)) { throw "not installed at $exe" }
           # The native helper is installed with the app and runs from there.
           $helper = Join-Path (Split-Path $exe) 'resources\win-helper\vocify-win-helper.exe'

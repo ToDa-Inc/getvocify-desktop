@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { anchorOf, FloatMenu, MenuRow, type Anchor } from "./FloatMenu.tsx";
 import type { IslandAction, IslandState, MicView } from "./types.ts";
 
@@ -50,7 +50,9 @@ export function MicWave({ state, open, act, children }: { state: IslandState; op
     setList(false);
   }, []);
 
-  useEffect(() => {
+  // Registered as the wave is drawn, not a moment later: "Change" is on screen in the same frame, and a press that
+  // landed before this had run opened nothing (the mic checks failed at random on slow machines for it).
+  useLayoutEffect(() => {
     if (!active) return;
     const opener = () => {
       setList(true);
